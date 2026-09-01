@@ -1,7 +1,7 @@
 {
-	"appId": "com.SuchnSuch.Tangent",
-	"productName": "Tangent",
-	"copyright": "Copyright © 2022 Taylor Hadden",
+	"appId": "com.probepoint.osint-copilot",
+	"productName": "OSINT Copilot",
+	"copyright": "Copyright © 2026 Probe Point Analytics LLC. Based on Tangent, © Taylor Hadden.",
 
 	"generateUpdatesFilesForAllChannels": true,
 	"electronVersion": "42.1.0",
@@ -144,9 +144,10 @@
 
 	"publish": [
 		{
-			"provider": "s3",
-			"bucket": "suchnsuch-public",
-			"path": "/Tangent/Releases/"
+			"provider": "github",
+			"owner": "Probe-Point-Analytics-LLC",
+			"repo": "osint-copilot",
+			"releaseType": "draft"
 		}
 	],
 

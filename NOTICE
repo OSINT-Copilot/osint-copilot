@@ -1,0 +1,49 @@
+OSINT Copilot
+Copyright 2026 Probe Point Analytics LLC
+
+This product is a derivative work of Tangent.
+
+  Tangent
+  Copyright 2022-2026 Taylor Hadden
+  https://github.com/suchnsuch/Tangent
+  https://www.tangentnotes.com
+
+Tangent is licensed under the Apache License, Version 2.0. A copy of that
+license is included in this repository as LICENSE.txt, and may also be
+obtained at http://www.apache.org/licenses/LICENSE-2.0
+
+This work is distributed under the same Apache License, Version 2.0.
+
+--------------------------------------------------------------------------
+Statement of changes (Apache-2.0 section 4(b))
+--------------------------------------------------------------------------
+
+OSINT Copilot modifies Tangent by adding an OSINT investigation toolset on
+top of the note-writing workspace, and by rebranding the application. The
+substantive additions live under new paths and are original work of
+Probe Point Analytics LLC:
+
+  apps/tangent-electron/src/osint/**   renderer-side OSINT features
+  apps/tangent-electron/src/main/osint/**  main-process services
+
+They include: an entity/connection data model persisted as markdown notes,
+an FTM/OIDSF schema system, a Cytoscape entity graph, a timeline, a Leaflet
+map, an AI chat agent driving local CLI runtimes, user-authored HTTP
+enrichers, and supporting services. That code originates from the
+OSINT Copilot plugin for Obsidian, also copyright Probe Point Analytics LLC.
+
+Files belonging to Tangent that have been modified for integration and
+rebranding retain their original copyright and are marked in the git
+history of this repository.
+
+--------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------
+
+Tangent itself incorporates, as git submodules under lib/, forks of:
+
+  typewriter            https://github.com/typewriter-editor/typewriter
+  typewriter-document   https://github.com/typewriter-editor/typewriter-document
+
+See those directories for their respective license terms. Licenses for
+npm dependencies are carried in their own packages under node_modules.

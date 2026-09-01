@@ -1,62 +1,83 @@
-# Tangent
-![](./apps/tangent-electron/build/icon.png)
+# OSINT Copilot
 
-This is the monorepo for the [Tangent](https://www.tangentnotes.com) project.
+An OSINT investigation workspace built on local markdown notes.
 
-Tangent is a local note writing / personal knowledge management tool. It was heavily inspired by Obsidian, and has drifted in its own direction. It uses `[[Wiki Links]]` and a slightly customized markdown syntax. Notes are fully styled as you write. Markdown syntax is hidden and revealed as needed.
+OSINT Copilot is a **fork of [Tangent](https://github.com/suchnsuch/Tangent)** by Taylor Hadden,
+used under the Apache License 2.0. Tangent provides the note-writing workspace — the editor, file
+tree, link index, query language, viewers and app shell. OSINT Copilot adds the investigation
+toolset on top of it. See [NOTICE](./NOTICE) for attribution and a statement of changes.
 
-Other key features:
-* An innovative, two-dimensional connected map of your navigation and linking history. ![](./apps/tangent-website/static/shots/blades-map-dark.jpeg)
-* "Sliding Panel" UX inspired by [Andy Matuschak's notes](https://notes.andymatuschak.org/About_these_notes). 
-![](./apps/tangent-website/static/shots/thread-short-dark.jpeg)
-* Writing focus mode: highlight your current paragraph, line, or sentence. ![](./apps/tangent-website/static/shots/focus-mode-dark.jpeg)
-* Customizable note views: view your collections of notes as cards or an infinite, dynamically loaded feed.
-* A custom [query language](./Documentation/Features/Query%20Syntax.md) (with autocomplete!) for custom complex searches.
-* Support for embedded images, link previews, pdfs, audio, and video—including YouTube links!
+## What it adds to Tangent
 
-Pre-built binaries can be found [on the downloads page](https://www.tangentnotes.com/Download) and [on Flathub](https://flathub.org/apps/io.github.suchnsuch.Tangent). Pre-release versions are also available on [Flathub Beta](https://docs.flathub.org/docs/for-users/installation#flathub-beta-repository).
+* **Entities and connections** as plain markdown notes, with an FTM / OIDSF schema system
+  (141 bundled entity and relationship types, plus user-defined ones).
+* **Entity graph** — a Cytoscape canvas with multiple graph workspaces, confidence filtering,
+  undo/redo history and saved layouts.
+* **Timeline** and **map** views derived from the same notes.
+* **Chat agent** driving a local CLI runtime (Claude Code, Codex, or a custom one) that can read
+  the vault, propose graph operations, and apply them on approval.
+* **Enrichers** — user-authored HTTP integrations with a per-enricher domain allowlist,
+  secrets resolved in the main process, and an SSRF guard.
+* **Skills** and **task agents** — vault-authored, schema-constrained agents with a double
+  write allowlist.
 
-## Modules
-There are multiple modules contained within this repo.
+Everything is stored as markdown and YAML under an `OSINTCopilot/` folder in your workspace,
+so the same folder can also be opened by the
+[Obsidian plugin](https://github.com/Probe-Point-Analytics-LLC/Obsidian-OSINT-Copilot-plugin)
+this project grew out of.
+
+## Repository layout
+
+Inherited from Tangent's monorepo.
 
 ### Applications
-The `apps` directory contains modules that produce versions of Tangent and other Tangent-related executables.
-* [tangent-electron](./apps/tangent-electron/README.md) – The electron-based Tangent application.
-* [tangent-website](./apps/tangent-website/README.md) – The source code of [tangentnotes.com](https://www.tangentnotes.com).
-* [tangent-test-workspace-generator](./apps/tangent-test-workspace-generator/README.md) – A simple CLI tool for generating test content.
+* [tangent-electron](./apps/tangent-electron/README.md) — the Electron application. OSINT Copilot's
+  own code lives under `src/osint/` (renderer) and `src/main/osint/` (main process).
+* [tangent-website](./apps/tangent-website/README.md) — upstream's website source.
+* [tangent-test-workspace-generator](./apps/tangent-test-workspace-generator/README.md) — CLI tool for
+  generating test content.
 
 ### Packages
-The `packages` directory contains modules that provide libraries of Tangent-related functionality.
-* [tangent-html-to-markdown](./packages/tangent-html-to-markdown/README.md) – The parser used to convert `text/html` clipboard data to Tangent-specific markdown text.
-* [tangent-query-parser](./packages/tangent-query-parser/README.md) – A parser for the Tangent Query language.
+* [tangent-html-to-markdown](./packages/tangent-html-to-markdown/README.md) — converts `text/html`
+  clipboard data to markdown.
+* [tangent-query-parser](./packages/tangent-query-parser/README.md) — parser for the query language.
 
 ### Lib
-The `lib` directory contains externally-versioned libraries that have been added as a git submodule for various reasons.
-* [typewriter](./lib/typewriter/README.md) – A tangent-specific fork of the [Typewriter](https://github.com/typewriter-editor/typewriter) project.
-* [typewriter-document](./lib/typewriter-document/README.md) – A tangent-specific fork of [Typewriter's document model](https://github.com/typewriter-editor/typewriter-document).
+Git submodules.
+* [typewriter](./lib/typewriter/README.md) — Tangent's fork of
+  [Typewriter](https://github.com/typewriter-editor/typewriter).
+* [typewriter-document](./lib/typewriter-document/README.md) — Tangent's fork of Typewriter's
+  document model.
 
+## Building locally
 
-## Building Locally
-1. Initialize and sync git submodules (e.g. `git submodule init` && `git submodule update`).
-2. Run `npm ci` at the root level of the repository to install all dependencies across the monorepo.
-3. Run `npm run build` at the root level of the repository to build all dependencies.
-4. Run `npm run dev` (or `dev:win` on Windows) in `./apps/tangent-electron` to run tangent in development mode.
+1. `git submodule init && git submodule update`
+2. `npm ci` at the repository root.
+3. `npm run build` at the root (or `npm run build:tangent-electron` for just the app).
+4. `npm run dev` in `./apps/tangent-electron` (`dev:win` on Windows).
 
+### Linux: blank window or an immediate crash
 
-## Reporting Issues
-When creating an issues, be sure to use the appropriate label for the specific module.
+If the app dies the moment it opens a window, your system's Wayland backend may not work with
+Electron's renderer. Force the X11 backend:
 
-When reporting bugs, please include:
-1. The version of the relevant app / package.
-2. A concise description in the title of the problem.
-	* e.g. "Clicking the New Note button does not create a new note"
-3. A thorough description of the problem in the body of the issue.
-	* The steps required to cause the problem.
-		* For example:
-			1. "Open a blank workspace"
-			2. "Click the New Note button"
-			3. "Notice that a new note is not created"
-	* Include any additional details or context that can help illuminate the issue.
-4. Logs can sometimes be very helpful in sussing out a problem.
-	* In-window logs for Tangent can be found from the developer console. You can open this with `Cmd+Option+I` on Mac or `Ctrl+Shift+I` on Windows and Linux. Attaching a screenshot or the contents of these logs can be useful.
-	* Application logs for Tangent can be found in the relevant log folder on your system. You can invoke the "Show Logs" command from the Command Palette in Tangent (`Cmd/Ctrl+P` to open the palette) to bring you directly to the logs.
+```
+npm run dev -- --ozone-platform=x11
+# or, running the built app directly:
+electron . --ozone-platform=x11
+```
+
+Also make sure `ELECTRON_RUN_AS_NODE` is not exported in your shell — it silently makes the
+Electron binary run as plain Node, so no window ever opens and `electron --version` prints the
+Node version.
+
+## Staying current with upstream
+
+`upstream` points at `suchnsuch/Tangent`. The fork deliberately keeps its edits to upstream files
+small — new code goes in new directories — so `git merge upstream/main` stays cheap. Before adding
+a line to a file under `apps/tangent-electron/src/{app,common,main,preload}/`, check whether a new
+file under `src/osint/` would do instead.
+
+## License
+
+Apache License 2.0. See [LICENSE.txt](./LICENSE.txt) and [NOTICE](./NOTICE).

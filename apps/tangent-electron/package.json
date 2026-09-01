@@ -1,9 +1,9 @@
 {
   "name": "tangent_electron",
-  "productName": "Tangent",
+  "productName": "OSINT Copilot",
   "version": "0.12.10",
-  "description": "Your Notes, Your Thoughts; Your Tangent",
-  "repository": "https://github.com/suchnsuch/Tangent",
+  "description": "An OSINT investigation workspace built on local markdown notes.",
+  "repository": "https://github.com/Probe-Point-Analytics-LLC/osint-copilot",
   "license": "Apache-2.0",
   "main": "__build/bundle/main.js",
   "scripts": {

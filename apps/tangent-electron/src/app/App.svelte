@@ -196,7 +196,7 @@ api.getWorkspace().then(setState)
 	console.log(e)
 })
 
-let title = 'Tangent'
+let title = 'OSINT Copilot'
 async function setState(state: WorkspaceInitState) {
 	if (showLoadingTimeout) {
 		window.clearTimeout(showLoadingTimeout)
@@ -204,7 +204,7 @@ async function setState(state: WorkspaceInitState) {
 	}
 	if (state === null) {
 		applicationState = 'choosingWorkspace'
-		title = 'Select Workspace - Tangent'
+		title = 'Select Workspace - OSINT Copilot'
 	}
 	else {
 		console.log(state)

@@ -1,8 +1,8 @@
 {
-	"name": "tangent-public",
+	"name": "osint-copilot",
 	"version": "0.1.0",
-	"description": "The Tangent Project's monorepo",
-	"repository": "https://github.com/suchnsuch/tangent-public",
+	"description": "The OSINT Copilot monorepo. A fork of Tangent.",
+	"repository": "https://github.com/Probe-Point-Analytics-LLC/osint-copilot",
 	"type": "module",
 	"scripts": {
 		"test": "npm run test --workspaces --if-present",
