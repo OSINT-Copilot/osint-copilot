@@ -5,7 +5,9 @@
 		"sourceMap": true,
 		"baseUrl": "src",
 		"paths": {
-			"svelte/*": ["../node_modules/svelte/src/runtime/*"]
+			"svelte/*": ["../node_modules/svelte/src/runtime/*"],
+			"obsidian": ["osint/obsidian-shim/index.ts"],
+			"host-impl": ["osint/host/impl.bridge.ts"]
 		},
 		"target": "ES2022",
 		"lib": ["ESNext", "DOM"],
@@ -16,5 +18,5 @@
 		"strict": false,
 		"verbatimModuleSyntax": true
 	},
-	"exclude": [ "__build", "node_modules", "out" ]
+	"exclude": [ "__build", "node_modules", "out", "src/osint/tests" ]
 }

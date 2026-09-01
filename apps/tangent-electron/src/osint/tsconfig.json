@@ -1,0 +1,13 @@
+{
+	"//": "OSINT Copilot's code is written to strict null checks. Tangent builds with strict:false, which is looser and is what webpack/ts-loader uses; this config is the stricter guard for our subtree only. Run it with `npm run typecheck:osint`.",
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"strictNullChecks": true,
+		"strictFunctionTypes": true,
+		"strictBindCallApply": true,
+		"noImplicitThis": true,
+		"types": ["node", "vitest/globals"]
+	},
+	"include": ["../osint/**/*.ts"]
+}

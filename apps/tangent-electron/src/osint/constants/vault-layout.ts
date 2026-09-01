@@ -1,0 +1,43 @@
+/**
+ * Default vault paths — all under visible `OSINTCopilot/` (no `.osint-copilot/` for user-facing data).
+ * Customization (prompts, agents, skills, task agents, outputs) lives under `custom/`.
+ */
+
+export const OSINT_COPILOT_VAULT_ROOT = "OSINTCopilot";
+
+/** Prompts, skills, task-agent manifests, outputs, custom entity types — user-editable area. */
+export const OSINT_COPILOT_CUSTOM_ROOT = `${OSINT_COPILOT_VAULT_ROOT}/custom`;
+
+export const DEFAULT_CONVERSATION_FOLDER = `${OSINT_COPILOT_VAULT_ROOT}/conversations`;
+/** Imported Miro board snapshots — one .md per board, overwritten in place on re-import. */
+export const DEFAULT_MIRO_BOARDS_FOLDER = `${OSINT_COPILOT_VAULT_ROOT}/MiroBoards`;
+export const DEFAULT_PROMPTS_FOLDER = `${OSINT_COPILOT_CUSTOM_ROOT}/prompts`;
+export const DEFAULT_SKILLS_FOLDER = `${OSINT_COPILOT_CUSTOM_ROOT}/skills`;
+export const DEFAULT_TASK_AGENTS_FOLDER = `${OSINT_COPILOT_CUSTOM_ROOT}/task-agents`;
+export const DEFAULT_ENRICHERS_FOLDER = `${OSINT_COPILOT_CUSTOM_ROOT}/enrichers`;
+/** API keys and other secrets the user approves storing as vault files (plain text). */
+export const DEFAULT_CREDENTIALS_FOLDER = `${OSINT_COPILOT_CUSTOM_ROOT}/credentials`;
+
+/** Agent-proposable scripts (Python, shell, etc.); `upsert_script` / `delete_script` target this tree. */
+export const DEFAULT_SCRIPTS_FOLDER = `${OSINT_COPILOT_CUSTOM_ROOT}/scripts`;
+
+/** Global allowlist prefixes for task-agent vault writes (newline-separated). */
+export const DEFAULT_TASK_AGENT_OUTPUT_ALLOWLIST = `${OSINT_COPILOT_CUSTOM_ROOT}/outputs/\nResearch/`;
+
+export const GRAPH_NODE_POSITIONS_FILE = `${OSINT_COPILOT_VAULT_ROOT}/graph-positions.json`;
+
+/**
+ * FollowTheMoney-style parallel export: one `.yaml` per entity/connection, synced from notes.
+ * Lives under the configured entity base path, e.g. `OSINTCopilot/graph-yaml/`.
+ */
+export const GRAPH_YAML_FOLDER_NAME = 'graph-yaml';
+
+/** Vault-visible schema definitions (YAML): STIX2, MITRE, user extensions. */
+export const SCHEMAS_VAULT_ROOT = `${OSINT_COPILOT_VAULT_ROOT}/schemas`;
+export const SCHEMAS_STIX2_DIR = `${SCHEMAS_VAULT_ROOT}/stix2`;
+export const SCHEMAS_MITRE_DIR = `${SCHEMAS_VAULT_ROOT}/mitre`;
+export const SCHEMAS_USER_DIR = `${SCHEMAS_VAULT_ROOT}/user`;
+
+/** Folder for `custom-types.json` (FTM extensions). */
+export const CUSTOM_TYPES_CONFIG_DIR = OSINT_COPILOT_CUSTOM_ROOT;
+export const CUSTOM_TYPES_FILE_NAME = "custom-types.json";

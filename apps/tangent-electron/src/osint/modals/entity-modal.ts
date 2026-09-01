@@ -1,0 +1,3960 @@
+/**
+ * Entity Creation Modal - allows users to create entities with a form UI.
+ * Now supports both legacy EntityType and FTM schema format.
+ */
+
+import { App, Modal, Notice, Setting } from 'obsidian';
+import { type Entity, type Connection, EntityType, ENTITY_CONFIGS, COMMON_PROPERTIES, getFTMEntityConfig, getAvailableFTMEntityTypes, getAvailableFTMIntervalTypes, type FTMEntityConfig, validateEntityName, getEntityIcon } from '../entities/types';
+import { EntityManager } from '../services/entity-manager';
+import { GeocodingService, GeocodingError, GeocodingErrorType } from '../services/geocoding-service';
+import { ftmSchemaService, type FTMPropertyDefinition } from '../services/ftm-schema-service';
+import { CustomTypeCreationModal } from './custom-type-modal';
+import type { CatalogEntityType, CatalogRelationshipType, EnabledSchemaFamilies, SchemaFamily } from '../services/schema-catalog-types';
+
+/** Access plugin instance for schema catalog and settings (manifest id: osint-copilot). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getOsintCopilotPlugin(app: App): any {
+	const plug = app as any;
+	const mgr = plug.plugins;
+	if (!mgr) return null;
+	if (typeof mgr.getPlugin === 'function') {
+		const p = mgr.getPlugin('osint-copilot');
+		if (p) return p;
+	}
+	return mgr.plugins?.['osint-copilot'] ?? null;
+}
+
+function familyBadgeLabel(family: SchemaFamily): string {
+	switch (family) {
+		case 'ftm':
+			return 'FTM';
+		case 'stix2':
+			return 'STIX2';
+		case 'mitre':
+			return 'MITRE';
+		case 'user':
+			return 'USER';
+		default:
+			return String(family);
+	}
+}
+
+const CATALOG_FAMILY_ORDER: SchemaFamily[] = ['ftm', 'stix2', 'mitre', 'user'];
+
+function familySectionTitle(family: SchemaFamily): string {
+	switch (family) {
+		case 'ftm':
+			return 'FollowTheMoney (bundled + custom JSON)';
+		case 'stix2':
+			return 'STIX 2 (vault YAML)';
+		case 'mitre':
+			return 'MITRE ATT&CK (vault YAML)';
+		case 'user':
+			return 'User definitions (schemas/user)';
+		default:
+			return family;
+	}
+}
+
+// Common relationship types for suggestions
+export const COMMON_RELATIONSHIPS = [
+    'WORKS_AT',
+    'ATTENDED',
+    'LOCATED_AT',
+    'KNOWS',
+    'OWNS',
+    'MEMBER_OF',
+    'RELATED_TO',
+    'CONTACTED',
+    'VISITED',
+    'EMPLOYED_BY',
+    'LIVES_AT',
+    'ASSOCIATED_WITH',
+    'PARENT_OF',
+    'CHILD_OF',
+    'SIBLING_OF',
+    'SPOUSE_OF',
+    'FRIEND_OF',
+    'COLLEAGUE_OF'
+];
+
+export class EntityCreationModal extends Modal {
+    private entityManager: EntityManager;
+    private entityType: EntityType;
+    private properties: Record<string, unknown> = {};
+    private onEntityCreated: ((entityId: string) => void) | null;
+    private geocodingService: GeocodingService;
+    private geocodeStatusEl: HTMLElement | null = null;
+    private geocodeBtn: HTMLButtonElement | null = null;
+    private reverseGeocodeStatusEl: HTMLElement | null = null;
+    private reverseGeocodeBtn: HTMLButtonElement | null = null;
+
+    constructor(
+        app: App,
+        entityManager: EntityManager,
+        entityType: EntityType,
+        onEntityCreated?: (entityId: string) => void,
+        initialProperties: Record<string, unknown> = {},
+        private entityId?: string
+    ) {
+        super(app);
+        this.entityManager = entityManager;
+        this.entityType = entityType;
+        this.onEntityCreated = onEntityCreated || null;
+        this.geocodingService = new GeocodingService();
+        this.properties = { ...initialProperties };
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass('graph_copilot-entity-modal');
+
+        const config = ENTITY_CONFIGS[this.entityType];
+
+        // Title
+        const action = this.entityId ? 'Edit' : 'Create';
+        contentEl.createEl('h2', { text: `${action} ${this.entityType}` });
+        contentEl.createEl('p', {
+            text: config.description,
+            cls: 'graph_copilot-entity-modal-description'
+        });
+
+        // Create form container
+        const formContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-form' });
+
+        // Add fields for entity-specific properties
+        // For Location entities, add geocode button after address fields but before coordinates
+        const addressFields = ['address', 'city', 'state', 'country', 'postal_code'];
+        const coordinateFields = ['latitude', 'longitude'];
+
+        for (const prop of config.properties) {
+            // Skip coordinate fields for now if this is a Location entity
+            if (this.entityType === EntityType.Location && coordinateFields.includes(prop)) {
+                continue;
+            }
+            this.createPropertyField(formContainer, prop, prop === config.labelField);
+        }
+
+        // Add geocode button for Location entities (after address fields, before coordinates)
+        if (this.entityType === EntityType.Location) {
+            this.createGeocodeSection(formContainer);
+
+            // Now add coordinate fields
+            for (const prop of coordinateFields) {
+                this.createPropertyField(formContainer, prop, false);
+            }
+
+            // Reverse direction: coordinates known, address unknown (e.g. a pin dropped on the map).
+            this.createReverseGeocodeSection(formContainer);
+        }
+
+        // Add common properties section
+        contentEl.createEl('h4', { text: 'Additional properties' });
+        const commonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-form' });
+
+        for (const prop of COMMON_PROPERTIES) {
+            if (prop !== 'image') { // Skip image for now
+                this.createPropertyField(commonContainer, prop, false);
+            }
+        }
+
+        // Buttons
+        const buttonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-modal-buttons' });
+
+        const createBtn = buttonContainer.createEl('button', {
+            text: this.entityId ? 'Update entity' : 'Create entity',
+            cls: 'mod-cta'
+        });
+        createBtn.onclick = () => this.handleCreate();
+
+        const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+        cancelBtn.onclick = () => this.close();
+    }
+
+    /**
+     * Create the geocoding section with button and status display
+     */
+    private createGeocodeSection(container: HTMLElement): void {
+        const geocodeSection = container.createDiv({ cls: 'graph_copilot-geocode-section' });
+
+        // Geocode button
+        this.geocodeBtn = geocodeSection.createEl('button', {
+            text: 'Put on map',
+            cls: 'graph_copilot-geocode-btn'
+        });
+
+        // Status display
+        this.geocodeStatusEl = geocodeSection.createEl('span', {
+            cls: 'graph_copilot-geocode-status'
+        });
+
+        // Help text
+        geocodeSection.createEl('small', {
+            text: 'Convert address to coordinates using OpenStreetMap',
+            cls: 'graph_copilot-geocode-help'
+        });
+
+        this.geocodeBtn.onclick = async () => {
+            await this.handleGeocode();
+        };
+    }
+
+    /**
+     * Handle the geocode button click
+     */
+    private async handleGeocode(): Promise<void> {
+        if (!this.geocodeBtn || !this.geocodeStatusEl) return;
+
+        const address = (this.properties.address as string) || '';
+        const city = (this.properties.city as string) || '';
+        const state = (this.properties.state as string) || '';
+        const country = (this.properties.country as string) || '';
+
+        // Validate that we have at least some address info
+        if (!address && !city && !country) {
+            this.setGeocodeStatus('error', 'Please enter an address, city, or country first');
+            return;
+        }
+
+        // Show loading state
+        this.geocodeBtn.disabled = true;
+        this.geocodeBtn.textContent = '⏳ geocoding...';
+        this.setGeocodeStatus('loading', 'Looking up coordinates...');
+
+        try {
+            const result = await this.geocodingService.geocodeAddressWithRetry(
+                address,
+                city,
+                state,
+                country,
+                (attempt, maxAttempts, delaySeconds) => {
+                    this.setGeocodeStatus('loading', `Network error, retrying in ${delaySeconds}s... (attempt ${attempt}/${maxAttempts})`);
+                }
+            );
+
+            // Update latitude/longitude properties
+            this.properties.latitude = result.latitude;
+            this.properties.longitude = result.longitude;
+
+            // Update the input fields visually
+            const latInput = document.getElementById('entity-latitude') as HTMLInputElement;
+            const lngInput = document.getElementById('entity-longitude') as HTMLInputElement;
+
+            if (latInput) {
+                latInput.value = result.latitude.toString();
+            }
+            if (lngInput) {
+                lngInput.value = result.longitude.toString();
+            }
+
+            // Show success with coordinates and confidence
+            const coordsStr = GeocodingService.formatCoordinates(result.latitude, result.longitude);
+            let statusText = `✓ Found: ${coordsStr}`;
+            if (result.confidence === 'low') {
+                statusText += ' (low confidence - please verify)';
+            }
+            this.setGeocodeStatus('success', statusText);
+
+            // Optionally auto-fill missing address components
+            if (!this.properties.city && result.city) {
+                this.properties.city = result.city;
+                const cityInput = document.getElementById('entity-city') as HTMLInputElement;
+                if (cityInput) cityInput.value = result.city;
+            }
+            if (!this.properties.state && result.state) {
+                this.properties.state = result.state;
+                const stateInput = document.getElementById('entity-state') as HTMLInputElement;
+                if (stateInput) stateInput.value = result.state;
+            }
+            if (!this.properties.country && result.country) {
+                this.properties.country = result.country;
+                const countryInput = document.getElementById('entity-country') as HTMLInputElement;
+                if (countryInput) countryInput.value = result.country;
+            }
+            if (!this.properties.postal_code && result.postalCode) {
+                this.properties.postal_code = result.postalCode;
+                const postalInput = document.getElementById('entity-postal_code') as HTMLInputElement;
+                if (postalInput) postalInput.value = result.postalCode;
+            }
+
+        } catch (error) {
+            console.error('[EntityModal] Geocoding error:', error);
+
+            if (error instanceof GeocodingError) {
+                switch (error.type) {
+                    case GeocodingErrorType.NotFound:
+                        this.setGeocodeStatus('error', '✗ Address not found. Please check the address or enter coordinates manually.');
+                        break;
+                    case GeocodingErrorType.RateLimited:
+                        this.setGeocodeStatus('error', '✗ Too many requests. Please wait a moment and try again.');
+                        break;
+                    case GeocodingErrorType.NetworkError:
+                        this.setGeocodeStatus('error', '✗ Network error. Please check your internet connection.');
+                        break;
+                    case GeocodingErrorType.InvalidInput:
+                        this.setGeocodeStatus('error', '✗ ' + error.message);
+                        break;
+                    default:
+                        this.setGeocodeStatus('error', '✗ Geocoding failed. Please enter coordinates manually.');
+                }
+            } else {
+                this.setGeocodeStatus('error', '✗ Geocoding failed. Please enter coordinates manually.');
+            }
+        } finally {
+            // Reset button state
+            if (this.geocodeBtn) {
+                this.geocodeBtn.disabled = false;
+                this.geocodeBtn.textContent = 'Put on map';
+            }
+        }
+    }
+
+    /**
+     * Set the geocode status message with appropriate styling
+     */
+    private setGeocodeStatus(type: 'success' | 'error' | 'loading', message: string): void {
+        if (!this.geocodeStatusEl) return;
+
+        this.geocodeStatusEl.textContent = message;
+        this.geocodeStatusEl.removeClass('graph_copilot-geocode-status-success');
+        this.geocodeStatusEl.removeClass('graph_copilot-geocode-status-error');
+        this.geocodeStatusEl.removeClass('graph_copilot-geocode-status-loading');
+
+        this.geocodeStatusEl.addClass(`graph_copilot-geocode-status-${type}`);
+    }
+
+    /**
+     * Reverse-geocode section: coordinates -> address. Mirrors createGeocodeSection() (the
+     * forward, address -> coordinates direction), reusing the same CSS classes.
+     */
+    private createReverseGeocodeSection(container: HTMLElement): void {
+        const section = container.createDiv({ cls: 'graph_copilot-geocode-section' });
+
+        this.reverseGeocodeBtn = section.createEl('button', {
+            text: 'Find address',
+            cls: 'graph_copilot-geocode-btn'
+        });
+
+        this.reverseGeocodeStatusEl = section.createEl('span', {
+            cls: 'graph_copilot-geocode-status'
+        });
+
+        section.createEl('small', {
+            text: 'Look up the address for these coordinates using OpenStreetMap',
+            cls: 'graph_copilot-geocode-help'
+        });
+
+        this.reverseGeocodeBtn.onclick = async () => {
+            await this.handleReverseGeocode();
+        };
+    }
+
+    /**
+     * Handle the "Find address" button click
+     */
+    private async handleReverseGeocode(): Promise<void> {
+        if (!this.reverseGeocodeBtn || !this.reverseGeocodeStatusEl) return;
+
+        const lat = Number(this.properties.latitude);
+        const lng = Number(this.properties.longitude);
+
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+            this.setReverseGeocodeStatus('error', 'Enter or set latitude/longitude first (or right-click the map to place a pin).');
+            return;
+        }
+
+        this.reverseGeocodeBtn.disabled = true;
+        this.reverseGeocodeBtn.textContent = '⏳ looking up...';
+        this.setReverseGeocodeStatus('loading', 'Looking up address...');
+
+        try {
+            const result = await this.geocodingService.reverseGeocodeWithRetry(
+                lat,
+                lng,
+                (attempt, maxAttempts, delaySeconds) => {
+                    this.setReverseGeocodeStatus('loading', `Network error, retrying in ${delaySeconds}s... (attempt ${attempt}/${maxAttempts})`);
+                }
+            );
+
+            // An explicit click means finding the address IS the point -- always overwrite,
+            // unlike the forward geocode's "only fill in blanks" backfill behavior.
+            this.properties.address = result.address;
+            if (result.city) this.properties.city = result.city;
+            if (result.state) this.properties.state = result.state;
+            if (result.country) this.properties.country = result.country;
+            if (result.postalCode) this.properties.postal_code = result.postalCode;
+
+            const setInputValue = (id: string, value: string | undefined) => {
+                if (value === undefined) return;
+                const el = document.getElementById(id) as HTMLInputElement | null;
+                if (el) el.value = value;
+            };
+            setInputValue('entity-address', result.address);
+            setInputValue('entity-city', result.city);
+            setInputValue('entity-state', result.state);
+            setInputValue('entity-country', result.country);
+            setInputValue('entity-postal_code', result.postalCode);
+
+            this.setReverseGeocodeStatus('success', `✓ Found: ${result.address}`);
+
+        } catch (error) {
+            console.error('[EntityModal] Reverse geocoding error:', error);
+
+            if (error instanceof GeocodingError) {
+                switch (error.type) {
+                    case GeocodingErrorType.NotFound:
+                        this.setReverseGeocodeStatus('error', '✗ No address found for these coordinates.');
+                        break;
+                    case GeocodingErrorType.RateLimited:
+                        this.setReverseGeocodeStatus('error', '✗ Too many requests. Please wait a moment and try again.');
+                        break;
+                    case GeocodingErrorType.NetworkError:
+                        this.setReverseGeocodeStatus('error', '✗ Network error. Please check your internet connection.');
+                        break;
+                    case GeocodingErrorType.InvalidInput:
+                        this.setReverseGeocodeStatus('error', '✗ ' + error.message);
+                        break;
+                    default:
+                        this.setReverseGeocodeStatus('error', '✗ Reverse geocoding failed.');
+                }
+            } else {
+                this.setReverseGeocodeStatus('error', '✗ Reverse geocoding failed.');
+            }
+        } finally {
+            if (this.reverseGeocodeBtn) {
+                this.reverseGeocodeBtn.disabled = false;
+                this.reverseGeocodeBtn.textContent = 'Find address';
+            }
+        }
+    }
+
+    /**
+     * Set the reverse-geocode status message with appropriate styling
+     */
+    private setReverseGeocodeStatus(type: 'success' | 'error' | 'loading', message: string): void {
+        if (!this.reverseGeocodeStatusEl) return;
+
+        this.reverseGeocodeStatusEl.textContent = message;
+        this.reverseGeocodeStatusEl.removeClass('graph_copilot-geocode-status-success');
+        this.reverseGeocodeStatusEl.removeClass('graph_copilot-geocode-status-error');
+        this.reverseGeocodeStatusEl.removeClass('graph_copilot-geocode-status-loading');
+
+        this.reverseGeocodeStatusEl.addClass(`graph_copilot-geocode-status-${type}`);
+    }
+
+    private createPropertyField(container: HTMLElement, propertyName: string, isRequired: boolean): void {
+        const fieldContainer = container.createDiv({ cls: 'graph_copilot-entity-field' });
+
+        const label = fieldContainer.createEl('label', {
+            text: this.formatPropertyName(propertyName) + (isRequired ? ' *' : '')
+        });
+        label.setAttribute('for', `entity-${propertyName}`);
+
+        let input: HTMLInputElement | HTMLTextAreaElement;
+
+        // Use textarea for notes and description fields
+        if (propertyName === 'notes' || propertyName === 'description' || propertyName === 'text') {
+            input = fieldContainer.createEl('textarea', {
+                placeholder: `Enter ${this.formatPropertyName(propertyName).toLowerCase()}...`
+            }) as HTMLTextAreaElement;
+            input.rows = 3;
+        } else if (propertyName === 'start_date' || propertyName === 'end_date') {
+            // Date-time input, plus a "Now" button so the user isn't forced to type it by hand.
+            const dateRow = fieldContainer.createDiv({ cls: 'graph_copilot-datetime-row' });
+            input = dateRow.createEl('input', { type: 'datetime-local' }) as HTMLInputElement;
+
+            const nowBtn = dateRow.createEl('button', { text: 'Now', cls: 'graph_copilot-now-btn' });
+            nowBtn.type = 'button';
+            nowBtn.title = 'Fill in the current date and time';
+            nowBtn.onclick = () => {
+                const now = new Date();
+                const pad = (n: number) => String(n).padStart(2, '0');
+                const localValue =
+                    `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+                (input as HTMLInputElement).value = localValue;
+                this.properties[propertyName] = localValue.replace('T', ' ');
+            };
+        } else if (propertyName === 'latitude' || propertyName === 'longitude') {
+            // Number input for coordinates
+            input = fieldContainer.createEl('input', {
+                type: 'number',
+                placeholder: propertyName === 'latitude' ? '-90 to 90' : '-180 to 180'
+            }) as HTMLInputElement;
+            (input as HTMLInputElement).step = 'any';
+        } else if (propertyName === 'add_to_timeline' || propertyName === 'tampered') {
+            // Boolean toggle button with visual feedback
+            const toggleContainer = fieldContainer.createDiv({ cls: 'graph_copilot-toggle-container' });
+            toggleContainer.setCssProps({
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                marginTop: '4px'
+            });
+
+            // Hidden checkbox for form state
+            input = toggleContainer.createEl('input', {
+                type: 'checkbox'
+            }) as HTMLInputElement;
+            input.id = `entity-${propertyName}`;
+            input.style.display = 'none';
+
+            // Create a styled toggle button
+            const toggleBtn = toggleContainer.createEl('button', {
+                cls: 'graph_copilot-toggle-btn'
+            });
+            toggleBtn.type = 'button';
+            toggleBtn.setCssProps({
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 20px',
+                fontSize: '14px',
+                fontWeight: '500',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                border: '2px solid var(--background-modifier-border)',
+                background: 'var(--background-secondary)',
+                color: 'var(--text-muted)'
+            });
+
+            // Icon and text
+            const icon = toggleBtn.createSpan({ cls: 'toggle-icon' });
+            icon.textContent = '📅';
+            icon.setCssProps({ fontSize: '16px' });
+
+            const btnText = toggleBtn.createSpan({ cls: 'toggle-text' });
+            btnText.textContent = 'Add to timeline';
+
+            // Update button appearance based on state
+            const updateButtonState = (checked: boolean) => {
+                if (checked) {
+                    toggleBtn.setCssProps({
+                        background: 'var(--interactive-accent)',
+                        borderColor: 'var(--interactive-accent)',
+                        color: 'white'
+                    });
+                    btnText.textContent = 'On timeline ✓';
+                } else {
+                    toggleBtn.setCssProps({
+                        background: 'var(--background-secondary)',
+                        borderColor: 'var(--background-modifier-border)',
+                        color: 'var(--text-muted)'
+                    });
+                    btnText.textContent = 'Add to timeline';
+                }
+            };
+
+            // Initialize state
+            const initialValue = this.properties[propertyName] !== undefined
+                ? Boolean(this.properties[propertyName])
+                : (!this.entityId && propertyName === 'add_to_timeline');
+
+            input.checked = initialValue;
+            this.properties[propertyName] = initialValue;
+            updateButtonState(initialValue);
+
+            // Toggle on click
+            toggleBtn.addEventListener('click', () => {
+                const newChecked = !(input as HTMLInputElement).checked;
+                (input as HTMLInputElement).checked = newChecked;
+                this.properties[propertyName] = newChecked;
+                updateButtonState(newChecked);
+            });
+
+            // Hover effect
+            toggleBtn.addEventListener('mouseenter', () => {
+                if (!(input as HTMLInputElement).checked) {
+                    toggleBtn.setCssProps({
+                        borderColor: 'var(--interactive-accent)',
+                        color: 'var(--text-normal)'
+                    });
+                }
+            });
+            toggleBtn.addEventListener('mouseleave', () => {
+                updateButtonState((input as HTMLInputElement).checked);
+            });
+
+            return; // Early return since we've handled everything
+        } else {
+            // Default text input
+            input = fieldContainer.createEl('input', {
+                type: 'text',
+                placeholder: `Enter ${this.formatPropertyName(propertyName).toLowerCase()}...`
+            }) as HTMLInputElement;
+        }
+
+        // Set initial value if present in properties
+        if (this.properties[propertyName] !== undefined) {
+            input.value = String(this.properties[propertyName]);
+        }
+
+        input.id = `entity-${propertyName}`;
+        input.addClass('graph_copilot-entity-input');
+
+        // Store value on change
+        input.addEventListener('input', () => {
+            if (input.type === 'datetime-local') {
+                // Convert to YYYY-MM-DD HH:mm format
+                const value = (input as HTMLInputElement).value;
+                if (value) {
+                    this.properties[propertyName] = value.replace('T', ' ');
+                }
+            } else if (input.type === 'number') {
+                const value = parseFloat((input as HTMLInputElement).value);
+                if (!isNaN(value)) {
+                    this.properties[propertyName] = value;
+                }
+            } else {
+                this.properties[propertyName] = input.value;
+            }
+        });
+
+        // Also handle change event for datetime-local
+        input.addEventListener('change', () => {
+            if (input.type === 'datetime-local') {
+                const value = (input as HTMLInputElement).value;
+                if (value) {
+                    this.properties[propertyName] = value.replace('T', ' ');
+                }
+            }
+        });
+    }
+
+    private formatPropertyName(name: string): string {
+        return name
+            .split('_')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+    }
+
+    private async handleCreate(): Promise<void> {
+        const config = ENTITY_CONFIGS[this.entityType];
+        const labelField = config.labelField;
+
+        // Only validate that entity name is not generic (if provided)
+        if (this.properties[labelField] && (this.properties[labelField] as string).trim() !== '') {
+            const nameValidation = validateEntityName(this.properties[labelField] as string, this.entityType);
+            if (!nameValidation.isValid) {
+                new Notice(nameValidation.error || 'Invalid entity name');
+                return;
+            }
+        }
+
+        try {
+            let entity;
+            if (this.entityId) {
+                // Update existing entity
+                entity = await this.entityManager.updateEntity(this.entityId, this.properties);
+                new Notice(`Updated ${this.entityType}: ${entity?.label}`);
+            } else {
+                // Create new entity
+                // Skip auto-geocoding for manual creation - user should click the Geocode button explicitly
+                entity = await this.entityManager.createEntity(
+                    this.entityType,
+                    this.properties,
+                    { skipAutoGeocode: true }
+                );
+                new Notice(`Created ${this.entityType}: ${entity.label}`);
+                this.warnIfMissingDisplayRequirements(entity);
+            }
+
+            if (this.onEntityCreated && entity) {
+                this.onEntityCreated(entity.id);
+            }
+
+            this.close();
+        } catch (error) {
+            new Notice(`Failed to create entity: ${error}`);
+            console.error('Entity creation error:', error);
+        }
+    }
+
+    /**
+     * Warn the user (without blocking creation) when a newly created entity is
+     * missing the fields TimelineView/MapView require to display it, since
+     * createEntity() succeeds silently even without them.
+     */
+    private warnIfMissingDisplayRequirements(entity: Entity): void {
+        if (this.entityType === EntityType.Event && !this.properties.start_date) {
+            new Notice(
+                `${entity.label} has no date yet — it will appear under "Undated" at the top of the Timeline until you add a start date.`,
+                8000
+            );
+        } else if (
+            this.entityType === EntityType.Location &&
+            (!this.properties.latitude || !this.properties.longitude)
+        ) {
+            new Notice(
+                `${entity.label} will not appear on the Map yet. Click "Put on map" to geocode its address, or enter coordinates directly.`,
+                8000
+            );
+        }
+    }
+
+    /**
+     * Automatically geocode if address info exists but coordinates are missing
+     */
+    private async autoGeocodeIfNeeded(): Promise<void> {
+        const hasCoordinates = this.properties.latitude && this.properties.longitude;
+        const hasAddressInfo = this.properties.address || this.properties.city || this.properties.country;
+
+        if (hasCoordinates || !hasAddressInfo) {
+            return; // Already has coordinates or no address to geocode
+        }
+
+        console.debug('[EntityCreationModal] Auto-geocoding location...');
+        this.setGeocodeStatus('loading', 'Auto-geocoding address...');
+
+        try {
+            const result = await this.geocodingService.geocodeAddressWithRetry(
+                this.properties.address as string,
+                this.properties.city as string,
+                this.properties.state as string,
+                this.properties.country as string,
+                (attempt, maxAttempts, delaySeconds) => {
+                    this.setGeocodeStatus('loading', `Network error, retrying in ${delaySeconds}s... (attempt ${attempt}/${maxAttempts})`);
+                }
+            );
+
+            // Update properties with geocoded coordinates
+            this.properties.latitude = result.latitude;
+            this.properties.longitude = result.longitude;
+
+            // Update input fields visually
+            const latInput = document.getElementById('entity-latitude') as HTMLInputElement;
+            const lngInput = document.getElementById('entity-longitude') as HTMLInputElement;
+            if (latInput) latInput.value = result.latitude.toString();
+            if (lngInput) lngInput.value = result.longitude.toString();
+
+            // Auto-fill missing address components
+            if (!this.properties.city && result.city) {
+                this.properties.city = result.city;
+                const cityInput = document.getElementById('entity-city') as HTMLInputElement;
+                if (cityInput) cityInput.value = result.city;
+            }
+            if (!this.properties.state && result.state) {
+                this.properties.state = result.state;
+                const stateInput = document.getElementById('entity-state') as HTMLInputElement;
+                if (stateInput) stateInput.value = result.state;
+            }
+            if (!this.properties.country && result.country) {
+                this.properties.country = result.country;
+                const countryInput = document.getElementById('entity-country') as HTMLInputElement;
+                if (countryInput) countryInput.value = result.country;
+            }
+
+            const coordsStr = GeocodingService.formatCoordinates(result.latitude, result.longitude);
+            this.setGeocodeStatus('success', `✓ Auto-geocoded: ${coordsStr}`);
+            console.debug('[EntityCreationModal] Auto-geocoded successfully:', coordsStr);
+
+        } catch (error) {
+            console.warn('[EntityCreationModal] Auto-geocoding failed:', error);
+            // Don't block entity creation - just log the warning
+            this.setGeocodeStatus('error', '⚠ Auto-geocoding failed - entity will be created without coordinates');
+        }
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+/**
+ * FTM Entity Creation Modal - creates entities using FTM schema format.
+ * Shows required properties by default with collapsible optional properties.
+ */
+export class FTMEntityCreationModal extends Modal {
+    private entityManager: EntityManager;
+    private schemaName: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private properties: Record<string, any> = {};
+    private onEntityCreated: ((entityId: string) => void) | null;
+    private optionalSectionExpanded: boolean = false;
+    private catalogType?: CatalogEntityType;
+    private geocodingService: GeocodingService;
+    private geocodeStatusEl: HTMLElement | null = null;
+
+    constructor(
+        app: App,
+        entityManager: EntityManager,
+        schemaName: string,
+        onEntityCreated?: (entityId: string) => void,
+        catalogType?: CatalogEntityType
+    ) {
+        super(app);
+        this.entityManager = entityManager;
+        this.schemaName = schemaName;
+        this.onEntityCreated = onEntityCreated || null;
+        this.catalogType = catalogType;
+        this.geocodingService = new GeocodingService();
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass('graph_copilot-entity-modal');
+        contentEl.addClass('graph_copilot-ftm-modal');
+
+        if (this.catalogType && this.catalogType.family !== 'ftm') {
+            this.openCatalogEntityForm();
+            return;
+        }
+
+        const config = getFTMEntityConfig(this.schemaName);
+        if (!config) {
+            contentEl.createEl('p', { text: `Unknown schema: ${this.schemaName}` });
+            return;
+        }
+
+        // Title
+        contentEl.createEl('h2', { text: `Create ${config.label}` });
+        contentEl.createEl('p', {
+            text: config.description,
+            cls: 'graph_copilot-entity-modal-description'
+        });
+
+        // Create form container
+        const formContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-form' });
+
+        // Required properties section
+        if (config.requiredProperties.length > 0) {
+            formContainer.createEl('h4', { text: 'Required properties', cls: 'graph_copilot-section-header' });
+            for (const prop of config.requiredProperties) {
+                const propDef = config.propertyDefinitions[prop];
+                if (propDef) {
+                    this.createFTMPropertyField(formContainer, prop, propDef, true);
+                }
+            }
+        }
+
+        // Featured properties section (non-required featured properties)
+        const featuredNonRequired = config.featuredProperties.filter(
+            p => !config.requiredProperties.includes(p)
+        );
+        if (featuredNonRequired.length > 0) {
+            formContainer.createEl('h4', { text: 'Key properties', cls: 'graph_copilot-section-header' });
+            for (const prop of featuredNonRequired) {
+                const propDef = config.propertyDefinitions[prop];
+                if (propDef) {
+                    this.createFTMPropertyField(formContainer, prop, propDef, false);
+                }
+            }
+        }
+
+        // Optional properties section (collapsible)
+        if (config.optionalProperties.length > 0) {
+            const optionalSection = contentEl.createDiv({ cls: 'graph_copilot-optional-section' });
+
+            const optionalHeader = optionalSection.createDiv({ cls: 'graph_copilot-optional-header' });
+            const toggleIcon = optionalHeader.createSpan({ cls: 'graph_copilot-toggle-icon', text: '▶' });
+            optionalHeader.createSpan({ text: ` Additional Properties (${config.optionalProperties.length})` });
+
+            const optionalContent = optionalSection.createDiv({ cls: 'graph_copilot-optional-content' });
+            optionalContent.style.display = 'none';
+
+            optionalHeader.onclick = () => {
+                this.optionalSectionExpanded = !this.optionalSectionExpanded;
+                toggleIcon.textContent = this.optionalSectionExpanded ? '▼' : '▶';
+                optionalContent.style.display = this.optionalSectionExpanded ? 'block' : 'none';
+            };
+
+            for (const prop of config.optionalProperties) {
+                const propDef = config.propertyDefinitions[prop];
+                if (propDef && !propDef.hidden) {
+                    this.createFTMPropertyField(optionalContent, prop, propDef, false);
+                }
+            }
+        }
+
+        // Geocoding section for Location and Address entities without coordinates
+        if ((this.schemaName === 'Location' || this.schemaName === 'Address') &&
+            (!this.properties.latitude || !this.properties.longitude)) {
+            this.createGeocodingSection(contentEl);
+        }
+
+        // Buttons
+        const buttonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-modal-buttons' });
+
+        const createBtn = buttonContainer.createEl('button', {
+            text: 'Create entity',
+            cls: 'mod-cta'
+        });
+        createBtn.onclick = () => this.handleCreate();
+
+        const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+        cancelBtn.onclick = () => this.close();
+    }
+
+    private openCatalogEntityForm(): void {
+        const cat = this.catalogType;
+        if (!cat) return;
+
+        const { contentEl } = this;
+        contentEl.createEl('h2', { text: `Create ${cat.label}` });
+        contentEl.createEl('p', {
+            text: cat.description,
+            cls: 'graph_copilot-entity-modal-description',
+        });
+
+        const formContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-form' });
+        const required = cat.required ?? [];
+        if (required.length > 0) {
+            formContainer.createEl('h4', { text: 'Required properties', cls: 'graph_copilot-section-header' });
+            for (const prop of required) {
+                this.createCatalogPropertyField(formContainer, prop, cat, true);
+            }
+        }
+
+        const featuredExtra = cat.featured.filter((p) => !required.includes(p));
+        if (featuredExtra.length > 0) {
+            formContainer.createEl('h4', { text: 'Key properties', cls: 'graph_copilot-section-header' });
+            for (const prop of featuredExtra) {
+                this.createCatalogPropertyField(formContainer, prop, cat, false);
+            }
+        }
+
+        const optionalKeys = Object.keys(cat.properties).filter(
+            (k) => !required.includes(k) && !cat.featured.includes(k),
+        );
+        if (optionalKeys.length > 0) {
+            const optionalSection = contentEl.createDiv({ cls: 'graph_copilot-optional-section' });
+            const optionalHeader = optionalSection.createDiv({ cls: 'graph_copilot-optional-header' });
+            const toggleIcon = optionalHeader.createSpan({ cls: 'graph_copilot-toggle-icon', text: '▶' });
+            optionalHeader.createSpan({ text: ` Additional properties (${optionalKeys.length})` });
+            const optionalContent = optionalSection.createDiv({ cls: 'graph_copilot-optional-content' });
+            optionalContent.style.display = 'none';
+            optionalHeader.onclick = () => {
+                this.optionalSectionExpanded = !this.optionalSectionExpanded;
+                toggleIcon.textContent = this.optionalSectionExpanded ? '▼' : '▶';
+                optionalContent.style.display = this.optionalSectionExpanded ? 'block' : 'none';
+            };
+            for (const prop of optionalKeys) {
+                this.createCatalogPropertyField(optionalContent, prop, cat, false);
+            }
+        }
+
+        const buttonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-modal-buttons' });
+        const createBtn = buttonContainer.createEl('button', { text: 'Create entity', cls: 'mod-cta' });
+        createBtn.onclick = () => void this.handleCreate();
+        const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+        cancelBtn.onclick = () => this.close();
+    }
+
+    private createCatalogPropertyField(
+        container: HTMLElement,
+        propertyName: string,
+        cat: CatalogEntityType,
+        isRequired: boolean,
+    ): void {
+        const def = cat.properties[propertyName];
+        const fieldContainer = container.createDiv({ cls: 'graph_copilot-entity-field' });
+        const label = fieldContainer.createEl('label', {
+            text: (def?.label || propertyName) + (isRequired ? ' *' : ''),
+        });
+        label.setAttribute('for', `cat-entity-${propertyName}`);
+
+        const ptype = (def?.type || 'string').toLowerCase();
+        let input: HTMLInputElement | HTMLTextAreaElement;
+
+        if (ptype === 'text' || propertyName === 'description' || propertyName === 'notes') {
+            input = fieldContainer.createEl('textarea', {
+                placeholder: `Enter ${(def?.label || propertyName).toLowerCase()}...`,
+            }) as HTMLTextAreaElement;
+            input.rows = 3;
+        } else if (ptype === 'date') {
+            input = fieldContainer.createEl('input', { type: 'date' }) as HTMLInputElement;
+        } else if (ptype === 'number') {
+            input = fieldContainer.createEl('input', { type: 'number', placeholder: '…' }) as HTMLInputElement;
+            (input as HTMLInputElement).step = 'any';
+        } else if (ptype === 'url') {
+            input = fieldContainer.createEl('input', { type: 'url', placeholder: 'https://…' }) as HTMLInputElement;
+        } else if (ptype === 'email') {
+            input = fieldContainer.createEl('input', { type: 'email' }) as HTMLInputElement;
+        } else {
+            input = fieldContainer.createEl('input', {
+                type: 'text',
+                placeholder: `Enter ${(def?.label || propertyName).toLowerCase()}...`,
+            }) as HTMLInputElement;
+        }
+
+        input.id = `cat-entity-${propertyName}`;
+        input.addClass('graph_copilot-entity-input');
+        input.addEventListener('input', () => {
+            if (input.type === 'number') {
+                const value = parseFloat((input as HTMLInputElement).value);
+                if (!isNaN(value)) {
+                    this.properties[propertyName] = value;
+                }
+            } else {
+                this.properties[propertyName] = input.value;
+            }
+        });
+    }
+
+    private createFTMPropertyField(
+        container: HTMLElement,
+        propertyName: string,
+        propDef: FTMPropertyDefinition,
+        isRequired: boolean
+    ): void {
+        const fieldContainer = container.createDiv({ cls: 'graph_copilot-entity-field' });
+
+        const label = fieldContainer.createEl('label', {
+            text: propDef.label + (isRequired ? ' *' : '')
+        });
+        label.setAttribute('for', `entity-${propertyName}`);
+
+        let input: HTMLInputElement | HTMLTextAreaElement;
+
+        // Determine input type based on FTM property type
+        const propType = propDef.type || 'string';
+
+        if (propType === 'text' || propertyName === 'description' || propertyName === 'notes' || propertyName === 'summary') {
+            input = fieldContainer.createEl('textarea', {
+                placeholder: `Enter ${propDef.label.toLowerCase()}...`
+            }) as HTMLTextAreaElement;
+            input.rows = 3;
+        } else if (propType === 'date') {
+            input = fieldContainer.createEl('input', {
+                type: 'date'
+            }) as HTMLInputElement;
+        } else if (propType === 'number') {
+            input = fieldContainer.createEl('input', {
+                type: 'number',
+                placeholder: `Enter ${propDef.label.toLowerCase()}...`
+            }) as HTMLInputElement;
+            (input as HTMLInputElement).step = 'any';
+        } else if (propType === 'url') {
+            input = fieldContainer.createEl('input', {
+                type: 'url',
+                placeholder: 'https://...'
+            }) as HTMLInputElement;
+        } else if (propType === 'email') {
+            input = fieldContainer.createEl('input', {
+                type: 'email',
+                placeholder: 'email@example.com'
+            }) as HTMLInputElement;
+        } else if (propType === 'phone') {
+            input = fieldContainer.createEl('input', {
+                type: 'tel',
+                placeholder: '+1 234 567 8900'
+            }) as HTMLInputElement;
+        } else if (propType === 'country') {
+            input = fieldContainer.createEl('input', {
+                type: 'text',
+                placeholder: 'Country code (e.g., US, GB, DE)'
+            }) as HTMLInputElement;
+        } else if (propertyName === 'filePath' && (this.schemaName === 'Image' || this.schemaName === 'Video' || this.schemaName === 'Audio' || this.schemaName === 'Photo' || this.schemaName === 'Evidence')) {
+            // Special handling for file upload
+            this.createFileUploadField(fieldContainer, propertyName, this.schemaName);
+            return;
+        } else {
+            // Default text input
+            input = fieldContainer.createEl('input', {
+                type: 'text',
+                placeholder: `Enter ${propDef.label.toLowerCase()}...`
+            }) as HTMLInputElement;
+        }
+
+        input.id = `entity-${propertyName}`;
+        input.addClass('graph_copilot-entity-input');
+
+        // Store value on change
+        input.addEventListener('input', () => {
+            if (input.type === 'number') {
+                const value = parseFloat((input as HTMLInputElement).value);
+                if (!isNaN(value)) {
+                    this.properties[propertyName] = value;
+                }
+            } else {
+                this.properties[propertyName] = input.value;
+            }
+        });
+    }
+
+    private async handleCreate(): Promise<void> {
+        if (this.catalogType && this.catalogType.family !== 'ftm') {
+            const cat = this.catalogType;
+            const lf = cat.labelField;
+            if (this.properties[lf] && String(this.properties[lf]).trim() !== '') {
+                const nameValidation = validateEntityName(String(this.properties[lf]), cat.name);
+                if (!nameValidation.isValid) {
+                    new Notice(nameValidation.error || 'Invalid entity name');
+                    return;
+                }
+            }
+            try {
+                const entity = await this.entityManager.createCatalogEntity(cat, this.properties);
+                new Notice(`Created ${cat.label}: ${entity.label}`);
+                if (this.onEntityCreated) {
+                    this.onEntityCreated(entity.id);
+                }
+                this.close();
+            } catch (error) {
+                new Notice(`Failed to create entity: ${error}`);
+                console.error('Catalog entity creation error:', error);
+            }
+            return;
+        }
+
+        const config = getFTMEntityConfig(this.schemaName);
+        if (!config) return;
+
+        // Only validate that entity name is not generic (if provided)
+        const labelField = config.labelField;
+        if (this.properties[labelField] && String(this.properties[labelField]).trim() !== '') {
+            const nameValidation = validateEntityName(this.properties[labelField], this.schemaName);
+            if (!nameValidation.isValid) {
+                new Notice(nameValidation.error || 'Invalid entity name');
+                return;
+            }
+        }
+
+        try {
+            // Create entity using FTM schema
+            // Skip auto-geocoding for manual creation - user should click the Geocode button explicitly
+            const entity = await this.entityManager.createFTMEntity(
+                this.schemaName,
+                this.properties,
+                { skipAutoGeocode: true }
+            );
+            new Notice(`Created ${config.label}: ${entity.label}`);
+
+            if (this.onEntityCreated) {
+                this.onEntityCreated(entity.id);
+            }
+
+            this.close();
+        } catch (error) {
+            new Notice(`Failed to create entity: ${error}`);
+            console.error('FTM Entity creation error:', error);
+        }
+    }
+
+    private createGeocodingSection(contentEl: HTMLElement): void {
+        const geocodingSection = contentEl.createDiv({ cls: 'graph_copilot-geocoding-section' });
+        geocodingSection.style.cssText = `
+            margin-top: 20px;
+            padding: 15px;
+            background: var(--background-secondary);
+            border-radius: 6px;
+            border-left: 3px solid var(--interactive-accent);
+        `;
+
+        const header = geocodingSection.createEl('h4', { text: '📍 geocoding' });
+        header.style.cssText = 'margin-top: 0; margin-bottom: 10px;';
+
+        const description = geocodingSection.createEl('p', {
+            text: 'This entity is missing coordinates. Click the button below to automatically geocode the address.',
+            cls: 'text-muted'
+        });
+        description.style.cssText = 'font-size: 12px; margin-bottom: 12px;';
+
+        // Status message area
+        this.geocodeStatusEl = geocodingSection.createDiv({ cls: 'graph_copilot-geocode-status' });
+        this.geocodeStatusEl.style.cssText = 'margin-bottom: 10px; font-size: 12px;';
+
+        // Geocode button
+        const geocodeBtn = geocodingSection.createEl('button', { text: '📍 geolocate address' });
+        geocodeBtn.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            border: 1px solid var(--interactive-accent);
+            background: var(--interactive-accent);
+            color: white;
+            font-weight: 500;
+        `;
+        geocodeBtn.onclick = async () => {
+            await this.handleGeocode(geocodeBtn);
+        };
+    }
+
+    /**
+     * Handle geocoding for the entity being created.
+     */
+    private async handleGeocode(button: HTMLButtonElement): Promise<void> {
+        // Extract address components based on entity type
+        let address: string | undefined;
+        let city: string | undefined;
+        let state: string | undefined;
+        let country: string | undefined;
+
+        if (this.schemaName === 'Location') {
+            address = this.properties.address as string;
+            city = this.properties.city as string;
+            country = this.properties.country as string;
+        } else if (this.schemaName === 'Address') {
+            address = this.properties.street as string || this.properties.full as string;
+            city = this.properties.city as string;
+            state = this.properties.state as string;
+            country = this.properties.country as string;
+        }
+
+        // Validate we have at least some address information
+        if (!address && !city && !country) {
+            this.updateGeocodeStatus('⚠️ No address information found. Please fill in address fields first.', 'error');
+            return;
+        }
+
+        try {
+            // Disable button during geocoding
+            button.disabled = true;
+            button.textContent = 'Geocoding...';
+            this.updateGeocodeStatus('🔄 Geocoding address...', 'info');
+
+            const result = await this.geocodingService.geocodeAddressWithRetry(
+                address,
+                city,
+                state,
+                country,
+                (attempt, maxAttempts, delaySeconds) => {
+                    this.updateGeocodeStatus(
+                        `⚠️ Network error, retrying in ${delaySeconds}s... (attempt ${attempt}/${maxAttempts})`,
+                        'warning'
+                    );
+                }
+            );
+
+            // Update properties with coordinates
+            this.properties.latitude = result.latitude;
+            this.properties.longitude = result.longitude;
+
+            // Also update address components if they were found and not already set
+            if (result.city && !city) {
+                this.properties.city = result.city;
+            }
+            if (result.state && !state && this.schemaName === 'Address') {
+                this.properties.state = result.state;
+            }
+            if (result.country && !country) {
+                this.properties.country = result.country;
+            }
+            if (result.postalCode && this.schemaName === 'Address' && !this.properties.postalCode) {
+                this.properties.postalCode = result.postalCode;
+            }
+
+            // Update status
+            this.updateGeocodeStatus(
+                `✓ Geocoded: ${result.displayName} \nLat: ${result.latitude.toFixed(6)}, Lng: ${result.longitude.toFixed(6)} \nConfidence: ${result.confidence} `,
+                'success'
+            );
+
+            // Re-enable button
+            button.disabled = false;
+            button.textContent = '✓ geocoded successfully';
+            button.style.background = 'var(--text-success)';
+
+            new Notice('Geocoding successful! Don\'t forget to create the entity.');
+
+        } catch (error) {
+            // Re-enable button
+            button.disabled = false;
+            button.textContent = '📍 geolocate address';
+
+            if (error instanceof GeocodingError) {
+                this.updateGeocodeStatus(`✗ ${error.message} `, 'error');
+                new Notice(`Geocoding failed: ${error.message} `);
+            } else {
+                console.error('[FTMEntityCreationModal] Geocoding error:', error);
+                this.updateGeocodeStatus('✗ Failed to geocode address. Please try again.', 'error');
+                new Notice('Failed to geocode address. Please try again.');
+            }
+        }
+    }
+
+    /**
+     * Update geocode status message.
+     */
+    private updateGeocodeStatus(message: string, type: 'info' | 'success' | 'warning' | 'error'): void {
+        if (!this.geocodeStatusEl) return;
+
+        this.geocodeStatusEl.textContent = message;
+
+        let color = 'var(--text-muted)';
+        if (type === 'success') color = 'var(--text-success)';
+        else if (type === 'warning') color = 'var(--text-warning)';
+        else if (type === 'error') color = 'var(--text-error)';
+
+        this.geocodeStatusEl.style.color = color;
+        this.geocodeStatusEl.style.whiteSpace = 'pre-line';
+    }
+
+    private createFileUploadField(container: HTMLElement, propertyName: string, entityType: string): void {
+        const wrapper = container.createDiv({ cls: 'graph_copilot-file-upload-wrapper' });
+        wrapper.style.cssText = `
+            border: 2px dashed var(--background-modifier-border);
+            border-radius: 6px;
+            padding: 12px;
+            text-align: center;
+            background: var(--background-secondary);
+            transition: all 0.2s ease;
+        `;
+
+        const uploadBtn = wrapper.createEl('button', {
+            text: `📁 Upload ${entityType} File`,
+            cls: 'graph_copilot-upload-btn'
+        });
+        uploadBtn.style.marginBottom = '8px';
+        uploadBtn.onclick = (e) => {
+            e.preventDefault();
+            fileInput.click();
+        };
+
+        const hintText = wrapper.createEl('span', {
+            text: 'or drag and drop here', // eslint-disable-line obsidianmd/ui/sentence-case
+            cls: 'graph_copilot-upload-hint'
+        });
+        hintText.style.cssText = 'display: block; font-size: 12px; color: var(--text-muted);';
+
+        const fileInput = wrapper.createEl('input', {
+            type: 'file',
+            cls: 'graph_copilot-file-input'
+        });
+        fileInput.style.display = 'none';
+
+        // Set accept attribute based on entity type
+        if (entityType === 'Image' || entityType === 'Photo') {
+            fileInput.accept = 'image/*';
+        } else if (entityType === 'Video') {
+            fileInput.accept = 'video/*';
+        } else if (entityType === 'Audio') {
+            fileInput.accept = 'audio/*';
+        }
+
+        const handleFile = async (file: File) => {
+            try {
+                hintText.textContent = `Uploading ${file.name}...`;
+
+                // Determine save path
+                // TODO: Make this configurable in settings
+                let basePath = '/Assets/OSINT-Media/';
+                if (entityType === 'Image' || entityType === 'Photo') basePath = '/Assets/OSINT-Photos/';
+                else if (entityType === 'Video') basePath = '/Assets/OSINT-Videos/';
+                else if (entityType === 'Audio') basePath = '/Assets/OSINT-Audio/';
+
+                // Ensure directory exists (this might fail if folder implementation differs, but we'll try to just write the file)
+                // In Obsidian API, we usually just write the file and folders are created if needed or we need to create them explicitly
+                // For now assuming the user will handle folder structure or we can rely on adapter
+
+                // Read file
+                const arrayBuffer = await file.arrayBuffer();
+                const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+                const filePath = `${basePath}${Date.now()}_${safeName}`;
+
+                // Ensure directories exist
+                const folders = basePath.split('/').filter(p => p);
+                let currentPath = '';
+                for (const folder of folders) {
+                    currentPath += (currentPath ? '/' : '') + folder;
+                    if (!(await this.app.vault.adapter.exists(currentPath))) {
+                        await this.app.vault.createFolder(currentPath);
+                    }
+                }
+
+                // Save file
+                // Using normalizePath to ensure correct path format
+                // We need to cast to any because createBinary is technically on Vault but might be typed differently in some versions
+                await this.app.vault.createBinary(filePath.replace(/^\//, ''), arrayBuffer);
+
+                // Success
+                this.properties[propertyName] = filePath.replace(/^\//, '');
+                hintText.textContent = `✅ Uploaded: ${file.name}`;
+                uploadBtn.textContent = 'Change file';
+                wrapper.style.borderColor = 'var(--interactive-accent)';
+
+                // Update generated fields if empty
+                if (!this.properties.title && (document.getElementById('entity-title') as HTMLInputElement)) {
+                    const titleInput = document.getElementById('entity-title') as HTMLInputElement;
+                    titleInput.value = file.name;
+                    this.properties.title = file.name;
+                }
+
+                if (entityType === 'Image' || entityType === 'Photo' || entityType === 'Video' || entityType === 'Audio') {
+                    if (!this.properties.fileName) this.properties.fileName = file.name;
+                    // Try to generate date from modification time
+                    // if (!this.properties.date && file.lastModified) {
+                    //    this.properties.date = new Date(file.lastModified).toISOString().split('T')[0];
+                    // }
+                }
+
+                new Notice(`File uploaded: ${filePath}`);
+
+            } catch (err) {
+                console.error('File upload error:', err);
+                hintText.textContent = '❌ Upload failed'; // eslint-disable-line obsidianmd/ui/sentence-case
+                new Notice(`Upload failed: ${err}`);
+            }
+        };
+
+        fileInput.addEventListener('change', (e) => {
+            const files = (e.target as HTMLInputElement).files;
+            if (files && files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        // Drag and drop support
+        wrapper.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            wrapper.style.borderColor = 'var(--interactive-accent)';
+            wrapper.style.background = 'var(--background-primary-alt)';
+        });
+
+        wrapper.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            if (!this.properties[propertyName]) {
+                wrapper.style.borderColor = 'var(--background-modifier-border)';
+                wrapper.style.background = 'var(--background-secondary)';
+            }
+        });
+
+        wrapper.addEventListener('drop', (e) => {
+            e.preventDefault();
+            wrapper.style.borderColor = 'var(--background-modifier-border)';
+            wrapper.style.background = 'var(--background-secondary)';
+
+            if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+/**
+ * FTM Entity Type Selector Modal - allows users to choose which FTM entity type to create.
+ */
+export class FTMEntityTypeSelectorModal extends Modal {
+    private entityManager: EntityManager;
+    private onEntityCreated: ((entityId: string) => void) | null;
+    private searchInput: HTMLInputElement | null = null;
+    private gridContainer: HTMLDivElement | null = null;
+    /** Legacy FTM-only list when schema catalog is unavailable. */
+    private entityTypes: Array<{ name: string; label: string; description: string; color: string }> = [];
+    /** Unified catalog types (includes FTM) when plugin catalog is available. */
+    private catalogEntityTypes: CatalogEntityType[] = [];
+    private useCatalogUi = false;
+
+    // Priority list for sorting entity types
+    private readonly PRIORITY_ORDER = [
+        'Person', 'Company', 'Event', 'Group', 'BankAccount', 'Credentials',
+        'OnlineAccount', 'Location', 'Address', 'Evidence', 'Document',
+        'Video', 'Image', 'Photo', 'Malware', 'CryptoWallet',
+        'Domain', 'Website', 'IP'
+    ];
+
+    constructor(
+        app: App,
+        entityManager: EntityManager,
+        onEntityCreated?: (entityId: string) => void
+    ) {
+        super(app);
+        this.entityManager = entityManager;
+        this.onEntityCreated = onEntityCreated || null;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass('graph_copilot-entity-selector-modal');
+
+        // Header container
+        const header = contentEl.createDiv({ cls: 'graph_copilot-entity-selector-header' });
+        header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
+
+        const title = header.createEl('h2', { text: 'Create new entity' });
+        title.style.margin = '0';
+
+        const newTypeBtn = header.createEl('button', { text: '+ new custom type' });
+        newTypeBtn.style.cssText = 'font-size: 13px; padding: 4px 10px; cursor: pointer;';
+        newTypeBtn.onclick = () => {
+            this.close();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const plugin = (this.app as any).plugins.plugins['osint-copilot'];
+            if (plugin && plugin.customTypesService) {
+                new CustomTypeCreationModal(this.app, plugin.customTypesService, undefined, (name) => {
+                    // Re-open selector after creation
+                    const selector = new FTMEntityTypeSelectorModal(this.app, this.entityManager, this.onEntityCreated || undefined);
+                    selector.open();
+                }).open();
+            } else {
+                new Notice('Error: OSINT copilot plugin instance not found.'); // eslint-disable-line obsidianmd/ui/sentence-case
+            }
+        };
+        contentEl.createEl('p', { text: 'Select the type of entity to create:' });
+
+        const plugin = getOsintCopilotPlugin(this.app);
+        if (plugin?.schemaCatalogService) {
+            this.useCatalogUi = true;
+            const famRow = contentEl.createDiv();
+            famRow.style.cssText =
+                'display: flex; flex-wrap: wrap; gap: 10px 16px; margin-bottom: 12px; align-items: center;';
+            famRow.createEl('span', { text: 'Show:', cls: 'setting-item-description' });
+            const ef = plugin.settings.enabledSchemaFamilies as EnabledSchemaFamilies;
+            const addFamToggle = (key: keyof EnabledSchemaFamilies, caption: string) => {
+                const wrap = famRow.createDiv();
+                wrap.style.display = 'flex';
+                wrap.style.alignItems = 'center';
+                wrap.style.gap = '6px';
+                const cb = wrap.createEl('input', { type: 'checkbox' });
+                cb.checked = ef[key];
+                cb.addEventListener('change', async () => {
+                    ef[key] = cb.checked;
+                    await plugin.saveSettings();
+                    this.syncTypesFromPlugin();
+                    this.filterEntityTypes();
+                });
+                wrap.createEl('span', { text: caption });
+            };
+            addFamToggle('ftm', 'FTM');
+            addFamToggle('stix2', 'STIX2');
+            addFamToggle('mitre', 'MITRE');
+            addFamToggle('user', 'User');
+            this.syncTypesFromPlugin();
+        } else {
+            this.useCatalogUi = false;
+            this.entityTypes = getAvailableFTMEntityTypes(plugin?.settings.oidsfModalLayers);
+        }
+
+        // Search input for filtering entity types
+        const searchContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-search-container' });
+        searchContainer.style.cssText = 'margin-bottom: 12px;';
+
+        this.searchInput = searchContainer.createEl('input', {
+            type: 'text',
+            placeholder: 'Search entity types...',
+            cls: 'graph_copilot-entity-search-input'
+        });
+        this.searchInput.style.cssText = `
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--background-modifier-border);
+            border-radius: 6px;
+            background: var(--background-primary);
+            color: var(--text-normal);
+            font-size: 14px;
+        `;
+        this.searchInput.addEventListener('input', () => this.filterEntityTypes());
+
+        // Grid container with scrolling
+        const scrollContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-scroll-container' });
+        scrollContainer.style.cssText = `
+            max-height: 400px;
+            overflow-y: auto;
+            padding-right: 8px;
+        `;
+
+        this.gridContainer = scrollContainer.createDiv({ cls: 'graph_copilot-entity-type-grid' });
+
+        if (this.useCatalogUi) {
+            this.renderCatalogEntityTypes(this.catalogEntityTypes);
+        } else {
+            this.renderEntityTypes(this.entityTypes);
+        }
+
+        // Cancel button
+        const cancelBtn = contentEl.createEl('button', {
+            text: 'Cancel',
+            cls: 'graph_copilot-entity-cancel-btn'
+        });
+        cancelBtn.onclick = () => this.close();
+
+        // Focus search input
+        setTimeout(() => this.searchInput?.focus(), 50);
+    }
+
+    private syncTypesFromPlugin(): void {
+        const plugin = getOsintCopilotPlugin(this.app);
+        if (!plugin?.schemaCatalogService) return;
+        this.catalogEntityTypes = plugin.schemaCatalogService.listEntityTypes(
+            plugin.getEnabledSchemaFamilies(),
+            plugin.settings.oidsfModalLayers,
+        );
+    }
+
+    private filterEntityTypes(): void {
+        const query = this.searchInput?.value.toLowerCase() || '';
+        if (this.useCatalogUi) {
+            const filtered = this.catalogEntityTypes.filter(
+                (cat) =>
+                    cat.label.toLowerCase().includes(query) ||
+                    cat.description.toLowerCase().includes(query) ||
+                    cat.name.toLowerCase().includes(query) ||
+                    cat.family.toLowerCase().includes(query),
+            );
+            this.renderCatalogEntityTypes(filtered);
+            return;
+        }
+        const filtered = this.entityTypes.filter(
+            (type) =>
+                type.label.toLowerCase().includes(query) ||
+                type.description.toLowerCase().includes(query) ||
+                type.name.toLowerCase().includes(query),
+        );
+        this.renderEntityTypes(filtered);
+    }
+
+    private renderCatalogEntityTypes(types: CatalogEntityType[]): void {
+        if (!this.gridContainer) return;
+        this.gridContainer.empty();
+
+        if (types.length === 0) {
+            const noResults = this.gridContainer.createDiv({ cls: 'graph_copilot-no-results' });
+            noResults.style.cssText = `
+                text-align: center;
+                padding: 20px;
+                color: var(--text-muted);
+            `;
+            noResults.textContent = 'No entity types match your search.';
+            return;
+        }
+
+        const plugin = getOsintCopilotPlugin(this.app);
+        const sorted = [...types].sort((a, b) => {
+            const fa = a.family.localeCompare(b.family);
+            if (fa !== 0) return fa;
+            return a.label.localeCompare(b.label);
+        });
+
+        const byFam = new Map<SchemaFamily, CatalogEntityType[]>();
+        for (const cat of sorted) {
+            if (!byFam.has(cat.family)) byFam.set(cat.family, []);
+            byFam.get(cat.family)!.push(cat);
+        }
+
+        for (const fam of CATALOG_FAMILY_ORDER) {
+            const list = byFam.get(fam);
+            if (!list?.length) continue;
+
+            const head = this.gridContainer.createEl('h4', {
+                text: familySectionTitle(fam),
+                cls: 'graph_copilot-section-header',
+            });
+            head.style.gridColumn = '1 / -1';
+            head.style.marginTop = '8px';
+            head.style.marginBottom = '4px';
+
+            for (const cat of list) {
+            const typeBtn = this.gridContainer.createDiv({ cls: 'graph_copilot-entity-type-btn' });
+            typeBtn.style.borderLeftColor = cat.color;
+            typeBtn.style.position = 'relative';
+
+            const icon = typeBtn.createDiv({ cls: 'graph_copilot-entity-type-icon' });
+            icon.style.backgroundColor = cat.color;
+            icon.style.fontSize = '20px';
+            icon.style.display = 'flex';
+            icon.style.alignItems = 'center';
+            icon.style.justifyContent = 'center';
+            icon.textContent = getEntityIcon(cat.name);
+
+            const badge = typeBtn.createDiv();
+            badge.textContent = familyBadgeLabel(cat.family);
+            badge.style.cssText =
+                'position: absolute; top: 6px; right: 8px; font-size: 10px; color: var(--text-muted); font-weight: 600;';
+
+            const info = typeBtn.createDiv({ cls: 'graph_copilot-entity-type-info' });
+            info.createEl('strong', { text: cat.label });
+            info.createEl('small', { text: cat.description });
+
+            const isCustom =
+                plugin &&
+                plugin.customTypesService &&
+                cat.family === 'ftm' &&
+                plugin.customTypesService.getCustomSchema(cat.name);
+
+            if (isCustom) {
+                const actionsDiv = typeBtn.createDiv({ cls: 'graph_copilot-type-actions' });
+                actionsDiv.style.cssText =
+                    'position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: none; gap: 6px; z-index: 10;';
+
+                typeBtn.onmouseenter = () => {
+                    actionsDiv.style.display = 'flex';
+                };
+                typeBtn.onmouseleave = () => {
+                    actionsDiv.style.display = 'none';
+                };
+
+                const editBtn = actionsDiv.createEl('button', { text: '✎' });
+                editBtn.title = 'Edit type';
+                editBtn.style.cssText =
+                    'padding: 4px 8px; background: var(--interactive-accent); color: white; border: none; border-radius: 4px; cursor: pointer;';
+                editBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    this.close();
+                    new CustomTypeCreationModal(
+                        this.app,
+                        plugin.customTypesService,
+                        plugin.customTypesService.getCustomSchema(cat.name),
+                        () => {
+                            new FTMEntityTypeSelectorModal(
+                                this.app,
+                                this.entityManager,
+                                this.onEntityCreated || undefined,
+                            ).open();
+                        },
+                    ).open();
+                };
+
+                const delBtn = actionsDiv.createEl('button', { text: '🗑' });
+                delBtn.title = 'Delete type';
+                delBtn.style.cssText =
+                    'padding: 4px 8px; background: var(--background-modifier-error); color: white; border: none; border-radius: 4px; cursor: pointer;';
+                delBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    if (confirm(`Delete custom type "${cat.label}"?`)) {
+                        await plugin.customTypesService.deleteCustomType(cat.name);
+                        this.syncTypesFromPlugin();
+                        this.filterEntityTypes();
+                    }
+                };
+            }
+
+            typeBtn.onclick = () => {
+                this.close();
+                if (cat.family === 'ftm') {
+                    new FTMEntityCreationModal(
+                        this.app,
+                        this.entityManager,
+                        cat.name,
+                        this.onEntityCreated || undefined,
+                    ).open();
+                } else {
+                    new FTMEntityCreationModal(
+                        this.app,
+                        this.entityManager,
+                        cat.name,
+                        this.onEntityCreated || undefined,
+                        cat,
+                    ).open();
+                }
+            };
+            }
+        }
+    }
+
+    private renderEntityTypes(types: Array<{ name: string; label: string; description: string; color: string }>): void {
+        if (!this.gridContainer) return;
+        this.gridContainer.empty();
+
+        if (types.length === 0) {
+            const noResults = this.gridContainer.createDiv({ cls: 'graph_copilot-no-results' });
+            noResults.style.cssText = `
+                text-align: center;
+                padding: 20px;
+                color: var(--text-muted);
+            `;
+            noResults.textContent = 'No entity types match your search.';
+            return;
+        }
+
+        // Sort types based on priority list
+        const sortedTypes = [...types].sort((a, b) => {
+            const indexA = this.PRIORITY_ORDER.indexOf(a.name);
+            const indexB = this.PRIORITY_ORDER.indexOf(b.name);
+
+            // If both are in priority list, sort by index
+            if (indexA !== -1 && indexB !== -1) {
+                return indexA - indexB;
+            }
+
+            // If only A is in priority list, it comes first
+            if (indexA !== -1) return -1;
+
+            // If only B is in priority list, it comes first
+            if (indexB !== -1) return 1;
+
+            // Otherwise sort alphabetically
+            return a.label.localeCompare(b.label);
+        });
+
+        // Determine which types to show initially vs in "Show More"
+        // If searching, show all matches. If standard view, apply collapse logic.
+        const isSearching = this.searchInput && this.searchInput.value.trim().length > 0;
+
+        let initialTypes = sortedTypes;
+        let hiddenTypes: typeof sortedTypes = [];
+
+        if (!isSearching) {
+            // Include everything in priority list (that exists in available types) in initial view
+            // Everything else goes to "Show More"
+            initialTypes = sortedTypes.filter(t => this.PRIORITY_ORDER.includes(t.name));
+            hiddenTypes = sortedTypes.filter(t => !this.PRIORITY_ORDER.includes(t.name));
+        }
+
+        const createTypeButton = (typeInfo: { name: string; label: string; description: string; color: string }, container: HTMLElement) => {
+            const typeBtn = container.createDiv({ cls: 'graph_copilot-entity-type-btn' });
+            typeBtn.style.borderLeftColor = typeInfo.color;
+            typeBtn.style.position = 'relative';
+
+            const icon = typeBtn.createDiv({ cls: 'graph_copilot-entity-type-icon' });
+            icon.style.backgroundColor = typeInfo.color;
+            icon.style.fontSize = '20px';
+            icon.style.display = 'flex';
+            icon.style.alignItems = 'center';
+            icon.style.justifyContent = 'center';
+            icon.textContent = getEntityIcon(typeInfo.name);
+
+            const info = typeBtn.createDiv({ cls: 'graph_copilot-entity-type-info' });
+            info.createEl('strong', { text: typeInfo.label });
+            info.createEl('small', { text: typeInfo.description });
+
+            // Check for custom type
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const plugin = (this.app as any).plugins.plugins['osint-copilot'];
+            const isCustom = plugin && plugin.customTypesService && plugin.customTypesService.getCustomSchema(typeInfo.name);
+
+            if (isCustom) {
+                const actionsDiv = typeBtn.createDiv({ cls: 'graph_copilot-type-actions' });
+                actionsDiv.style.cssText = 'position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: none; gap: 6px; z-index: 10;';
+
+                typeBtn.onmouseenter = () => actionsDiv.style.display = 'flex';
+                typeBtn.onmouseleave = () => actionsDiv.style.display = 'none';
+
+                const editBtn = actionsDiv.createEl('button', { text: '✎' });
+                editBtn.title = 'Edit type';
+                editBtn.style.cssText = 'padding: 4px 8px; background: var(--interactive-accent); color: white; border: none; border-radius: 4px; cursor: pointer;';
+                editBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    this.close();
+                    new CustomTypeCreationModal(this.app, plugin.customTypesService, plugin.customTypesService.getCustomSchema(typeInfo.name), (name) => {
+                        new FTMEntityTypeSelectorModal(this.app, this.entityManager, this.onEntityCreated || undefined).open();
+                    }).open();
+                };
+
+                const delBtn = actionsDiv.createEl('button', { text: '🗑' });
+                delBtn.title = 'Delete type';
+                delBtn.style.cssText = 'padding: 4px 8px; background: var(--background-modifier-error); color: white; border: none; border-radius: 4px; cursor: pointer;';
+                delBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    if (confirm(`Delete custom type "${typeInfo.label}"?`)) {
+                        await plugin.customTypesService.deleteCustomType(typeInfo.name);
+                        // Reload and refresh
+                        this.entityTypes = getAvailableFTMEntityTypes(plugin?.settings.oidsfModalLayers);
+                        this.filterEntityTypes();
+                    }
+                };
+            }
+
+            typeBtn.onclick = () => {
+                this.close();
+                const createModal = new FTMEntityCreationModal(
+                    this.app,
+                    this.entityManager,
+                    typeInfo.name,
+                    this.onEntityCreated || undefined
+                );
+                createModal.open();
+            };
+        };
+
+        // Render initial types
+        for (const type of initialTypes) {
+            createTypeButton(type, this.gridContainer);
+        }
+
+        // Render Show More section if there are hidden types
+        if (hiddenTypes.length > 0) {
+            const divider = this.gridContainer.createDiv({ cls: 'graph_copilot-entity-divider' });
+            divider.style.cssText = `
+                grid-column: 1 / -1;
+                margin: 15px 0;
+                border-top: 1px solid var(--background-modifier-border);
+                position: relative;
+                text-align: center;
+            `;
+
+            const showMoreBtn = divider.createEl('button', { text: 'Show more' });
+            showMoreBtn.style.cssText = `
+                position: relative;
+                top: -12px;
+                background: var(--background-primary);
+                padding: 0 10px;
+                color: var(--text-muted);
+                border: 1px solid var(--background-modifier-border);
+                border-radius: 12px;
+                font-size: 12px;
+                cursor: pointer;
+            `;
+
+            const hiddenContainer = this.gridContainer.createDiv({ cls: 'graph_copilot-entity-hidden-container' });
+            hiddenContainer.style.cssText = `
+                grid-column: 1 / -1;
+                display: none;
+                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                gap: 10px;
+            `;
+            // Re-apply grid layout to hidden container since it's nested
+            hiddenContainer.addClass('graph_copilot-entity-type-grid');
+            hiddenContainer.style.marginTop = '0'; // Override grid margin
+
+            for (const type of hiddenTypes) {
+                createTypeButton(type, hiddenContainer);
+            }
+
+            showMoreBtn.onclick = () => {
+                const isHidden = hiddenContainer.style.display === 'none';
+                hiddenContainer.style.display = isHidden ? 'grid' : 'none';
+                showMoreBtn.textContent = isHidden ? 'Show Less' : 'Show More';
+            };
+        }
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+/**
+ * FTM Entity Edit Modal - edits entities using FTM schema format.
+ * Shows required properties by default with collapsible optional properties.
+ */
+export class FTMEntityEditModal extends Modal {
+    private entityManager: EntityManager;
+    private entity: Entity;
+    private schemaName: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private properties: Record<string, any> = {};
+    private onEntityUpdated: ((entityId: string) => void) | null;
+    private optionalSectionExpanded: boolean = false;
+    private geocodingService: GeocodingService;
+    private geocodeStatusEl: HTMLElement | null = null;
+
+    constructor(
+        app: App,
+        entityManager: EntityManager,
+        entity: Entity,
+        onEntityUpdated?: (entityId: string) => void
+    ) {
+        super(app);
+        this.entityManager = entityManager;
+        this.entity = entity;
+        // Use ftmSchema if available, otherwise use type
+        this.schemaName = entity.ftmSchema || String(entity.type);
+        this.properties = { ...entity.properties };
+        this.onEntityUpdated = onEntityUpdated || null;
+        this.geocodingService = new GeocodingService();
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass('graph_copilot-entity-modal');
+        contentEl.addClass('graph_copilot-ftm-modal');
+
+        const config = getFTMEntityConfig(this.schemaName);
+        if (!config) {
+            // Fall back to generic property editor for non-FTM entities
+            this.renderNonFTMEntityEditor(contentEl);
+            return;
+        }
+
+        // Title
+        contentEl.createEl('h2', { text: `Edit ${config.label}` });
+        contentEl.createEl('p', {
+            text: `Editing: ${this.entity.label}`,
+            cls: 'graph_copilot-entity-modal-description'
+        });
+
+        // Create form container
+        const formContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-form' });
+
+        // Required properties section
+        if (config.requiredProperties.length > 0) {
+            formContainer.createEl('h4', { text: 'Required properties', cls: 'graph_copilot-section-header' });
+            for (const prop of config.requiredProperties) {
+                const propDef = config.propertyDefinitions[prop];
+                if (propDef) {
+                    this.createFTMPropertyField(formContainer, prop, propDef, true);
+                }
+            }
+        }
+
+        // Featured properties section (non-required featured properties)
+        const featuredNonRequired = config.featuredProperties.filter(
+            p => !config.requiredProperties.includes(p)
+        );
+        if (featuredNonRequired.length > 0) {
+            formContainer.createEl('h4', { text: 'Key properties', cls: 'graph_copilot-section-header' });
+            for (const prop of featuredNonRequired) {
+                const propDef = config.propertyDefinitions[prop];
+                if (propDef) {
+                    this.createFTMPropertyField(formContainer, prop, propDef, false);
+                }
+            }
+        }
+
+        // Optional properties section (collapsible)
+        if (config.optionalProperties.length > 0) {
+            const optionalSection = contentEl.createDiv({ cls: 'graph_copilot-optional-section' });
+
+            const optionalHeader = optionalSection.createDiv({ cls: 'graph_copilot-optional-header' });
+            const toggleIcon = optionalHeader.createSpan({ cls: 'graph_copilot-toggle-icon', text: '▶' });
+            optionalHeader.createSpan({ text: ` Additional Properties (${config.optionalProperties.length})` });
+
+            const optionalContent = optionalSection.createDiv({ cls: 'graph_copilot-optional-content' });
+            optionalContent.style.display = 'none';
+
+            optionalHeader.onclick = () => {
+                this.optionalSectionExpanded = !this.optionalSectionExpanded;
+                toggleIcon.textContent = this.optionalSectionExpanded ? '▼' : '▶';
+                optionalContent.style.display = this.optionalSectionExpanded ? 'block' : 'none';
+            };
+
+            for (const prop of config.optionalProperties) {
+                const propDef = config.propertyDefinitions[prop];
+                if (propDef && !propDef.hidden) {
+                    this.createFTMPropertyField(optionalContent, prop, propDef, false);
+                }
+            }
+        }
+
+        // Geocoding section for Location and Address entities without coordinates
+        if ((this.schemaName === 'Location' || this.schemaName === 'Address') &&
+            (!this.properties.latitude || !this.properties.longitude)) {
+            this.createGeocodingSection(contentEl);
+        }
+
+        // Buttons
+        const buttonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-modal-buttons' });
+
+        const saveBtn = buttonContainer.createEl('button', {
+            text: 'Save changes',
+            cls: 'mod-cta'
+        });
+        saveBtn.onclick = () => this.handleSave();
+
+        const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+        cancelBtn.onclick = () => this.close();
+    }
+
+    private createFTMPropertyField(
+        container: HTMLElement,
+        propertyName: string,
+        propDef: FTMPropertyDefinition,
+        isRequired: boolean
+    ): void {
+        const fieldContainer = container.createDiv({ cls: 'graph_copilot-entity-field' });
+
+        const label = fieldContainer.createEl('label', {
+            text: propDef.label + (isRequired ? ' *' : '')
+        });
+        label.setAttribute('for', `entity-${propertyName}`);
+
+        let input: HTMLInputElement | HTMLTextAreaElement;
+        const currentValue = this.properties[propertyName];
+
+        // Determine input type based on FTM property type
+        const propType = propDef.type || 'string';
+
+        if (propType === 'boolean') {
+            // Boolean toggle button with visual feedback
+            const toggleContainer = fieldContainer.createDiv({ cls: 'graph_copilot-toggle-container' });
+            toggleContainer.style.cssText = 'display: flex; align-items: center; gap: 12px; margin-top: 4px;';
+
+            // Hidden checkbox for form state
+            input = toggleContainer.createEl('input', {
+                type: 'checkbox'
+            }) as HTMLInputElement;
+            input.id = `entity-${propertyName}`;
+            input.style.display = 'none';
+            if (currentValue) (input as HTMLInputElement).checked = true;
+
+            // Create a styled toggle button
+            const toggleBtn = toggleContainer.createEl('button', {
+                cls: 'graph_copilot-toggle-btn'
+            });
+            toggleBtn.type = 'button';
+            toggleBtn.style.cssText = `
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: 500;
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                border: 2px solid var(--background-modifier-border);
+                background: var(--background-secondary);
+                color: var(--text-muted);
+            `;
+
+            // Icon and text
+            const icon = toggleBtn.createSpan({ cls: 'toggle-icon' });
+            icon.textContent = '📅';
+            icon.style.fontSize = '16px';
+
+            const btnText = toggleBtn.createSpan({ cls: 'toggle-text' });
+
+            // Update button appearance based on state
+            const updateButtonState = (checked: boolean) => {
+                if (checked) {
+                    toggleBtn.style.background = 'var(--interactive-accent)';
+                    toggleBtn.style.borderColor = 'var(--interactive-accent)';
+                    toggleBtn.style.color = 'white';
+                    btnText.textContent = 'On timeline ✓';
+                } else {
+                    toggleBtn.style.background = 'var(--background-secondary)';
+                    toggleBtn.style.borderColor = 'var(--background-modifier-border)';
+                    toggleBtn.style.color = 'var(--text-muted)';
+                    btnText.textContent = 'Add to timeline';
+                }
+            };
+
+            // Initialize state
+            updateButtonState(!!currentValue);
+
+            // Toggle on click
+            toggleBtn.addEventListener('click', () => {
+                const newChecked = !(input as HTMLInputElement).checked;
+                (input as HTMLInputElement).checked = newChecked;
+                this.properties[propertyName] = newChecked;
+                updateButtonState(newChecked);
+            });
+
+            // Hover effect
+            toggleBtn.addEventListener('mouseenter', () => {
+                if (!(input as HTMLInputElement).checked) {
+                    toggleBtn.style.borderColor = 'var(--interactive-accent)';
+                    toggleBtn.style.color = 'var(--text-normal)';
+                }
+            });
+            toggleBtn.addEventListener('mouseleave', () => {
+                updateButtonState((input as HTMLInputElement).checked);
+            });
+
+            return; // Early return since we've handled everything
+        } else if (propType === 'text' || propertyName === 'description' || propertyName === 'notes' || propertyName === 'summary') {
+            input = fieldContainer.createEl('textarea', {
+                placeholder: `Enter ${propDef.label.toLowerCase()}...`
+            }) as HTMLTextAreaElement;
+            input.rows = 3;
+            if (currentValue) input.value = currentValue;
+        } else if (propType === 'date') {
+            input = fieldContainer.createEl('input', {
+                type: 'date'
+            }) as HTMLInputElement;
+            if (currentValue) (input as HTMLInputElement).value = currentValue;
+        } else if (propType === 'number') {
+            input = fieldContainer.createEl('input', {
+                type: 'number',
+                placeholder: `Enter ${propDef.label.toLowerCase()}...`
+            }) as HTMLInputElement;
+            (input as HTMLInputElement).step = 'any';
+            if (currentValue !== undefined && currentValue !== null) {
+                (input as HTMLInputElement).value = currentValue.toString();
+            }
+        } else if (propType === 'url') {
+            input = fieldContainer.createEl('input', {
+                type: 'url',
+                placeholder: 'https://...'
+            }) as HTMLInputElement;
+            if (currentValue) input.value = currentValue;
+        } else if (propType === 'email') {
+            input = fieldContainer.createEl('input', {
+                type: 'email',
+                placeholder: 'email@example.com'
+            }) as HTMLInputElement;
+            if (currentValue) input.value = currentValue;
+        } else if (propType === 'phone') {
+            input = fieldContainer.createEl('input', {
+                type: 'tel',
+                placeholder: '+1 234 567 8900'
+            }) as HTMLInputElement;
+            if (currentValue) input.value = currentValue;
+        } else if (propType === 'country') {
+            input = fieldContainer.createEl('input', {
+                type: 'text',
+                placeholder: 'Country code (e.g., US, GB, DE)'
+            }) as HTMLInputElement;
+            if (currentValue) input.value = currentValue;
+        } else if (propType === 'country') {
+            input = fieldContainer.createEl('input', {
+                type: 'text',
+                placeholder: 'Country code (e.g., US, GB, DE)'
+            }) as HTMLInputElement;
+            if (currentValue) input.value = currentValue;
+        } else if (propertyName === 'filePath' && (this.schemaName === 'Image' || this.schemaName === 'Video' || this.schemaName === 'Audio' || this.schemaName === 'Photo' || this.schemaName === 'Evidence')) {
+            // Special handling for file upload
+            this.createFileUploadField(fieldContainer, propertyName, this.schemaName, currentValue);
+            return;
+        } else {
+            // Default text input
+            input = fieldContainer.createEl('input', {
+                type: 'text',
+                placeholder: `Enter ${propDef.label.toLowerCase()}...`
+            }) as HTMLInputElement;
+            if (currentValue) input.value = currentValue;
+        }
+
+        input.id = `entity-${propertyName}`;
+        input.addClass('graph_copilot-entity-input');
+
+        // Store value on change
+        input.addEventListener('input', () => {
+            if (input.type === 'number') {
+                const value = parseFloat((input as HTMLInputElement).value);
+                if (!isNaN(value)) {
+                    this.properties[propertyName] = value;
+                }
+            } else {
+                this.properties[propertyName] = input.value;
+            }
+        });
+    }
+
+    /**
+     * Create geocoding section for Location and Address entities.
+     */
+    private createGeocodingSection(contentEl: HTMLElement): void {
+        const geocodingSection = contentEl.createDiv({ cls: 'graph_copilot-geocoding-section' });
+        geocodingSection.style.cssText = `
+            margin-top: 20px;
+            padding: 15px;
+            background: var(--background-secondary);
+            border-radius: 6px;
+            border-left: 3px solid var(--interactive-accent);
+        `;
+
+        const header = geocodingSection.createEl('h4', { text: '📍 geocoding' });
+        header.style.cssText = 'margin-top: 0; margin-bottom: 10px;';
+
+        const description = geocodingSection.createEl('p', {
+            text: 'This entity is missing coordinates. Click the button below to automatically geocode the address.',
+            cls: 'text-muted'
+        });
+        description.style.cssText = 'font-size: 12px; margin-bottom: 12px;';
+
+        // Status message area
+        this.geocodeStatusEl = geocodingSection.createDiv({ cls: 'graph_copilot-geocode-status' });
+        this.geocodeStatusEl.style.cssText = 'margin-bottom: 10px; font-size: 12px;';
+
+        // Geocode button
+        const geocodeBtn = geocodingSection.createEl('button', { text: '📍 geolocate address' });
+        geocodeBtn.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            border: 1px solid var(--interactive-accent);
+            background: var(--interactive-accent);
+            color: white;
+            font-weight: 500;
+        `;
+        geocodeBtn.onclick = async () => {
+            await this.handleGeocode(geocodeBtn);
+        };
+    }
+
+    private createFileUploadField(container: HTMLElement, propertyName: string, entityType: string, currentValue: any): void {
+        const wrapper = container.createDiv({ cls: 'graph_copilot-file-upload-wrapper' });
+        wrapper.style.cssText = `
+            border: 2px dashed var(--background-modifier-border);
+            border-radius: 6px;
+            padding: 12px;
+            text-align: center;
+            background: var(--background-secondary);
+            transition: all 0.2s ease;
+        `;
+
+        // Display current file if exists
+        if (currentValue) {
+            wrapper.style.borderColor = 'var(--interactive-accent)';
+            const currentFileEl = wrapper.createDiv({ cls: 'graph_copilot-current-file' });
+            currentFileEl.style.marginBottom = '10px';
+            currentFileEl.innerHTML = `
+                <div style="font-weight: bold; margin-bottom: 4px;">Current File:</div>
+                <div style="font-size: 12px; color: var(--text-accent); word-break: break-all;">${currentValue}</div>
+            `;
+
+            // Add preview button or image if possible
+            if (entityType === 'Image' || entityType === 'Photo' || entityType === 'Document' || entityType === 'Evidence') {
+                // Try to show thumbnail if path is valid (this is complex in Obsidian API without full path, so skipping for now)
+            }
+        }
+
+        const uploadBtn = wrapper.createEl('button', {
+            text: currentValue ? `Replace ${entityType} File` : `📁 Upload ${entityType} File`,
+            cls: 'graph_copilot-upload-btn'
+        });
+        uploadBtn.style.marginBottom = '8px';
+        uploadBtn.onclick = (e) => {
+            e.preventDefault();
+            fileInput.click();
+        };
+
+        const hintText = wrapper.createEl('span', {
+            text: 'or drag and drop to replace', // eslint-disable-line obsidianmd/ui/sentence-case
+            cls: 'graph_copilot-upload-hint'
+        });
+        hintText.style.cssText = 'display: block; font-size: 12px; color: var(--text-muted);';
+
+        const fileInput = wrapper.createEl('input', {
+            type: 'file',
+            cls: 'graph_copilot-file-input'
+        });
+        fileInput.style.display = 'none';
+
+        // Set accept attribute based on entity type
+        if (entityType === 'Image' || entityType === 'Photo') {
+            fileInput.accept = 'image/*';
+        } else if (entityType === 'Video') {
+            fileInput.accept = 'video/*';
+        } else if (entityType === 'Audio') {
+            fileInput.accept = 'audio/*';
+        } else if (entityType === 'Document' || entityType === 'Evidence') {
+            fileInput.accept = '.pdf,.docx,.doc,.md,.png,.jpeg,.jpg';
+        }
+
+        const handleFile = async (file: File) => {
+            try {
+                hintText.textContent = `Uploading ${file.name}...`;
+
+                // Determine save path
+                // TODO: Make this configurable in settings
+                let basePath = '/Assets/OSINT-Media/';
+                if (entityType === 'Image' || entityType === 'Photo') basePath = '/Assets/OSINT-Photos/';
+                else if (entityType === 'Video') basePath = '/Assets/OSINT-Videos/';
+                else if (entityType === 'Audio') basePath = '/Assets/OSINT-Audio/';
+                else if (entityType === 'Document' || entityType === 'Evidence') basePath = '/Assets/OSINT-Documents/';
+
+                // Read file
+                const arrayBuffer = await file.arrayBuffer();
+                const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+                const filePath = `${basePath}${Date.now()}_${safeName}`;
+
+                // Ensure directories exist
+                const folders = basePath.split('/').filter(p => p);
+                let currentPath = '';
+                for (const folder of folders) {
+                    currentPath += (currentPath ? '/' : '') + folder;
+                    if (!(await this.app.vault.adapter.exists(currentPath))) {
+                        await this.app.vault.createFolder(currentPath);
+                    }
+                }
+
+                // Save file
+                await this.app.vault.createBinary(filePath.replace(/^\//, ''), arrayBuffer);
+
+                // Success
+                this.properties[propertyName] = filePath.replace(/^\//, '');
+                hintText.textContent = `✅ Uploaded: ${file.name}`;
+                uploadBtn.textContent = 'Change file';
+                wrapper.style.borderColor = 'var(--interactive-accent)';
+
+                // Update display
+                const currentDisplay = wrapper.querySelector('.graph_copilot-current-file');
+                if (currentDisplay) {
+                    currentDisplay.innerHTML = `
+                        <div style="font-weight: bold; margin-bottom: 4px;">New File:</div>
+                        <div style="font-size: 12px; color: var(--text-accent); word-break: break-all;">${filePath.replace(/^\//, '')}</div>
+                    `;
+                }
+
+                new Notice(`File uploaded: ${filePath}`);
+
+            } catch (err) {
+                console.error('File upload error:', err);
+                hintText.textContent = '❌ Upload failed'; // eslint-disable-line obsidianmd/ui/sentence-case
+                new Notice(`Upload failed: ${err}`);
+            }
+        };
+
+        fileInput.addEventListener('change', (e) => {
+            const files = (e.target as HTMLInputElement).files;
+            if (files && files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        // Drag and drop support
+        wrapper.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            wrapper.style.borderColor = 'var(--interactive-accent)';
+            wrapper.style.background = 'var(--background-primary-alt)';
+        });
+
+        wrapper.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            wrapper.style.borderColor = currentValue ? 'var(--interactive-accent)' : 'var(--background-modifier-border)';
+            wrapper.style.background = 'var(--background-secondary)';
+        });
+
+        wrapper.addEventListener('drop', (e) => {
+            e.preventDefault();
+            wrapper.style.borderColor = 'var(--background-modifier-border)';
+            wrapper.style.background = 'var(--background-secondary)';
+
+            if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+    }
+
+    /**
+     * Handle geocoding for the entity.
+     */
+    private async handleGeocode(button: HTMLButtonElement): Promise<void> {
+        // Extract address components based on entity type
+        let address: string | undefined;
+        let city: string | undefined;
+        let state: string | undefined;
+        let country: string | undefined;
+
+        if (this.schemaName === 'Location') {
+            address = this.properties.address as string;
+            city = this.properties.city as string;
+            country = this.properties.country as string;
+        } else if (this.schemaName === 'Address') {
+            address = this.properties.street as string || this.properties.full as string;
+            city = this.properties.city as string;
+            state = this.properties.state as string;
+            country = this.properties.country as string;
+        }
+
+        // Validate we have at least some address information
+        if (!address && !city && !country) {
+            this.updateGeocodeStatus('⚠️ No address information found. Please fill in address fields first.', 'error');
+            return;
+        }
+
+        try {
+            // Disable button during geocoding
+            button.disabled = true;
+            button.textContent = 'Geocoding...';
+            this.updateGeocodeStatus('🔄 Geocoding address...', 'info');
+
+            const result = await this.geocodingService.geocodeAddressWithRetry(
+                address,
+                city,
+                state,
+                country,
+                (attempt, maxAttempts, delaySeconds) => {
+                    this.updateGeocodeStatus(
+                        `⚠️ Network error, retrying in ${delaySeconds}s... (attempt ${attempt}/${maxAttempts})`,
+                        'warning'
+                    );
+                }
+            );
+
+            // Update properties with coordinates
+            this.properties.latitude = result.latitude;
+            this.properties.longitude = result.longitude;
+
+            // Also update address components if they were found and not already set
+            if (result.city && !city) {
+                this.properties.city = result.city;
+            }
+            if (result.state && !state && this.schemaName === 'Address') {
+                this.properties.state = result.state;
+            }
+            if (result.country && !country) {
+                this.properties.country = result.country;
+            }
+            if (result.postalCode && this.schemaName === 'Address' && !this.properties.postalCode) {
+                this.properties.postalCode = result.postalCode;
+            }
+
+            // Update status
+            this.updateGeocodeStatus(
+                `✓ Geocoded: ${result.displayName} \nLat: ${result.latitude.toFixed(6)}, Lng: ${result.longitude.toFixed(6)} \nConfidence: ${result.confidence} `,
+                'success'
+            );
+
+            // Re-enable button
+            button.disabled = false;
+            button.textContent = '✓ geocoded successfully';
+            button.style.background = 'var(--text-success)';
+
+            new Notice('Geocoding successful! Don\'t forget to save your changes.');
+
+        } catch (error) {
+            // Re-enable button
+            button.disabled = false;
+            button.textContent = '📍 geolocate address';
+
+            if (error instanceof GeocodingError) {
+                this.updateGeocodeStatus(`✗ ${error.message} `, 'error');
+                new Notice(`Geocoding failed: ${error.message} `);
+            } else {
+                console.error('[FTMEntityEditModal] Geocoding error:', error);
+                this.updateGeocodeStatus('✗ Failed to geocode address. Please try again.', 'error');
+                new Notice('Failed to geocode address. Please try again.');
+            }
+        }
+    }
+
+    /**
+     * Update geocode status message.
+     */
+    private updateGeocodeStatus(message: string, type: 'info' | 'success' | 'warning' | 'error'): void {
+        if (!this.geocodeStatusEl) return;
+
+        this.geocodeStatusEl.textContent = message;
+
+        let color = 'var(--text-muted)';
+        if (type === 'success') color = 'var(--text-success)';
+        else if (type === 'warning') color = 'var(--text-warning)';
+        else if (type === 'error') color = 'var(--text-error)';
+
+        this.geocodeStatusEl.style.color = color;
+        this.geocodeStatusEl.style.whiteSpace = 'pre-line';
+    }
+
+    private async handleSave(): Promise<void> {
+        const config = getFTMEntityConfig(this.schemaName);
+        if (!config) return;
+
+        // Only validate that entity name is not generic (if provided)
+        const labelField = config.labelField;
+        if (this.properties[labelField] && String(this.properties[labelField]).trim() !== '') {
+            const nameValidation = validateEntityName(this.properties[labelField], this.schemaName);
+            if (!nameValidation.isValid) {
+                new Notice(nameValidation.error || 'Invalid entity name');
+                return;
+            }
+        }
+
+        try {
+            const updatedEntity = await this.entityManager.updateEntity(this.entity.id, this.properties);
+
+            if (updatedEntity) {
+                new Notice(`Updated ${config.label}: ${updatedEntity.label} `);
+
+                if (this.onEntityUpdated) {
+                    this.onEntityUpdated(this.entity.id);
+                }
+
+                this.close();
+            } else {
+                new Notice('Failed to update entity: entity not found');
+            }
+        } catch (error) {
+            new Notice(`Failed to update entity: ${error} `);
+            console.error('FTM Entity update error:', error);
+        }
+    }
+
+    /**
+     * Render a generic property editor for non-FTM entities.
+     * This provides a fallback editing interface for entities that don't have FTM schemas.
+     */
+    private renderNonFTMEntityEditor(contentEl: HTMLElement): void {
+        // Title
+        contentEl.createEl('h2', { text: `Edit ${this.schemaName} ` });
+        contentEl.createEl('p', {
+            text: `Editing: ${this.entity.label} `,
+            cls: 'graph_copilot-entity-modal-description'
+        });
+
+        // Info message
+        const infoDiv = contentEl.createDiv({ cls: 'graph_copilot-info-message' });
+        infoDiv.style.cssText = `
+padding: 12px;
+margin - bottom: 20px;
+background: var(--background - secondary);
+border - left: 3px solid var(--interactive - accent);
+border - radius: 4px;
+`;
+        infoDiv.createEl('p', {
+            text: `This is a non - standard entity type.You can edit its properties below.`,
+            cls: 'text-muted'
+        });
+
+        // Create form container
+        const formContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-form' });
+
+        // Get all existing properties
+        const existingProps = Object.keys(this.properties);
+
+        if (existingProps.length > 0) {
+            formContainer.createEl('h4', { text: 'Properties', cls: 'graph_copilot-section-header' });
+
+            for (const propName of existingProps) {
+                this.createGenericPropertyField(formContainer, propName);
+            }
+        }
+
+        // Add new property section
+        const addPropSection = contentEl.createDiv({ cls: 'graph_copilot-add-property-section' });
+        addPropSection.style.cssText = 'margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--background-modifier-border);';
+
+        addPropSection.createEl('h4', { text: 'Add new property', cls: 'graph_copilot-section-header' });
+
+        const addPropContainer = addPropSection.createDiv({ cls: 'graph_copilot-add-property-container' });
+        addPropContainer.style.cssText = 'display: flex; gap: 10px; align-items: flex-end;';
+
+        const nameFieldContainer = addPropContainer.createDiv({ cls: 'graph_copilot-entity-field' });
+        nameFieldContainer.style.flex = '1';
+        nameFieldContainer.createEl('label', { text: 'Property name' });
+        const nameInput = nameFieldContainer.createEl('input', {
+            type: 'text',
+            placeholder: 'e.g., address, phone, email'
+        }) as HTMLInputElement;
+        nameInput.addClass('graph_copilot-entity-input');
+
+        const valueFieldContainer = addPropContainer.createDiv({ cls: 'graph_copilot-entity-field' });
+        valueFieldContainer.style.flex = '2';
+        valueFieldContainer.createEl('label', { text: 'Property value' });
+        const valueInput = valueFieldContainer.createEl('input', {
+            type: 'text',
+            placeholder: 'Enter value...'
+        }) as HTMLInputElement;
+        valueInput.addClass('graph_copilot-entity-input');
+
+        const addBtn = addPropContainer.createEl('button', { text: '+ add' });
+        addBtn.style.cssText = 'padding: 8px 16px; margin-bottom: 2px;';
+        addBtn.onclick = () => {
+            const propName = nameInput.value.trim();
+            const propValue = valueInput.value.trim();
+
+            if (!propName) {
+                new Notice('Please enter a property name');
+                return;
+            }
+
+            if (!propValue) {
+                new Notice('Please enter a property value');
+                return;
+            }
+
+            // Add the property
+            this.properties[propName] = propValue;
+
+            // Re-render the form
+            contentEl.empty();
+            this.renderNonFTMEntityEditor(contentEl);
+
+            new Notice(`Added property: ${propName} `);
+        };
+
+        // Geocoding section for Location entities without coordinates
+        if (this.schemaName === 'Location' &&
+            (!this.properties.latitude || !this.properties.longitude)) {
+            this.createGeocodingSection(contentEl);
+        }
+
+        // Buttons
+        const buttonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-modal-buttons' });
+
+        const saveBtn = buttonContainer.createEl('button', {
+            text: 'Save changes',
+            cls: 'mod-cta'
+        });
+        saveBtn.onclick = () => this.handleNonFTMSave();
+
+        const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+        cancelBtn.onclick = () => this.close();
+    }
+
+    /**
+     * Create a generic property field for non-FTM entities.
+     */
+    private createGenericPropertyField(container: HTMLElement, propertyName: string): void {
+        const fieldContainer = container.createDiv({ cls: 'graph_copilot-entity-field' });
+        fieldContainer.style.cssText = 'display: flex; gap: 10px; align-items: flex-start;';
+
+        const inputContainer = fieldContainer.createDiv();
+        inputContainer.style.flex = '1';
+
+        const label = inputContainer.createEl('label', { text: propertyName });
+        label.setAttribute('for', `entity - ${propertyName} `);
+
+        const currentValue = this.properties[propertyName];
+        const input = inputContainer.createEl('input', {
+            type: 'text',
+            value: String(currentValue || '')
+        }) as HTMLInputElement;
+        input.id = `entity - ${propertyName} `;
+        input.addClass('graph_copilot-entity-input');
+
+        // Store value on change
+        input.addEventListener('input', () => {
+            this.properties[propertyName] = input.value;
+        });
+
+        // Delete button
+        const deleteBtn = fieldContainer.createEl('button', { text: '🗑' });
+        deleteBtn.style.cssText = 'padding: 8px 12px; margin-top: 24px;';
+        deleteBtn.title = 'Delete property';
+        deleteBtn.onclick = () => {
+            delete this.properties[propertyName];
+            fieldContainer.remove();
+            new Notice(`Deleted property: ${propertyName} `);
+        };
+    }
+
+    /**
+     * Handle save for non-FTM entities.
+     */
+    private async handleNonFTMSave(): Promise<void> {
+        try {
+            const updatedEntity = await this.entityManager.updateEntity(this.entity.id, this.properties);
+
+            if (updatedEntity) {
+                new Notice(`Updated ${this.schemaName}: ${updatedEntity.label} `);
+
+                if (this.onEntityUpdated) {
+                    this.onEntityUpdated(this.entity.id);
+                }
+
+                this.close();
+            } else {
+                new Notice('Failed to update entity: entity not found');
+            }
+        } catch (error) {
+            new Notice(`Failed to update entity: ${error} `);
+            console.error('Non-FTM Entity update error:', error);
+        }
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+/**
+ * FTM Interval Type Selector Modal - allows users to choose which FTM interval/relationship type to create.
+ * This modal is specifically for creating connections/relationships between entities using FTM interval schemas.
+ */
+export class FTMIntervalTypeSelectorModal extends Modal {
+    private entityManager: EntityManager;
+    private sourceEntityId: string | null = null;
+    private targetEntityId: string | null = null;
+    private onConnectionCreated: ((connectionId?: string) => void) | null;
+    private searchInput: HTMLInputElement | null = null;
+    private gridContainer: HTMLDivElement | null = null;
+    private intervalTypes: Array<{ name: string; label: string; description: string; color: string }> = [];
+    private catalogIntervalTypes: CatalogRelationshipType[] = [];
+    private useCatalogUi = false;
+
+    constructor(
+        app: App,
+        entityManager: EntityManager,
+        onConnectionCreated?: (connectionId?: string) => void,
+        preselectedSourceId?: string,
+        preselectedTargetId?: string
+    ) {
+        super(app);
+        this.entityManager = entityManager;
+        this.onConnectionCreated = onConnectionCreated || null;
+        this.sourceEntityId = preselectedSourceId || null;
+        this.targetEntityId = preselectedTargetId || null;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass('graph_copilot-entity-selector-modal');
+
+        // Create header container
+        const headerContainer = contentEl.createDiv({ cls: 'graph_copilot-header-container' });
+        headerContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
+
+        const title = headerContainer.createEl('h2', { text: 'Create new connection' });
+        title.style.margin = '0';
+
+        // Add "New Custom Connection" button
+        const newTypeBtn = headerContainer.createEl('button', { text: '+ new custom connection' });
+        newTypeBtn.style.cssText = 'font-size: 13px; padding: 4px 10px; cursor: pointer;';
+        newTypeBtn.onclick = () => {
+            this.close();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const plugin = (this.app as any).plugins.plugins['osint-copilot'];
+            if (plugin && plugin.customTypesService) {
+                new CustomTypeCreationModal(
+                    this.app,
+                    plugin.customTypesService,
+                    undefined,
+                    (name) => {
+                        // Re-open selector after creation
+                        const selector = new FTMIntervalTypeSelectorModal(
+                            this.app,
+                            this.entityManager,
+                            this.onConnectionCreated || undefined,
+                            this.sourceEntityId || undefined,
+                            this.targetEntityId || undefined
+                        );
+                        selector.open();
+                    },
+                    'Interval' // Specify base type
+                ).open();
+            } else {
+                new Notice('Error: OSINT copilot plugin instance not found.'); // eslint-disable-line obsidianmd/ui/sentence-case
+            }
+        };
+
+        contentEl.createEl('p', { text: 'Select the type of relationship/interval to create:' });
+
+        const intPlugin = getOsintCopilotPlugin(this.app);
+        if (intPlugin?.schemaCatalogService) {
+            this.useCatalogUi = true;
+            const famRow = contentEl.createDiv();
+            famRow.style.cssText =
+                'display: flex; flex-wrap: wrap; gap: 10px 16px; margin-bottom: 12px; align-items: center;';
+            famRow.createEl('span', { text: 'Show:', cls: 'setting-item-description' });
+            const ef = intPlugin.settings.enabledSchemaFamilies as EnabledSchemaFamilies;
+            const addIntToggle = (key: keyof EnabledSchemaFamilies, caption: string) => {
+                const wrap = famRow.createDiv();
+                wrap.style.display = 'flex';
+                wrap.style.alignItems = 'center';
+                wrap.style.gap = '6px';
+                const cb = wrap.createEl('input', { type: 'checkbox' });
+                cb.checked = ef[key];
+                cb.addEventListener('change', async () => {
+                    ef[key] = cb.checked;
+                    await intPlugin.saveSettings();
+                    this.syncIntervalTypesFromPlugin();
+                    this.filterIntervalTypes();
+                });
+                wrap.createEl('span', { text: caption });
+            };
+            addIntToggle('ftm', 'FTM');
+            addIntToggle('stix2', 'STIX2');
+            addIntToggle('mitre', 'MITRE');
+            addIntToggle('user', 'User');
+            this.syncIntervalTypesFromPlugin();
+        } else {
+            const intPlugin = getOsintCopilotPlugin(this.app);
+            this.useCatalogUi = false;
+            this.intervalTypes = getAvailableFTMIntervalTypes(intPlugin?.settings.oidsfModalLayers);
+        }
+
+        // Search input for filtering interval types
+        const searchContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-search-container' });
+        searchContainer.style.cssText = 'margin-bottom: 12px;';
+
+        this.searchInput = searchContainer.createEl('input', {
+            type: 'text',
+            placeholder: 'Search relationship types...',
+            cls: 'graph_copilot-entity-search-input'
+        });
+        this.searchInput.style.cssText = `
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--background-modifier-border);
+            border-radius: 6px;
+            background: var(--background-primary);
+            color: var(--text-normal);
+            font-size: 14px;
+        `;
+        this.searchInput.addEventListener('input', () => this.filterIntervalTypes());
+
+        // Grid container with scrolling
+        const scrollContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-scroll-container' });
+        scrollContainer.style.cssText = `
+            max-height: 400px;
+            overflow-y: auto;
+            padding-right: 8px;
+        `;
+
+        this.gridContainer = scrollContainer.createDiv({ cls: 'graph_copilot-entity-type-grid' });
+
+        if (this.useCatalogUi) {
+            this.renderCatalogIntervalTypes(this.catalogIntervalTypes);
+        } else {
+            this.renderIntervalTypes(this.intervalTypes);
+        }
+
+        // Cancel button
+        const cancelBtn = contentEl.createEl('button', {
+            text: 'Cancel',
+            cls: 'graph_copilot-entity-cancel-btn'
+        });
+        cancelBtn.onclick = () => this.close();
+
+        // Focus search input
+        setTimeout(() => this.searchInput?.focus(), 50);
+    }
+
+    private syncIntervalTypesFromPlugin(): void {
+        const plugin = getOsintCopilotPlugin(this.app);
+        if (!plugin?.schemaCatalogService) return;
+        this.catalogIntervalTypes = plugin.schemaCatalogService.listRelationshipTypes(
+            plugin.getEnabledSchemaFamilies(),
+            plugin.settings.oidsfModalLayers,
+        );
+    }
+
+    private filterIntervalTypes(): void {
+        const query = this.searchInput?.value.toLowerCase() || '';
+        if (this.useCatalogUi) {
+            const filtered = this.catalogIntervalTypes.filter(
+                (rel) =>
+                    rel.label.toLowerCase().includes(query) ||
+                    rel.description.toLowerCase().includes(query) ||
+                    rel.name.toLowerCase().includes(query) ||
+                    rel.family.toLowerCase().includes(query),
+            );
+            this.renderCatalogIntervalTypes(filtered);
+            return;
+        }
+        const filtered = this.intervalTypes.filter(
+            (type) =>
+                type.label.toLowerCase().includes(query) ||
+                type.description.toLowerCase().includes(query) ||
+                type.name.toLowerCase().includes(query),
+        );
+        this.renderIntervalTypes(filtered);
+    }
+
+    private renderCatalogIntervalTypes(types: CatalogRelationshipType[]): void {
+        if (!this.gridContainer) return;
+        this.gridContainer.empty();
+
+        if (types.length === 0) {
+            const noResults = this.gridContainer.createDiv({ cls: 'graph_copilot-no-results' });
+            noResults.style.cssText = `
+                text-align: center;
+                padding: 20px;
+                color: var(--text-muted);
+            `;
+            noResults.textContent = 'No relationship types match your search.';
+            return;
+        }
+
+        const plugin = getOsintCopilotPlugin(this.app);
+        const sorted = [...types].sort((a, b) => {
+            const fa = a.family.localeCompare(b.family);
+            if (fa !== 0) return fa;
+            return a.label.localeCompare(b.label);
+        });
+
+        const byFam = new Map<SchemaFamily, CatalogRelationshipType[]>();
+        for (const rel of sorted) {
+            if (!byFam.has(rel.family)) byFam.set(rel.family, []);
+            byFam.get(rel.family)!.push(rel);
+        }
+
+        for (const fam of CATALOG_FAMILY_ORDER) {
+            const list = byFam.get(fam);
+            if (!list?.length) continue;
+
+            const head = this.gridContainer.createEl('h4', {
+                text: familySectionTitle(fam),
+                cls: 'graph_copilot-section-header',
+            });
+            head.style.gridColumn = '1 / -1';
+            head.style.marginTop = '8px';
+            head.style.marginBottom = '4px';
+
+            for (const rel of list) {
+            const typeBtn = this.gridContainer.createDiv({ cls: 'graph_copilot-entity-type-btn' });
+            typeBtn.style.borderLeftColor = rel.color;
+            typeBtn.style.position = 'relative';
+
+            const icon = typeBtn.createDiv({ cls: 'graph_copilot-entity-type-icon' });
+            icon.style.backgroundColor = rel.color;
+            icon.textContent = '🔗';
+
+            const badge = typeBtn.createDiv();
+            badge.textContent = familyBadgeLabel(rel.family);
+            badge.style.cssText =
+                'position: absolute; top: 6px; right: 8px; font-size: 10px; color: var(--text-muted); font-weight: 600;';
+
+            const info = typeBtn.createDiv({ cls: 'graph_copilot-entity-type-info' });
+            info.createEl('strong', { text: rel.label });
+            info.createEl('small', { text: rel.description });
+
+            const isCustom =
+                plugin &&
+                plugin.customTypesService &&
+                rel.family === 'ftm' &&
+                plugin.customTypesService.getCustomSchema(rel.name);
+
+            if (isCustom) {
+                const actionsDiv = typeBtn.createDiv({ cls: 'graph_copilot-type-actions' });
+                actionsDiv.style.cssText =
+                    'position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: none; gap: 6px; z-index: 10;';
+                typeBtn.onmouseenter = () => {
+                    actionsDiv.style.display = 'flex';
+                };
+                typeBtn.onmouseleave = () => {
+                    actionsDiv.style.display = 'none';
+                };
+                const editBtn = actionsDiv.createEl('button', { text: '✎' });
+                editBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    this.close();
+                    new CustomTypeCreationModal(
+                        this.app,
+                        plugin.customTypesService,
+                        plugin.customTypesService.getCustomSchema(rel.name),
+                        () => {
+                            new FTMIntervalTypeSelectorModal(
+                                this.app,
+                                this.entityManager,
+                                this.onConnectionCreated || undefined,
+                                this.sourceEntityId || undefined,
+                                this.targetEntityId || undefined,
+                            ).open();
+                        },
+                        'Interval',
+                    ).open();
+                };
+                const delBtn = actionsDiv.createEl('button', { text: '🗑' });
+                delBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    if (confirm(`Delete custom relationship type "${rel.label}"?`)) {
+                        await plugin.customTypesService.deleteCustomType(rel.name);
+                        this.syncIntervalTypesFromPlugin();
+                        this.filterIntervalTypes();
+                    }
+                };
+            }
+
+            typeBtn.onclick = () => {
+                this.close();
+                if (rel.family === 'ftm') {
+                    new FTMIntervalCreationModal(
+                        this.app,
+                        this.entityManager,
+                        rel.name,
+                        this.onConnectionCreated || undefined,
+                        this.sourceEntityId || undefined,
+                        this.targetEntityId || undefined,
+                    ).open();
+                } else {
+                    new FTMIntervalCreationModal(
+                        this.app,
+                        this.entityManager,
+                        rel.name,
+                        this.onConnectionCreated || undefined,
+                        this.sourceEntityId || undefined,
+                        this.targetEntityId || undefined,
+                        rel,
+                    ).open();
+                }
+            };
+            }
+        }
+    }
+
+    private renderIntervalTypes(types: Array<{ name: string; label: string; description: string; color: string }>): void {
+        if (!this.gridContainer) return;
+        this.gridContainer.empty();
+
+        if (types.length === 0) {
+            const noResults = this.gridContainer.createDiv({ cls: 'graph_copilot-no-results' });
+            noResults.style.cssText = `
+text - align: center;
+padding: 20px;
+color: var(--text - muted);
+`;
+            noResults.textContent = 'No relationship types match your search.';
+            return;
+        }
+
+        for (const typeInfo of types) {
+            const typeBtn = this.gridContainer.createDiv({ cls: 'graph_copilot-entity-type-btn' });
+            typeBtn.style.borderLeftColor = typeInfo.color;
+            typeBtn.style.position = 'relative'; // Ensure relative positioning for actions
+
+            const icon = typeBtn.createDiv({ cls: 'graph_copilot-entity-type-icon' });
+            icon.style.backgroundColor = typeInfo.color;
+            icon.textContent = '🔗'; // Connection icon
+
+            const info = typeBtn.createDiv({ cls: 'graph_copilot-entity-type-info' });
+            info.createEl('strong', { text: typeInfo.label });
+            info.createEl('small', { text: typeInfo.description });
+
+            // Check if custom type
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const plugin = (this.app as any).plugins.plugins['osint-copilot'];
+            const isCustom = plugin && plugin.customTypesService && plugin.customTypesService.getCustomSchema(typeInfo.name);
+
+            if (isCustom) {
+                const actionsDiv = typeBtn.createDiv({ cls: 'graph_copilot-type-actions' });
+                actionsDiv.style.cssText = 'position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: none; gap: 6px; z-index: 10;';
+
+                typeBtn.onmouseenter = () => actionsDiv.style.display = 'flex';
+                typeBtn.onmouseleave = () => actionsDiv.style.display = 'none';
+
+                const editBtn = actionsDiv.createEl('button', { text: '✎' });
+                editBtn.title = 'Edit type';
+                editBtn.style.cssText = 'padding: 4px 8px; margin-right: 5px; background: var(--interactive-accent); color: white; border: none; border-radius: 4px; cursor: pointer;';
+                editBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    this.close();
+                    new CustomTypeCreationModal(
+                        this.app,
+                        plugin.customTypesService,
+                        plugin.customTypesService.getCustomSchema(typeInfo.name),
+                        (name) => {
+                            new FTMIntervalTypeSelectorModal(
+                                this.app,
+                                this.entityManager,
+                                this.onConnectionCreated || undefined,
+                                this.sourceEntityId || undefined,
+                                this.targetEntityId || undefined
+                            ).open();
+                        },
+                        'Interval'
+                    ).open();
+                };
+
+                const delBtn = actionsDiv.createEl('button', { text: '🗑' });
+                delBtn.title = 'Delete type';
+                delBtn.style.cssText = 'padding: 4px 8px; background: var(--background-modifier-error); color: white; border: none; border-radius: 4px; cursor: pointer;';
+                delBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    if (confirm(`Delete custom relationship type "${typeInfo.label}"?`)) {
+                        await plugin.customTypesService.deleteCustomType(typeInfo.name);
+                        // Reload and refresh
+                        this.intervalTypes = getAvailableFTMIntervalTypes(plugin?.settings.oidsfModalLayers);
+                        this.filterIntervalTypes();
+                    }
+                };
+            }
+
+            typeBtn.onclick = () => {
+                this.close();
+                // Open the FTM interval creation modal
+                const createModal = new FTMIntervalCreationModal(
+                    this.app,
+                    this.entityManager,
+                    typeInfo.name,
+                    this.onConnectionCreated || undefined,
+                    this.sourceEntityId || undefined,
+                    this.targetEntityId || undefined
+                );
+                createModal.open();
+            };
+        }
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+/**
+ * FTM Interval Creation Modal - allows users to create FTM interval/relationship entities.
+ * This modal provides a form for creating connections using FTM interval schemas.
+ */
+export class FTMIntervalCreationModal extends Modal {
+    private entityManager: EntityManager;
+    private intervalType: string; // FTM schema name (e.g., 'Associate', 'Ownership')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private properties: Record<string, any> = {};
+    private onConnectionCreated: ((connectionId?: string) => void) | null;
+    private sourceEntityId: string | null = null;
+    private targetEntityId: string | null = null;
+    private entities: Entity[] = [];
+    private catalogRel: CatalogRelationshipType | null = null;
+    private catalogSourceId: string | null = null;
+    private catalogTargetId: string | null = null;
+
+    constructor(
+        app: App,
+        entityManager: EntityManager,
+        intervalType: string,
+        onConnectionCreated?: (connectionId?: string) => void,
+        preselectedSourceId?: string,
+        preselectedTargetId?: string,
+        catalogRel?: CatalogRelationshipType
+    ) {
+        super(app);
+        this.entityManager = entityManager;
+        this.intervalType = intervalType;
+        this.onConnectionCreated = onConnectionCreated || null;
+        this.sourceEntityId = preselectedSourceId || null;
+        this.targetEntityId = preselectedTargetId || null;
+        this.catalogRel = catalogRel ?? null;
+        this.catalogSourceId = preselectedSourceId || null;
+        this.catalogTargetId = preselectedTargetId || null;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass('graph_copilot-entity-modal');
+
+        // Load entities
+        this.entities = this.entityManager.getAllEntities();
+
+        if (this.catalogRel && this.catalogRel.family !== 'ftm') {
+            this.openCatalogIntervalForm();
+            return;
+        }
+
+        const config = getFTMEntityConfig(this.intervalType);
+        if (!config) {
+            new Notice(`Unknown interval type: ${this.intervalType} `);
+            this.close();
+            return;
+        }
+
+        // Title
+        contentEl.createEl('h2', { text: `Create ${config.label} ` });
+        contentEl.createEl('p', {
+            text: config.description,
+            cls: 'graph_copilot-entity-modal-description'
+        });
+
+        if (this.entities.length < 2) {
+            contentEl.createEl('p', {
+                text: 'You need at least 2 entities to create a connection.',
+                cls: 'graph_copilot-connection-warning'
+            });
+            const closeBtn = contentEl.createEl('button', { text: 'Close' });
+            closeBtn.onclick = () => this.close();
+            return;
+        }
+
+        // Create form container
+        const formContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-form' });
+
+        // Add entity selection dropdowns for entity-type properties
+        // These are properties that reference other entities (type: 'entity')
+        const entityProperties = Object.entries(config.propertyDefinitions)
+            .filter(([_, def]) => def.type === 'entity')
+            .map(([name, _]) => name);
+
+        for (const propName of entityProperties) {
+            this.createEntityDropdown(formContainer, propName, config.propertyDefinitions[propName]);
+        }
+
+        // Add fields for other required and featured properties
+        const nonEntityProps = [...config.requiredProperties, ...config.featuredProperties]
+            .filter(prop => !entityProperties.includes(prop));
+
+        for (const propName of nonEntityProps) {
+            const propDef = config.propertyDefinitions[propName];
+            if (propDef) {
+                this.createPropertyField(formContainer, propName, propDef, config.requiredProperties.includes(propName));
+            }
+        }
+
+        // Add optional properties in collapsible section
+        if (config.optionalProperties.length > 0) {
+            contentEl.createEl('h4', { text: 'Additional properties' });
+            const optionalContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-form' });
+
+            for (const propName of config.optionalProperties) {
+                const propDef = config.propertyDefinitions[propName];
+                if (propDef && !propDef.hidden && !entityProperties.includes(propName)) {
+                    this.createPropertyField(optionalContainer, propName, propDef, false);
+                }
+            }
+        }
+
+        // Buttons
+        const buttonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-modal-buttons' });
+
+        const createBtn = buttonContainer.createEl('button', {
+            text: `Create ${config.label} `,
+            cls: 'mod-cta'
+        });
+        createBtn.onclick = () => this.handleCreate();
+
+        const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+        cancelBtn.onclick = () => this.close();
+    }
+
+    private openCatalogIntervalForm(): void {
+        const rel = this.catalogRel;
+        if (!rel) return;
+
+        const { contentEl } = this;
+        contentEl.createEl('h2', { text: `Create ${rel.label}` });
+        contentEl.createEl('p', {
+            text: rel.description,
+            cls: 'graph_copilot-entity-modal-description',
+        });
+
+        if (this.entities.length < 2) {
+            contentEl.createEl('p', {
+                text: 'You need at least 2 entities to create a connection.',
+                cls: 'graph_copilot-connection-warning',
+            });
+            const closeBtn = contentEl.createEl('button', { text: 'Close' });
+            closeBtn.onclick = () => this.close();
+            return;
+        }
+
+        const formContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-form' });
+
+        const fromWrap = formContainer.createDiv({ cls: 'graph_copilot-entity-field' });
+        fromWrap.createEl('label', { text: 'From entity *' });
+        const fromSel = fromWrap.createEl('select', { cls: 'graph_copilot-entity-input' });
+        fromSel.createEl('option', { text: 'Select source…', value: '' });
+        for (const entity of this.entities) {
+            const opt = fromSel.createEl('option', {
+                text: `${entity.label} (${entity.type})`,
+                value: entity.id,
+            });
+            if (this.catalogSourceId === entity.id) {
+                opt.selected = true;
+            }
+        }
+        if (this.catalogSourceId) {
+            fromSel.value = this.catalogSourceId;
+        }
+        fromSel.onchange = () => {
+            this.catalogSourceId = fromSel.value || null;
+        };
+
+        const toWrap = formContainer.createDiv({ cls: 'graph_copilot-entity-field' });
+        toWrap.createEl('label', { text: 'To entity *' });
+        const toSel = toWrap.createEl('select', { cls: 'graph_copilot-entity-input' });
+        toSel.createEl('option', { text: 'Select target…', value: '' });
+        for (const entity of this.entities) {
+            const opt = toSel.createEl('option', {
+                text: `${entity.label} (${entity.type})`,
+                value: entity.id,
+            });
+            if (this.catalogTargetId === entity.id) {
+                opt.selected = true;
+            }
+        }
+        if (this.catalogTargetId) {
+            toSel.value = this.catalogTargetId;
+        }
+        toSel.onchange = () => {
+            this.catalogTargetId = toSel.value || null;
+        };
+
+        const ordered = [...rel.required, ...rel.featured, ...Object.keys(rel.properties)];
+        const seen = new Set<string>();
+        for (const propName of ordered) {
+            if (seen.has(propName)) continue;
+            seen.add(propName);
+            if (!rel.properties[propName]) continue;
+            this.createCatalogRelPropertyField(
+                formContainer,
+                propName,
+                rel,
+                rel.required.includes(propName),
+            );
+        }
+
+        const buttonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-modal-buttons' });
+        const createBtn = buttonContainer.createEl('button', {
+            text: `Create ${rel.label}`,
+            cls: 'mod-cta',
+        });
+        createBtn.onclick = () => void this.handleCreate();
+        const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+        cancelBtn.onclick = () => this.close();
+    }
+
+    private createCatalogRelPropertyField(
+        container: HTMLElement,
+        propertyName: string,
+        rel: CatalogRelationshipType,
+        isRequired: boolean,
+    ): void {
+        const def = rel.properties[propertyName];
+        const fieldContainer = container.createDiv({ cls: 'graph_copilot-entity-field' });
+        fieldContainer.createEl('label', {
+            text: (def?.label || propertyName) + (isRequired ? ' *' : ''),
+        });
+        const ptype = (def?.type || 'string').toLowerCase();
+        let input: HTMLInputElement | HTMLTextAreaElement;
+        if (ptype === 'text') {
+            input = fieldContainer.createEl('textarea', { placeholder: '…' }) as HTMLTextAreaElement;
+            input.rows = 3;
+        } else if (ptype === 'date') {
+            input = fieldContainer.createEl('input', { type: 'date' }) as HTMLInputElement;
+        } else if (ptype === 'number') {
+            input = fieldContainer.createEl('input', { type: 'number' }) as HTMLInputElement;
+            (input as HTMLInputElement).step = 'any';
+        } else {
+            input = fieldContainer.createEl('input', { type: 'text' }) as HTMLInputElement;
+        }
+        input.addClass('graph_copilot-entity-input');
+        input.addEventListener('input', () => {
+            if (input.type === 'number') {
+                const value = parseFloat((input as HTMLInputElement).value);
+                if (!isNaN(value)) {
+                    this.properties[propertyName] = value;
+                }
+            } else {
+                this.properties[propertyName] = input.value;
+            }
+        });
+    }
+
+    private createEntityDropdown(container: HTMLElement, propertyName: string, propDef: FTMPropertyDefinition): void {
+        const fieldContainer = container.createDiv({ cls: 'graph_copilot-entity-field' });
+        fieldContainer.createEl('label', { text: propDef.label + ' *' });
+
+        const select = fieldContainer.createEl('select', { cls: 'graph_copilot-entity-input' });
+
+        const placeholderOption = select.createEl('option', {
+            text: `Select ${propDef.label.toLowerCase()}...`,
+            value: ''
+        });
+        placeholderOption.disabled = true;
+
+        // Check if this property has a preselected value
+        const preselectedId = (propertyName === 'person' || propertyName === 'owner' || propertyName === 'employee' || propertyName === 'director')
+            ? this.sourceEntityId
+            : (propertyName === 'associate' || propertyName === 'asset' || propertyName === 'employer' || propertyName === 'organization')
+                ? this.targetEntityId
+                : null;
+
+        placeholderOption.selected = !preselectedId;
+
+        // Filter entities by range if specified
+        const range = propDef.range;
+        const filteredEntities = range
+            ? this.entities.filter(e => e.type === range || e.ftmSchema === range)
+            : this.entities;
+
+        for (const entity of filteredEntities) {
+            const option = select.createEl('option', {
+                text: `${entity.label} (${entity.type})`,
+                value: entity.id
+            });
+            if (preselectedId && entity.id === preselectedId) {
+                option.selected = true;
+                this.properties[propertyName] = entity.id;
+            }
+        }
+
+        select.onchange = () => {
+            this.properties[propertyName] = select.value || null;
+        };
+    }
+
+    private createPropertyField(container: HTMLElement, propertyName: string, propDef: FTMPropertyDefinition, isRequired: boolean): void {
+        const fieldContainer = container.createDiv({ cls: 'graph_copilot-entity-field' });
+
+        const label = fieldContainer.createEl('label', {
+            text: propDef.label + (isRequired ? ' *' : '')
+        });
+        label.setAttribute('for', `interval - ${propertyName} `);
+
+        let input: HTMLInputElement | HTMLTextAreaElement;
+
+        // Use appropriate input type based on property type
+        if (propDef.type === 'text' || propertyName === 'description' || propertyName === 'summary') {
+            input = fieldContainer.createEl('textarea', {
+                placeholder: `Enter ${propDef.label.toLowerCase()}...`
+            }) as HTMLTextAreaElement;
+            input.rows = 3;
+        } else if (propDef.type === 'date' || propertyName.includes('Date')) {
+            input = fieldContainer.createEl('input', {
+                type: 'date'
+            }) as HTMLInputElement;
+        } else if (propDef.type === 'number' || propertyName.includes('percentage') || propertyName.includes('Count') || propertyName.includes('Value')) {
+            input = fieldContainer.createEl('input', {
+                type: 'number',
+                placeholder: `Enter ${propDef.label.toLowerCase()}...`
+            }) as HTMLInputElement;
+            (input as HTMLInputElement).step = 'any';
+        } else {
+            input = fieldContainer.createEl('input', {
+                type: 'text',
+                placeholder: `Enter ${propDef.label.toLowerCase()}...`
+            }) as HTMLInputElement;
+        }
+
+        input.id = `interval - ${propertyName} `;
+        input.addClass('graph_copilot-entity-input');
+
+        // Store value on change
+        input.addEventListener('input', () => {
+            if (input.type === 'number') {
+                const value = parseFloat((input as HTMLInputElement).value);
+                if (!isNaN(value)) {
+                    this.properties[propertyName] = value;
+                }
+            } else {
+                this.properties[propertyName] = input.value;
+            }
+        });
+    }
+
+    private async handleCreate(): Promise<void> {
+        if (this.catalogRel && this.catalogRel.family !== 'ftm') {
+            const fromId = this.catalogSourceId || this.sourceEntityId;
+            const toId = this.catalogTargetId || this.targetEntityId;
+            if (!fromId || !toId) {
+                new Notice('Please select both entities for the connection');
+                return;
+            }
+            if (fromId === toId) {
+                new Notice('Source and target entities must be different');
+                return;
+            }
+            try {
+                const connection = await this.entityManager.createConnection(
+                    fromId,
+                    toId,
+                    this.intervalType,
+                    { ...this.properties },
+                    { schemaFamily: this.catalogRel.family },
+                );
+                if (connection) {
+                    const sourceEntity = this.entityManager.getEntity(fromId);
+                    const targetEntity = this.entityManager.getEntity(toId);
+                    new Notice(
+                        `Created: ${sourceEntity?.label} → ${this.intervalType} → ${targetEntity?.label} `,
+                    );
+                    if (this.onConnectionCreated) {
+                        this.onConnectionCreated(connection.id);
+                    }
+                    this.close();
+                } else {
+                    new Notice('Failed to create connection');
+                }
+            } catch (error) {
+                new Notice(`Failed to create connection: ${error} `);
+                console.error('Catalog interval creation error:', error);
+            }
+            return;
+        }
+
+        const config = getFTMEntityConfig(this.intervalType);
+        if (!config) return;
+
+        // No required field validation - allow creation with partial data
+
+        try {
+            // For now, we'll create this as a connection with the interval type as the relationship
+            // In the future, this could be enhanced to create actual FTM interval entities
+            const entityProps = Object.entries(config.propertyDefinitions)
+                .filter(([_, def]) => def.type === 'entity')
+                .map(([name, _]) => name);
+
+            if (entityProps.length >= 2) {
+                const sourceId = this.properties[entityProps[0]];
+                const targetId = this.properties[entityProps[1]];
+
+                if (!sourceId || !targetId) {
+                    new Notice('Please select both entities for the connection');
+                    return;
+                }
+
+                if (sourceId === targetId) {
+                    new Notice('Source and target entities must be different');
+                    return;
+                }
+
+                // Create connection with interval type as relationship
+                const connection = await this.entityManager.createConnection(
+                    sourceId,
+                    targetId,
+                    this.intervalType,
+                    undefined,
+                    { schemaFamily: 'ftm' },
+                );
+
+                if (connection) {
+                    const sourceEntity = this.entityManager.getEntity(sourceId);
+                    const targetEntity = this.entityManager.getEntity(targetId);
+                    new Notice(`Created: ${sourceEntity?.label} → ${this.intervalType} → ${targetEntity?.label} `);
+
+                    if (this.onConnectionCreated) {
+                        this.onConnectionCreated(connection.id);
+                    }
+                    this.close();
+                } else {
+                    new Notice('Failed to create connection');
+                }
+            } else {
+                new Notice('This interval type requires at least two entity references');
+            }
+        } catch (error) {
+            new Notice(`Failed to create ${config.label}: ${error} `);
+            console.error('Interval creation error:', error);
+        }
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+/**
+ * Connection Edit Modal - allows editing of connection properties.
+ * Similar to FTMEntityEditModal but for connections/relationships.
+ */
+export class ConnectionEditModal extends Modal {
+    private entityManager: EntityManager;
+    private connection: Connection;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private properties: Record<string, any> = {};
+    private onConnectionUpdated: ((connectionId: string) => void) | null;
+
+    constructor(
+        app: App,
+        entityManager: EntityManager,
+        connection: Connection,
+        onConnectionUpdated?: (connectionId: string) => void
+    ) {
+        super(app);
+        this.entityManager = entityManager;
+        this.connection = connection;
+        this.properties = connection.properties ? { ...connection.properties } : {};
+        this.onConnectionUpdated = onConnectionUpdated || null;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass('graph_copilot-entity-modal');
+        contentEl.addClass('graph_copilot-ftm-modal');
+
+        const intervalType = this.connection.ftmSchema || this.connection.relationship;
+        const config = getFTMEntityConfig(intervalType);
+
+        if (!config) {
+            // Fall back to generic connection editor for non-FTM relationships
+            this.renderNonFTMConnectionEditor(contentEl, intervalType);
+            return;
+        }
+
+        // Get source and target entities
+        const fromEntity = this.entityManager.getEntity(this.connection.fromEntityId);
+        const toEntity = this.entityManager.getEntity(this.connection.toEntityId);
+
+        if (!fromEntity || !toEntity) {
+            contentEl.createEl('p', { text: 'Error: source or target entity not found' });
+            const closeBtn = contentEl.createEl('button', { text: 'Close' });
+            closeBtn.onclick = () => this.close();
+            return;
+        }
+
+        // Title
+        contentEl.createEl('h2', { text: `Edit ${config.label} ` });
+        contentEl.createEl('p', {
+            text: `${fromEntity.label} → ${this.connection.relationship} → ${toEntity.label} `,
+            cls: 'graph_copilot-entity-modal-description'
+        });
+
+        // Show connection details (read-only)
+        const detailsContainer = contentEl.createDiv({ cls: 'graph_copilot-connection-details' });
+        detailsContainer.style.cssText = `
+background: var(--background - secondary);
+padding: 12px;
+border - radius: 6px;
+margin - bottom: 16px;
+`;
+        detailsContainer.createEl('div', { text: `From: ${fromEntity.label} ` });
+        detailsContainer.createEl('div', { text: `To: ${toEntity.label} ` });
+        detailsContainer.createEl('div', { text: `Type: ${this.connection.relationship} ` });
+
+        // Create form container for editable properties
+        const formContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-form' });
+
+        // Get non-entity properties (entity properties are source/target which are read-only)
+        const editableProperties = [...config.featuredProperties, ...config.optionalProperties]
+            .filter(propName => {
+                const propDef = config.propertyDefinitions[propName];
+                return propDef && propDef.type !== 'entity' && !propDef.hidden;
+            });
+
+        if (editableProperties.length === 0) {
+            formContainer.createEl('p', {
+                text: 'This connection type has no editable properties.',
+                cls: 'graph_copilot-entity-modal-description'
+            });
+        } else {
+            formContainer.createEl('h4', { text: 'Connection properties', cls: 'graph_copilot-section-header' });
+
+            // Create fields for each editable property
+            for (const propName of editableProperties) {
+                const propDef = config.propertyDefinitions[propName];
+                if (!propDef) continue;
+
+                const isRequired = config.requiredProperties.includes(propName);
+                this.createPropertyField(formContainer, propName, propDef, isRequired);
+            }
+        }
+
+        // Buttons
+        const buttonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-modal-buttons' });
+
+        const saveBtn = buttonContainer.createEl('button', {
+            text: 'Save changes',
+            cls: 'mod-cta'
+        });
+        saveBtn.onclick = () => this.handleSave();
+
+        const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+        cancelBtn.onclick = () => this.close();
+    }
+
+    private createPropertyField(container: HTMLElement, propertyName: string, propDef: FTMPropertyDefinition, isRequired: boolean): void {
+        const fieldContainer = container.createDiv({ cls: 'graph_copilot-entity-field' });
+
+        const label = fieldContainer.createEl('label', {
+            text: propDef.label + (isRequired ? ' *' : '')
+        });
+        label.setAttribute('for', `conn - edit - ${propertyName} `);
+
+        let input: HTMLInputElement | HTMLTextAreaElement;
+
+        // Get current value
+        const currentValue = this.properties[propertyName] || '';
+
+        // Use appropriate input type based on property type
+        if (propDef.type === 'text' || propertyName === 'description' || propertyName === 'summary') {
+            input = fieldContainer.createEl('textarea', {
+                placeholder: `Enter ${propDef.label.toLowerCase()}...`
+            }) as HTMLTextAreaElement;
+            input.rows = 3;
+            input.value = currentValue;
+        } else if (propDef.type === 'date' || propertyName.includes('Date')) {
+            input = fieldContainer.createEl('input', {
+                type: 'date'
+            }) as HTMLInputElement;
+            input.value = currentValue;
+        } else if (propDef.type === 'number' || propertyName.includes('percentage') || propertyName.includes('Count') || propertyName.includes('Value') || propertyName.includes('amount')) {
+            input = fieldContainer.createEl('input', {
+                type: 'number',
+                placeholder: `Enter ${propDef.label.toLowerCase()}...`
+            }) as HTMLInputElement;
+            (input as HTMLInputElement).step = 'any';
+            input.value = currentValue;
+        } else {
+            input = fieldContainer.createEl('input', {
+                type: 'text',
+                placeholder: `Enter ${propDef.label.toLowerCase()}...`
+            }) as HTMLInputElement;
+            input.value = currentValue;
+        }
+
+        input.id = `conn - edit - ${propertyName} `;
+        input.addClass('graph_copilot-entity-input');
+
+        // Store value on change
+        input.addEventListener('input', () => {
+            if (input.type === 'number') {
+                const value = parseFloat((input as HTMLInputElement).value);
+                if (!isNaN(value)) {
+                    this.properties[propertyName] = value;
+                } else {
+                    delete this.properties[propertyName];
+                }
+            } else {
+                const value = input.value.trim();
+                if (value) {
+                    this.properties[propertyName] = value;
+                } else {
+                    delete this.properties[propertyName];
+                }
+            }
+        });
+    }
+
+    private async handleSave(): Promise<void> {
+        const intervalType = this.connection.ftmSchema || this.connection.relationship;
+        const config = getFTMEntityConfig(intervalType);
+
+        // No required field validation - allow updates with partial data
+
+        try {
+            // Update the connection
+            await this.entityManager.updateConnection(this.connection.id, this.properties);
+
+            new Notice('Connection updated successfully');
+
+            if (this.onConnectionUpdated) {
+                this.onConnectionUpdated(this.connection.id);
+            }
+            this.close();
+        } catch (error) {
+            new Notice(`Failed to update connection: ${error} `);
+            console.error('Connection update error:', error);
+        }
+    }
+
+    /**
+     * Render a generic connection editor for non-FTM relationships.
+     */
+    private renderNonFTMConnectionEditor(contentEl: HTMLElement, intervalType: string): void {
+        // Get source and target entities
+        const fromEntity = this.entityManager.getEntity(this.connection.fromEntityId);
+        const toEntity = this.entityManager.getEntity(this.connection.toEntityId);
+
+        if (!fromEntity || !toEntity) {
+            contentEl.createEl('p', { text: 'Error: source or target entity not found' });
+            const closeBtn = contentEl.createEl('button', { text: 'Close' });
+            closeBtn.onclick = () => this.close();
+            return;
+        }
+
+        // Title
+        contentEl.createEl('h2', { text: "Edit connection" });
+        contentEl.createEl('p', {
+            text: `${fromEntity.label} → ${this.connection.relationship} → ${toEntity.label} `,
+            cls: 'graph_copilot-entity-modal-description'
+        });
+
+        // Info message
+        const infoDiv = contentEl.createDiv({ cls: 'graph_copilot-info-message' });
+        infoDiv.style.cssText = `
+padding: 12px;
+margin - bottom: 20px;
+background: var(--background - secondary);
+border - left: 3px solid var(--interactive - accent);
+border - radius: 4px;
+`;
+        infoDiv.createEl('p', {
+            text: `This is a non - standard relationship type.You can edit its properties below.`,
+            cls: 'text-muted'
+        });
+
+        // Create form container
+        const formContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-form' });
+
+        // Get all existing properties
+        const existingProps = Object.keys(this.properties);
+
+        if (existingProps.length > 0) {
+            formContainer.createEl('h4', { text: 'Properties', cls: 'graph_copilot-section-header' });
+
+            for (const propName of existingProps) {
+                this.createGenericConnectionPropertyField(formContainer, propName);
+            }
+        }
+
+        // Add new property section
+        const addPropSection = contentEl.createDiv({ cls: 'graph_copilot-add-property-section' });
+        addPropSection.style.cssText = 'margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--background-modifier-border);';
+
+        addPropSection.createEl('h4', { text: 'Add new property', cls: 'graph_copilot-section-header' });
+
+        const addPropContainer = addPropSection.createDiv({ cls: 'graph_copilot-add-property-container' });
+        addPropContainer.style.cssText = 'display: flex; gap: 10px; align-items: flex-end;';
+
+        const nameFieldContainer = addPropContainer.createDiv({ cls: 'graph_copilot-entity-field' });
+        nameFieldContainer.style.flex = '1';
+        nameFieldContainer.createEl('label', { text: 'Property name' });
+        const nameInput = nameFieldContainer.createEl('input', {
+            type: 'text',
+            placeholder: 'e.g., date, location, notes'
+        }) as HTMLInputElement;
+        nameInput.addClass('graph_copilot-entity-input');
+
+        const valueFieldContainer = addPropContainer.createDiv({ cls: 'graph_copilot-entity-field' });
+        valueFieldContainer.style.flex = '2';
+        valueFieldContainer.createEl('label', { text: 'Property value' });
+        const valueInput = valueFieldContainer.createEl('input', {
+            type: 'text',
+            placeholder: 'Enter value...'
+        }) as HTMLInputElement;
+        valueInput.addClass('graph_copilot-entity-input');
+
+        const addBtn = addPropContainer.createEl('button', { text: '+ add' });
+        addBtn.style.cssText = 'padding: 8px 16px; margin-bottom: 2px;';
+        addBtn.onclick = () => {
+            const propName = nameInput.value.trim();
+            const propValue = valueInput.value.trim();
+
+            if (!propName) {
+                new Notice('Please enter a property name');
+                return;
+            }
+
+            if (!propValue) {
+                new Notice('Please enter a property value');
+                return;
+            }
+
+            // Add the property
+            this.properties[propName] = propValue;
+
+            // Re-render the form
+            contentEl.empty();
+            this.renderNonFTMConnectionEditor(contentEl, intervalType);
+
+            new Notice(`Added property: ${propName} `);
+        };
+
+        // Buttons
+        const buttonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-modal-buttons' });
+
+        const saveBtn = buttonContainer.createEl('button', {
+            text: 'Save changes',
+            cls: 'mod-cta'
+        });
+        saveBtn.onclick = () => this.handleNonFTMConnectionSave();
+
+        const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+        cancelBtn.onclick = () => this.close();
+    }
+
+    /**
+     * Create a generic property field for non-FTM connections.
+     */
+    private createGenericConnectionPropertyField(container: HTMLElement, propertyName: string): void {
+        const fieldContainer = container.createDiv({ cls: 'graph_copilot-entity-field' });
+        fieldContainer.style.cssText = 'display: flex; gap: 10px; align-items: flex-start;';
+
+        const inputContainer = fieldContainer.createDiv();
+        inputContainer.style.flex = '1';
+
+        const label = inputContainer.createEl('label', { text: propertyName });
+        label.setAttribute('for', `connection - ${propertyName} `);
+
+        const currentValue = this.properties[propertyName];
+        const input = inputContainer.createEl('input', {
+            type: 'text',
+            value: String(currentValue || '')
+        }) as HTMLInputElement;
+        input.id = `connection - ${propertyName} `;
+        input.addClass('graph_copilot-entity-input');
+
+        // Store value on change
+        input.addEventListener('input', () => {
+            this.properties[propertyName] = input.value;
+        });
+
+        // Delete button
+        const deleteBtn = fieldContainer.createEl('button', { text: '🗑' });
+        deleteBtn.style.cssText = 'padding: 8px 12px; margin-top: 24px;';
+        deleteBtn.title = 'Delete property';
+        deleteBtn.onclick = () => {
+            delete this.properties[propertyName];
+            fieldContainer.remove();
+            new Notice(`Deleted property: ${propertyName} `);
+        };
+    }
+
+    /**
+     * Handle save for non-FTM connections.
+     */
+    private async handleNonFTMConnectionSave(): Promise<void> {
+        try {
+            await this.entityManager.updateConnection(this.connection.id, this.properties);
+
+            new Notice('Connection updated successfully');
+
+            if (this.onConnectionUpdated) {
+                this.onConnectionUpdated(this.connection.id);
+            }
+            this.close();
+        } catch (error) {
+            new Notice(`Failed to update connection: ${error} `);
+            console.error('Non-FTM Connection update error:', error);
+        }
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}

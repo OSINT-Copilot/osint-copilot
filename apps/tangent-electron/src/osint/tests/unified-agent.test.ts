@@ -1,0 +1,371 @@
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('../skills/skill-executor', () => ({
+    executeEnricherTool: vi.fn().mockResolvedValue('enricher-mock-result'),
+    executeVaultSkillTool: vi.fn(),
+}));
+
+import { executeEnricherTool } from '../skills/skill-executor';
+import { OrchestrationService } from '../services/orchestration-service';
+import { parseAgentTurnResult } from '../services/agent-runtime/parse-agent-turn-json';
+import { AGENT_TURN_SCHEMA_VERSION } from '../services/agent-runtime/provider-types';
+import { aiOperationsToGraphCommands } from '../services/graph-commands-from-operations';
+import { createAgentProvider } from '../services/agent-runtime/create-agent-provider';
+import { getConfiguredRuntimeOptions } from '../services/agent-runtime/runtime-registry';
+import type { AIOperation } from '../entities/types';
+
+describe('parseAgentTurnResult', () => {
+    it('parses fenced JSON', () => {
+        const raw = `Here you go:\n\`\`\`json\n{"version":"${AGENT_TURN_SCHEMA_VERSION}","answer_markdown":"Hi","retrieval_hits":[],"graph_operations":[]}\n\`\`\`\n`;
+        const r = parseAgentTurnResult(raw, 'claude-code');
+        expect(r.answer_markdown).toBe('Hi');
+        expect(r.graph_operations).toEqual([]);
+        expect(r.diagnostics?.provider).toBe('claude-code');
+    });
+
+    it('returns fallback when not JSON', () => {
+        const r = parseAgentTurnResult('not json at all', 'hermes-agent');
+        expect(r.answer_markdown).toContain('could not be parsed');
+        expect(r.graph_operations).toEqual([]);
+        expect(r.enricher_invocations).toEqual([]);
+    });
+
+    it('normalizes enricher_invocations', () => {
+        const raw = JSON.stringify({
+            version: AGENT_TURN_SCHEMA_VERSION,
+            answer_markdown: 'ok',
+            retrieval_hits: [],
+            graph_operations: [],
+            custom_vault_operations: [],
+            enricher_invocations: [
+                { enricher_id: 'LeakCheck', query: 'user@example.com' },
+                { enricher_id: 'x', query: '' },
+                { enricher_id: '', query: 'nope' },
+            ],
+        });
+        const r = parseAgentTurnResult(raw, 'claude-code');
+        expect(r.enricher_invocations).toHaveLength(1);
+        expect(r.enricher_invocations[0]).toEqual({ enricher_id: 'leakcheck', query: 'user@example.com' });
+    });
+});
+
+describe('aiOperationsToGraphCommands', () => {
+    it('emits create_entity and create_link', () => {
+        const ops: AIOperation[] = [
+            {
+                action: 'create',
+                entities: [
+                    {
+                        type: 'Person',
+                        properties: { full_name: 'Alice' },
+                    },
+                    {
+                        type: 'Company',
+                        properties: { name: 'ACME' },
+                    },
+                ],
+                connections: [{ from: 0, to: 1, relationship: 'WORKS_AT' }],
+            },
+        ];
+        const cmds = aiOperationsToGraphCommands(ops);
+        expect(cmds.some((c) => c.startsWith('@@create_entity'))).toBe(true);
+        expect(cmds.some((c) => c.startsWith('@@create_link'))).toBe(true);
+    });
+
+    it('emits update_entity from updates array', () => {
+        const ops: AIOperation[] = [
+            {
+                action: 'update',
+                updates: [{ type: 'Person', current_label: 'Alice', new_properties: { notes: 'seen' } }],
+            },
+        ];
+        const cmds = aiOperationsToGraphCommands(ops);
+        expect(cmds).toHaveLength(1);
+        expect(cmds[0].startsWith('@@update_entity')).toBe(true);
+        const payload = JSON.parse(cmds[0].replace('@@update_entity', '').trim()) as {
+            type: string;
+            current_label: string;
+            new_properties: { notes: string };
+        };
+        expect(payload.type).toBe('Person');
+        expect(payload.current_label).toBe('Alice');
+        expect(payload.new_properties.notes).toBe('seen');
+    });
+});
+
+describe('createAgentProvider', () => {
+    it('returns Codex provider when configured', () => {
+        const plugin = {
+            settings: {
+                agentRuntimeProvider: 'codex',
+                customAgentRuntimes: [],
+            },
+            graphApiService: {},
+        } as any;
+
+        expect(createAgentProvider(plugin).id).toBe('codex');
+    });
+
+    it('returns Hermes provider when configured', () => {
+        const plugin = {
+            settings: {
+                agentRuntimeProvider: 'hermes-agent',
+                hermesAgentCliPath: 'hermes-mock',
+                hermesAgentExtraArgs: '',
+                hermesAgentTimeoutMs: 120_000,
+                hermesAgentHealthCheckArgs: '--version',
+                customAgentRuntimes: [],
+            },
+            graphApiService: {},
+        } as any;
+        const p = createAgentProvider(plugin);
+        expect(p.id).toBe('hermes-agent');
+    });
+
+    it('returns Claude provider by default', () => {
+        const plugin = {
+            settings: {
+                agentRuntimeProvider: 'claude-code',
+                hermesAgentCliPath: 'hermes',
+                hermesAgentExtraArgs: '',
+                hermesAgentTimeoutMs: 120_000,
+                hermesAgentHealthCheckArgs: '--version',
+                customAgentRuntimes: [],
+            },
+            graphApiService: {},
+        } as any;
+        expect(createAgentProvider(plugin).id).toBe('claude-code');
+    });
+});
+
+describe('getConfiguredRuntimeOptions', () => {
+    it('lists Codex between Claude and Hermes, followed by enabled custom runtimes', () => {
+        const plugin = {
+            settings: {
+                customAgentRuntimes: [
+                    { id: 'custom:enabled', displayName: 'Enabled', enabled: true },
+                    { id: 'custom:disabled', displayName: 'Disabled', enabled: false },
+                ],
+            },
+        } as any;
+
+        expect(getConfiguredRuntimeOptions(plugin)).toEqual([
+            { id: 'claude-code', displayName: 'Claude Code' },
+            { id: 'codex', displayName: 'Codex CLI' },
+            { id: 'hermes-agent', displayName: 'Hermes Agent' },
+            { id: 'custom:enabled', displayName: 'Enabled' },
+        ]);
+    });
+});
+
+describe('OrchestrationService unified path', () => {
+    it('keeps URLs in attachment context from triggering URL extraction', async () => {
+        const turnJson = JSON.stringify({
+            version: AGENT_TURN_SCHEMA_VERSION,
+            answer_markdown: 'Attachment received.',
+            retrieval_hits: [],
+            graph_operations: [],
+            custom_vault_operations: [],
+            enricher_invocations: [],
+        });
+        const tryExtractTextFromUrl = vi.fn().mockResolvedValue({ ok: true, text: 'typed URL content' });
+        const plugin: any = {
+            settings: {
+                enableGraphFeatures: true,
+                credentialsFolder: 'OSINTCopilot/custom/credentials',
+                agentRuntimeProvider: 'claude-code',
+                hermesAgentCliPath: 'hermes',
+                hermesAgentExtraArgs: '',
+                hermesAgentTimeoutMs: 120_000,
+                hermesAgentHealthCheckArgs: '--version',
+                customAgentRuntimes: [],
+            },
+            graphApiService: {
+                tryExtractTextFromUrl,
+                callLocalProviderModel: vi.fn().mockResolvedValue(turnJson),
+            },
+            vaultPromptLoader: { getOrchestrationAugmentation: vi.fn().mockResolvedValue('') },
+            enricherRegistry: { listRunnable: vi.fn().mockResolvedValue([]) },
+        };
+        const orch = new OrchestrationService(plugin);
+
+        await orch.processRequest(
+            'Read https://typed.example/report',
+            'The PDF cites https://embedded.example/report',
+            { entities: [], connections: [] },
+            [],
+            {},
+            vi.fn(),
+            {},
+        );
+
+        expect(tryExtractTextFromUrl).toHaveBeenCalledTimes(1);
+        expect(tryExtractTextFromUrl).toHaveBeenCalledWith('https://typed.example/report');
+        expect(plugin.graphApiService.callLocalProviderModel.mock.calls[0][1][1].content)
+            .toContain('https://embedded.example/report');
+    });
+
+    it('does not log or notify for an expected orchestration abort', async () => {
+        const plugin: any = {
+            settings: {
+                enableGraphFeatures: true,
+                credentialsFolder: 'OSINTCopilot/custom/credentials',
+                agentRuntimeProvider: 'claude-code',
+                hermesAgentCliPath: 'hermes',
+                hermesAgentExtraArgs: '',
+                hermesAgentTimeoutMs: 120_000,
+                hermesAgentHealthCheckArgs: '--version',
+                customAgentRuntimes: [],
+            },
+            graphApiService: {},
+            vaultPromptLoader: { getOrchestrationAugmentation: vi.fn().mockResolvedValue('') },
+            enricherRegistry: { listRunnable: vi.fn().mockResolvedValue([]) },
+        };
+        const orch = new OrchestrationService(plugin);
+        const handleError = vi.spyOn(orch as any, 'handleError');
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const controller = new AbortController();
+        controller.abort();
+
+        await expect(orch.processRequest(
+            'Extract entities',
+            '',
+            { entities: [], connections: [] },
+            [],
+            {},
+            vi.fn(),
+            { abortSignal: controller.signal },
+        )).rejects.toMatchObject({ name: 'AbortError' });
+
+        expect(handleError).not.toHaveBeenCalled();
+        expect(consoleError).not.toHaveBeenCalled();
+        consoleError.mockRestore();
+    });
+
+    it('returns SYNTHESIS_COMPLETE with proposedCommands from graph_operations', async () => {
+        const turnJson = JSON.stringify({
+            version: AGENT_TURN_SCHEMA_VERSION,
+            answer_markdown: 'Found X.',
+            retrieval_hits: [{ path: 'notes/a.md', snippet: 'ctx' }],
+            graph_operations: [
+                {
+                    action: 'create',
+                    entities: [{ type: 'Person', properties: { full_name: 'Bob' } }],
+                },
+            ],
+            custom_vault_operations: [{ action: 'put_credentials', relativePath: 't.txt', content: 'x' }],
+            enricher_invocations: [],
+        });
+
+        const plugin: any = {
+            settings: {
+                enableGraphFeatures: true,
+                credentialsFolder: 'OSINTCopilot/custom/credentials',
+                agentRuntimeProvider: 'claude-code',
+                hermesAgentCliPath: 'hermes',
+                hermesAgentExtraArgs: '',
+                hermesAgentTimeoutMs: 120_000,
+                hermesAgentHealthCheckArgs: '--version',
+                customAgentRuntimes: [],
+            },
+            graphApiService: {
+                extractTextFromUrl: vi.fn(),
+                tryExtractTextFromUrl: vi.fn().mockResolvedValue({ ok: true, text: '' }),
+                callLocalProviderModel: vi.fn().mockResolvedValue(turnJson),
+            },
+            vaultPromptLoader: {
+                getOrchestrationAugmentation: vi.fn().mockResolvedValue(''),
+            },
+            enricherRegistry: {
+                listRunnable: vi.fn().mockResolvedValue([]),
+            },
+        };
+
+        const orch = new OrchestrationService(plugin);
+        const onProgress = vi.fn();
+        const result = await orch.processRequest(
+            'Who is Bob?',
+            '',
+            { entities: [], connections: [] },
+            [],
+            {},
+            onProgress,
+            {},
+        );
+
+        expect(result.phase).toBe('SYNTHESIS_COMPLETE');
+        expect(result.finalResponse).toContain('Found X.');
+        expect(result.finalResponse).toContain('notes/a.md');
+        expect(result.proposedCommands?.length).toBeGreaterThan(0);
+        expect(result.proposedCommands?.[0]).toContain('@@create_entity');
+        expect(result.proposedCustomVaultOps?.length).toBe(1);
+        expect(result.proposedCustomVaultOps?.[0]).toMatchObject({
+            action: 'put_credentials',
+            relativePath: 't.txt',
+        });
+        expect(executeEnricherTool).not.toHaveBeenCalled();
+    });
+
+    it('runs executeEnricherTool for each enricher_invocations entry', async () => {
+        vi.mocked(executeEnricherTool).mockClear();
+        const turnJson = JSON.stringify({
+            version: AGENT_TURN_SCHEMA_VERSION,
+            answer_markdown: 'Queued enricher.',
+            retrieval_hits: [],
+            graph_operations: [],
+            custom_vault_operations: [],
+            enricher_invocations: [{ enricher_id: 'leakcheck', query: 'scammer@dom.test' }],
+        });
+
+        const plugin: any = {
+            settings: {
+                enableGraphFeatures: true,
+                credentialsFolder: 'OSINTCopilot/custom/credentials',
+                agentRuntimeProvider: 'claude-code',
+                hermesAgentCliPath: 'hermes',
+                hermesAgentExtraArgs: '',
+                hermesAgentTimeoutMs: 120_000,
+                hermesAgentHealthCheckArgs: '--version',
+                customAgentRuntimes: [],
+            },
+            graphApiService: {
+                extractTextFromUrl: vi.fn(),
+                tryExtractTextFromUrl: vi.fn().mockResolvedValue({ ok: true, text: '' }),
+                callLocalProviderModel: vi.fn().mockResolvedValue(turnJson),
+            },
+            vaultPromptLoader: {
+                getOrchestrationAugmentation: vi.fn().mockResolvedValue(''),
+            },
+            enricherRegistry: {
+                listRunnable: vi.fn().mockResolvedValue([{ id: 'leakcheck' }]),
+            },
+            app: { vault: {} },
+        };
+
+        const orch = new OrchestrationService(plugin);
+        const onProgress = vi.fn();
+        const result = await orch.processRequest(
+            'run check',
+            '',
+            { entities: [], connections: [] },
+            [],
+            {},
+            onProgress,
+            {},
+        );
+
+        expect(executeEnricherTool).toHaveBeenCalledTimes(1);
+        expect(executeEnricherTool).toHaveBeenCalledWith(
+            plugin,
+            'ENRICH_leakcheck',
+            'scammer@dom.test',
+            '',
+            undefined,
+        );
+        expect(result.finalResponse).toContain('## Enricher results');
+        expect(result.finalResponse).toContain('**Plugin status:** 1 enricher call(s) completed.');
+        expect(result.finalResponse).toContain('`scammer@dom.test`');
+        expect(result.finalResponse).toContain('enricher-mock-result');
+        expect(onProgress).toHaveBeenCalledWith('Enricher 1/1 (leakcheck)…', expect.any(Number));
+    });
+});
