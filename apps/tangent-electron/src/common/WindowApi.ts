@@ -6,6 +6,9 @@ import type { ContextMenuTemplate } from './menus'
 import type { QueryResult } from './indexing/queryResults'
 import type { QueryParseResult } from '@such-n-such/tangent-query-parser'
 import type { UrlData } from './urlData'
+import type {
+	ExecOptions, ExecResult, HttpRequest, HttpResponse, PlatformInfo, SecretRef
+} from '../osint/host/types'
 
 export interface SelectPathOptions {
 	title?: string
@@ -146,6 +149,42 @@ export default interface WindowAPI {
 	}
 
 	update: UpdateAPI
+
+	/**
+	 * OSINT Copilot's additions. Only capabilities Tangent does not already have: file
+	 * I/O goes through `file` above, not here.
+	 *
+	 * Note what is absent: there is no way to read a secret. `net.request` takes a
+	 * reference to one and main resolves and injects it, so a secret value never
+	 * crosses into the renderer.
+	 */
+	osint: {
+		/** Synchronous snapshot, fetched once in preload. Read at seven sites. */
+		platform(): PlatformInfo
+
+		secrets: {
+			has(ref: SecretRef): Promise<boolean>
+			setKeychain(name: string, value: string): Promise<void>
+			deleteKeychain(name: string): Promise<void>
+			listKeychain(): Promise<string[]>
+		}
+
+		cli: {
+			resolve(configured: string | undefined, fallbackBareName: string, extraCandidates?: string[], probeTimeoutMs?: number): Promise<string>
+			/** `execId` is caller-supplied so an AbortSignal can kill a pending exec. */
+			exec(execId: string, binary: string, args: string[], options?: ExecOptions): Promise<ExecResult>
+			kill(execId: string): void
+		}
+
+		net: {
+			request(request: HttpRequest): Promise<HttpResponse>
+		}
+
+		extract: {
+			pdfText(data: ArrayBuffer): Promise<string>
+			docxText(data: ArrayBuffer): Promise<string>
+		}
+	}
 }
 
 export interface UpdateAPI {

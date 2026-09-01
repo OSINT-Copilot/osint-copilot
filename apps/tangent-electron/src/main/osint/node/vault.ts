@@ -10,7 +10,7 @@
 import * as fsp from 'fs/promises';
 import * as fs from 'fs';
 import * as nodePath from 'path';
-import type { StatDto, WatchEvent } from '../types';
+import type { StatDto, WatchEvent } from '../../../osint/host/types';
 
 let root: string | null = null;
 let watcher: { close(): Promise<void> } | null = null;
@@ -98,7 +98,7 @@ export async function open(dir: string): Promise<StatDto[]> {
 }
 
 async function startWatching(): Promise<void> {
-    const chokidar = await import('chokidar');
+    const chokidar = require('chokidar') as typeof import('chokidar');
     const base = requireRoot();
 
     let batch: WatchEvent[] = [];

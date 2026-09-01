@@ -7,7 +7,7 @@
 		"paths": {
 			"svelte/*": ["../node_modules/svelte/src/runtime/*"],
 			"obsidian": ["osint/obsidian-shim/index.ts"],
-			"host-impl": ["osint/host/impl.bridge.ts"]
+			"host-impl": ["osint/host/impl.tangent.ts"]
 		},
 		"target": "ES2022",
 		"lib": ["ESNext", "DOM"],

@@ -4,7 +4,7 @@
  * Used by the Electron main process and by vitest. The sandboxed renderer never
  * links this file -- esbuild aliases ./impl to ./impl.bridge for that target.
  */
-import type { ExecOptions, ExecResult, Host, HttpRequest, HttpResponse, PlatformInfo } from './types';
+import type { ExecOptions, ExecResult, Host, HttpRequest, HttpResponse, PlatformInfo } from '../../osint/host/types';
 import { resolveCliPath } from './node/cli';
 import * as vaultFs from './node/vault';
 import * as secretStore from './node/secrets';
@@ -155,12 +155,14 @@ export const host: Host = {
         async rememberVault() { /* no-op outside Electron */ },
     },
     extract: {
+        // require(), not await import(): kept lazy so pdfjs stays out of main's startup
+        // path, without needing `module` set on Tangent's main tsconfig.
         async pdfText(data: ArrayBuffer) {
-            const { extractPdfText } = await import('./node/extract');
+            const { extractPdfText } = require('./node/extract') as typeof import('./node/extract');
             return extractPdfText(data);
         },
         async docxText(data: ArrayBuffer) {
-            const { extractDocxText } = await import('./node/extract');
+            const { extractDocxText } = require('./node/extract') as typeof import('./node/extract');
             return extractDocxText(data);
         },
     },

@@ -9,5 +9,12 @@
 		"noImplicitThis": true,
 		"types": ["node", "vitest/globals"]
 	},
-	"include": ["../osint/**/*.ts"]
+	"include": [
+		"../osint/**/*.ts",
+		"../main/osint/**/*.ts"
+	],
+	"exclude": [
+		"../osint/tests",
+		"../main/osint/index.ts"
+	]
 }

@@ -14,7 +14,7 @@
  */
 import * as fsp from 'fs/promises';
 import * as nodePath from 'path';
-import type { SecretRef } from '../types';
+import type { SecretRef } from '../../../osint/host/types';
 import * as vaultFs from './vault';
 
 const DEFAULT_CREDENTIALS_FOLDER = 'OSINTCopilot/custom/credentials';

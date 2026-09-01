@@ -25,6 +25,10 @@ function onMessages(message: UserMessage) {
 
 on('message', onMessages)
 
+// One synchronous round trip, before the page loads: the renderer reads platform info
+// synchronously at seven sites and it cannot change during a run.
+const platformSnapshot = ipcRenderer.sendSync('osint:platform')
+
 const bridge: WindowApi = {
 
 	getKnownWorkspaces() {
@@ -275,6 +279,35 @@ const bridge: WindowApi = {
 		},
 		update() {
 			ipcRenderer.send('update', 'now')
+		}
+	},
+
+	osint: {
+		// Fetched once, before the page loads. See the note on 'osint:platform' in main.
+		platform: () => platformSnapshot,
+
+		secrets: {
+			has: ref => ipcRenderer.invoke('osint:secrets.has', ref),
+			setKeychain: (name, value) => ipcRenderer.invoke('osint:secrets.setKeychain', name, value),
+			deleteKeychain: name => ipcRenderer.invoke('osint:secrets.deleteKeychain', name),
+			listKeychain: () => ipcRenderer.invoke('osint:secrets.listKeychain')
+		},
+
+		cli: {
+			resolve: (configured, fallbackBareName, extraCandidates, probeTimeoutMs) =>
+				ipcRenderer.invoke('osint:cli.resolve', configured, fallbackBareName, extraCandidates, probeTimeoutMs),
+			exec: (execId, binary, args, options) =>
+				ipcRenderer.invoke('osint:cli.exec', execId, binary, args, options),
+			kill: execId => ipcRenderer.send('osint:cli.kill', execId)
+		},
+
+		net: {
+			request: request => ipcRenderer.invoke('osint:net.request', request)
+		},
+
+		extract: {
+			pdfText: data => ipcRenderer.invoke('osint:extract.pdfText', data),
+			docxText: data => ipcRenderer.invoke('osint:extract.docxText', data)
 		}
 	}
 }

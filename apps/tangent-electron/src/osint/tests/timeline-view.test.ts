@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sortTimelineEventsForDisplay, TimelineEvent } from '../views/timeline-view';
+import { sortTimelineEventsForDisplay, type TimelineEvent } from '../views/timeline-view';
 
 function ev(id: string, start: Date | null, end?: Date): TimelineEvent {
     return { id, label: id, start, end, color: '#000000' };

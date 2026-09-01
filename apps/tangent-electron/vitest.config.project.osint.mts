@@ -20,7 +20,7 @@ export default mergeConfig(
 				// inverted into re-exports of the shim. See tests/obsidian-mock.ts.
 				'obsidian': path.join(osint, 'tests/obsidian-mock.ts'),
 				// Node-side host implementation: tests exercise the real fs/exec code.
-				'host-impl': path.join(osint, 'host/impl.ts'),
+				'host-impl': path.join(__dirname, 'src/main/osint/impl.ts'),
 				'../main': path.join(osint, 'main.ts'),
 			},
 		},

@@ -34,6 +34,7 @@ import { initDocumentation, openDocumentation, shouldShowChangelog } from './doc
 import { createWindow, getOrCreateWindowForWorkspace } from './windows'
 
 import './messages'
+import './osint'
 import { installTextmate } from '@such-n-such/tangent-query-parser'
 import { getRegistry } from './grammarLoader'
 import { INITIAL } from 'vscode-textmate'
