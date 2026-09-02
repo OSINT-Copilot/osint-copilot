@@ -14,18 +14,34 @@ import { onDestroy, onMount } from 'svelte'
 let container: HTMLElement
 let message: string = null
 
-onMount(() => {
-	const runtime = (globalThis as any).osint
-	if (!runtime) {
-		message = 'OSINT Copilot has not finished starting up. Reopen this page in a moment.'
-		return
+let mounted = false
+
+/**
+ * Waits for the plugin rather than telling the user to come back later. Tangent restores
+ * whichever preferences page was open last, so this can mount before the plugin — whose
+ * startup reads schemas and prompts off disk — has finished.
+ */
+async function waitForSettingTab(timeoutMs = 60_000) {
+	const deadline = Date.now() + timeoutMs
+	while (Date.now() < deadline) {
+		const tab = (globalThis as any).osint?.plugin?.settingTab
+		if (tab) return tab
+		await new Promise(resolve => setTimeout(resolve, 100))
 	}
-	const tab = runtime.plugin?.settingTab
+	return null
+}
+
+onMount(async () => {
+	mounted = true
+	message = 'Loading OSINT Copilot settings…'
+	const tab = await waitForSettingTab()
+	if (!mounted) return
 	if (!tab) {
-		message = 'OSINT Copilot did not register a settings tab.'
+		message = 'OSINT Copilot did not start. See the developer console for details.'
 		return
 	}
 	try {
+		message = null
 		container.appendChild(tab.containerEl)
 		tab.display()
 	}
@@ -36,6 +52,7 @@ onMount(() => {
 })
 
 onDestroy(() => {
+	mounted = false
 	const tab = (globalThis as any).osint?.plugin?.settingTab
 	// hide() lets the tab drop listeners; the element is left detached for the next mount.
 	try { tab?.hide?.() } catch { /* the tab may not implement it */ }
