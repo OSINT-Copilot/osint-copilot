@@ -21,6 +21,7 @@ interface TangentWorkspaceLike {
             updateThread(options: unknown): void;
             focusLevel: { value: number, set(value: number): void };
         };
+        system: { showMenu: { set(value: boolean): void }, section: { set(value: string): void } };
     };
 }
 
@@ -89,6 +90,22 @@ export function openVaultNote(relativePath: string): boolean {
         return true;
     } catch (e) {
         console.error('[osint] could not open note', relativePath, e);
+        return false;
+    }
+}
+
+/** The name of our page in Tangent's preferences; must match System.svelte. */
+export const OSINT_SETTINGS_SECTION = 'OSINT Copilot';
+
+/** Opens Tangent's preferences on the OSINT Copilot page. */
+export function openOsintSettings(): boolean {
+    if (!workspace) return false;
+    try {
+        workspace.viewState.system.section.set(OSINT_SETTINGS_SECTION);
+        workspace.viewState.system.showMenu.set(true);
+        return true;
+    } catch (e) {
+        console.error('[osint] could not open settings', e);
         return false;
     }
 }

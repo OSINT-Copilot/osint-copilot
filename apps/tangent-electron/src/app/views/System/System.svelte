@@ -16,6 +16,7 @@ import Styles from './Styles.svelte'
 import Dictionary from './Dictionary.svelte'
 import Shortcuts from './Shortcuts.svelte'
 import Debug from './Debug.svelte'
+import OsintSettings from 'osint/integration/OsintSettings.svelte'
 import DocumentationLink from 'app/utils/DocumentationLink.svelte'
 
 export let detailsOpen = false
@@ -44,6 +45,10 @@ const menus = [
 	{
 		name: 'Appearance',
 		component: Appearance
+	},
+	{
+		name: 'OSINT Copilot',
+		component: OsintSettings
 	},
 	{
 		name: 'Attachments',

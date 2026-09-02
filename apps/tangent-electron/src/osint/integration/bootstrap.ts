@@ -17,7 +17,7 @@ import { App } from '../obsidian-shim/app';
 import { installDomExtensions } from '../obsidian-shim/dom/dom-extensions';
 import { pushVaultEvents } from '../host/impl.tangent';
 import { treeChangeToWatchEvents } from './vault-bridge';
-import { openOsintView, openVaultNote, setTangentWorkspace } from './open-view';
+import { openOsintSettings, openOsintView, openVaultNote, setTangentWorkspace } from './open-view';
 import VaultAIPlugin from '../plugin/vault-ai-plugin';
 import { OSINT_VERSION } from '../version';
 
@@ -106,6 +106,18 @@ export async function startOsintCopilot(tangentWorkspace: {
     // onload() is async. Obsidian never awaits it; we do, so a failure surfaces here
     // instead of as an unhandled rejection behind a half-initialised plugin.
     await plugin.whenLoaded();
+
+    // The plugin's own commands are picked up on Tangent's side, by
+    // app/model/commands/OsintViewCommands.ts, which waits for this runtime to appear.
+    // The dependency points that way on purpose: importing Tangent from here would drag
+    // its common/ tree into our strict typecheck.
+
+    // chat-view.ts calls app.setting.open() / openTabById() to send the user to
+    // settings. Route both at Tangent's preferences, on our page.
+    (app as unknown as { setting: unknown }).setting = {
+        open: () => openOsintSettings(),
+        openTabById: () => openOsintSettings(),
+    };
 
     current = {
         app,

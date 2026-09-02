@@ -44,5 +44,82 @@ export function createOsintViewCommands(workspace: Workspace) {
 	for (const view of OSINT_VIEWS) {
 		commands[view.commandKey] = new OpenOsintViewCommand(workspace, view)
 	}
+	// The plugin's own commands only exist after its async startup, so they are added
+	// later. CommandPalette reads Object.keys(workspace.commands) each time it opens.
+	void attachPluginCommandsWhenReady(workspace)
 	return commands
+}
+
+async function attachPluginCommandsWhenReady(workspace: Workspace, timeoutMs = 120_000) {
+	const deadline = Date.now() + timeoutMs
+	while (Date.now() < deadline) {
+		const plugin = (globalThis as any).osint?.plugin
+		if (plugin?.commands) {
+			const keys = registerPluginCommands(workspace, plugin.commands.values())
+			console.log(`[osint] registered ${keys.length} plugin commands with Tangent`)
+			return
+		}
+		await new Promise(resolve => setTimeout(resolve, 100))
+	}
+}
+
+
+/**
+ * Bridges the plugin's own commands into Tangent's registry.
+ *
+ * The plugin registers ~20 commands through Obsidian's addCommand(); this wraps each one
+ * so it shows up in Tangent's command palette and can be given a keyboard shortcut in
+ * Preferences > Shortcuts, alongside every other command in the app.
+ *
+ * Registered at runtime rather than in createAllCommands(), because the commands only
+ * exist once the plugin's async onload() has run. CommandPalette reads
+ * Object.keys(workspace.commands) each time it opens, so late additions are picked up.
+ */
+export interface ObsidianCommand {
+	id: string
+	name: string
+	callback?: () => unknown
+	checkCallback?: (checking: boolean) => boolean | void
+}
+
+export class PluginCommand extends WorkspaceCommand {
+	readonly command: ObsidianCommand
+
+	constructor(workspace: Workspace, command: ObsidianCommand) {
+		super(workspace)
+		this.command = command
+	}
+
+	canExecute(_context?: CommandContext) {
+		// checkCallback(true) is Obsidian's "is this available right now?" probe.
+		if (this.command.checkCallback) return this.command.checkCallback(true) !== false
+		return true
+	}
+
+	execute(_context?: CommandContext) {
+		if (this.command.checkCallback) {
+			this.command.checkCallback(false)
+			return
+		}
+		this.command.callback?.()
+	}
+
+	getLabel(_context?: CommandContext) {
+		return `OSINT: ${this.command.name}`
+	}
+}
+
+/** Adds one Tangent command per plugin command. Returns the keys it registered. */
+export function registerPluginCommands(
+	workspace: Workspace,
+	commands: Iterable<ObsidianCommand>,
+): string[] {
+	const registered: string[] = []
+	for (const command of commands) {
+		// camelCase the Obsidian id so it reads like the rest of the registry.
+		const key = 'osintCmd_' + command.id.replace(/[^a-zA-Z0-9]+(.)/g, (_, c) => c.toUpperCase())
+		;(workspace.commands as Record<string, WorkspaceCommand>)[key] = new PluginCommand(workspace, command)
+		registered.push(key)
+	}
+	return registered
 }
