@@ -161,10 +161,21 @@ export class Workspace {
         return leaf;
     }
 
+    /**
+     * Set by the host to surface a leaf in its own UI. The leaf tree stays the shim's --
+     * osint-workspace-controller compares leaf.getRoot() to rootSplit and twelve call
+     * sites read getLeavesOfType() -- but which panel is on screen is the host's call.
+     */
+    onRevealLeaf: ((leaf: WorkspaceLeaf) => void) | null = null;
+
+    /** Set by the host to open a markdown note in its own editor instead of the shim's. */
+    openMarkdownFile: ((file: TFile) => void | Promise<void>) | null = null;
+
     async revealLeaf(leaf: WorkspaceLeaf): Promise<void> {
         const group = leaf.parent;
         if (group instanceof WorkspaceTabs) group.setActive(leaf);
         this.setActiveLeaf(leaf);
+        this.onRevealLeaf?.(leaf);
     }
 
     setActiveLeaf(leaf: WorkspaceLeaf | null, _focus = true): void {
@@ -253,7 +264,14 @@ export class Workspace {
         };
 
         leaf.openFile = async (file: TFile): Promise<void> => {
-            await leaf.setViewState({ type: 'markdown', active: true, state: { file: file.path } });
+            if (this.openMarkdownFile) {
+                // The host owns note editing. Eight call sites reach here -- clicking an
+                // entity in the graph, a citation in chat, a skill in the registry.
+                await this.openMarkdownFile(file);
+            }
+            else {
+                await leaf.setViewState({ type: 'markdown', active: true, state: { file: file.path } });
+            }
             this.trigger('file-open', file);
         };
     }

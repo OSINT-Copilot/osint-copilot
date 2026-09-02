@@ -107,7 +107,12 @@ export const visibleFileTypeMatch = getFileTypeRegex([
 	...noteFileExtensions, ...imageFileExtensions,
 	...audioFileExtensions, ...videoFileExtensions,
 	...pdfFileExtensions,
-	queryFileType, 'folder', 'tag'
+	queryFileType, 'folder', 'tag',
+	// OSINT Copilot's view files, so they appear in the file tree and quick-open.
+	// Spelled out rather than imported: common/ is shared with the main process, whose
+	// tsconfig cannot resolve `osint/*`. osint-view-types.test.ts asserts the two lists
+	// stay in step.
+	'.osintchat', '.osintgraph', '.osinttimeline', '.osintmap', '.osintregistry'
 ])
 
 /**

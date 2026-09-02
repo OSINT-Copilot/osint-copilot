@@ -4,6 +4,7 @@ import type WorkspaceViewState from "./WorkspaceViewState"
 import type { TreeChange, TreeNode } from 'common/trees'
 import type TangentMap from 'common/tangentMap/TangentMap'
 import ViewStateContext from './nodeViewStates/ViewStateContext'
+import { osintViewStateCreator } from 'osint/integration/view-states'
 import { FolderViewState, ImageViewState, NoteViewState, type NodeViewState } from './nodeViewStates'
 import { derived } from 'svelte/store'
 import type LensViewState from './nodeViewStates/LensViewState'
@@ -103,6 +104,9 @@ export default class Tangent {
 
 		this.context = new ViewStateContext(state.workspace, this)
 		this.context.creators = [
+			// OSINT Copilot's views. Declines anything that is not one of its file types,
+			// so Tangent's own handling of notes, folders, embeds and queries is untouched.
+			osintViewStateCreator as any,
 			(context, node, reference) => {
 				if (node instanceof NoteFile) {
 					const noteViewState = new NoteViewState(context, node, NoteDetailMode.All)

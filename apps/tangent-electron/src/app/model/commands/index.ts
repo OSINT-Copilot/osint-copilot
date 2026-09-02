@@ -44,6 +44,7 @@ import { CopyAbsolutePathCommand, CopyRelativePathCommand } from './CopyPath'
 import { ToggleCheckboxCommand } from './ToggleCheckboxCommand.ts'
 import { toTitleCase } from 'common/stringUtils'
 import { highlightEmojiToClassDescriptor } from 'common/markdownModel/formatting'
+import { createOsintViewCommands } from './OsintViewCommands'
 export { Command, CommandAction, type WorkspaceCommand }
 
 type LiteralCommands = ReturnType<typeof createAllCommands>
@@ -72,6 +73,10 @@ function createAllCommands(workspace: Workspace) {
 	}
 
 	return {
+
+		// OSINT Copilot's view-opening commands, so they appear in the command palette
+		// and can be given shortcuts like any other command.
+		...createOsintViewCommands(workspace),
 
 		openWorkspace: new OpenWorkspaceCommand(workspace),
 

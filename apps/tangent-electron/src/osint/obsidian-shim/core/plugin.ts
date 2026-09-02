@@ -67,9 +67,21 @@ export abstract class Plugin extends Component {
         return document.createElement('div');
     }
 
+    /**
+     * Registers a view type.
+     *
+     * The workspace needs the factory too, not just this registry: setViewState looks the
+     * type up there, and without it every view silently becomes an EmptyView. Doing it
+     * here rather than leaving it to the host is what makes registerView() mean the same
+     * thing it does in Obsidian.
+     */
     registerView(type: string, creator: ViewCreator): void {
         this.viewCreators.set(type, creator);
-        this.register(() => this.viewCreators.delete(type));
+        this.app.workspace.registerViewFactory(type, creator);
+        this.register(() => {
+            this.viewCreators.delete(type);
+            this.app.workspace.unregisterViewFactory(type);
+        });
     }
 
     addSettingTab(tab: { display(): void; hide?(): void }): void {

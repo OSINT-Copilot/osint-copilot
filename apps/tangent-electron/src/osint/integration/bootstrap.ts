@@ -8,10 +8,16 @@
  *
  * Called once per workspace, after Tangent's own startup completes.
  */
+// Loaded with the bootstrap so it only enters the bundle when a workspace opens.
+// theme-bridge maps Obsidian's variables onto Tangent's, so the views follow the
+// user's theme; styles.css is the plugin's own stylesheet, unmodified.
+import '../theme-bridge.css';
+import '../styles.css';
 import { App } from '../obsidian-shim/app';
 import { installDomExtensions } from '../obsidian-shim/dom/dom-extensions';
 import { pushVaultEvents } from '../host/impl.tangent';
 import { treeChangeToWatchEvents } from './vault-bridge';
+import { openOsintView, openVaultNote, setTangentWorkspace } from './open-view';
 import VaultAIPlugin from '../plugin/vault-ai-plugin';
 import { OSINT_VERSION } from '../version';
 
@@ -34,9 +40,16 @@ const MANIFEST = {
 
 let current: OsintRuntime | null = null;
 
-/** The live runtime, or null before startup / after teardown. */
+/**
+ * The live runtime, or null before startup / after teardown.
+ *
+ * Falls back to the global. This module is reached two ways — App.svelte imports it
+ * dynamically, and Tangent.ts pulls it in statically through the view-state creator — so
+ * relying on module-local state alone makes correctness depend on the bundler giving
+ * both paths the same module instance. Reading the global is not sensitive to that.
+ */
 export function osintRuntime(): OsintRuntime | null {
-    return current;
+    return current ?? ((globalThis as any).osint as OsintRuntime | undefined) ?? null;
 }
 
 /**
@@ -45,6 +58,8 @@ export function osintRuntime(): OsintRuntime | null {
  */
 export async function startOsintCopilot(tangentWorkspace: {
     directoryStore: { files: { path: string } };
+    commands: { createNewFile: { execute(context: unknown): unknown } };
+    viewState: { tangent: { updateThread(options: unknown): void } };
 }): Promise<OsintRuntime> {
     if (current) return current;
 
@@ -72,6 +87,19 @@ export async function startOsintCopilot(tangentWorkspace: {
             console.error('[osint] failed to apply a tree change', e);
         }
     });
+
+    setTangentWorkspace(tangentWorkspace as never);
+
+    // The shim keeps owning the leaf tree — osint-workspace-controller compares
+    // leaf.getRoot() to rootSplit, and getLeavesOfType has twelve call sites — but
+    // Tangent decides what is on screen. revealLeaf therefore navigates Tangent's thread
+    // to the node backing that view, and openFile hands notes to Tangent's own editor
+    // rather than the shim's.
+    app.workspace.onRevealLeaf = leaf => {
+        const viewType = leaf.view?.getViewType?.();
+        if (viewType) openOsintView(viewType);
+    };
+    app.workspace.openMarkdownFile = file => { openVaultNote(file.path); };
 
     const plugin = new VaultAIPlugin(app, MANIFEST as never);
     plugin.load();
