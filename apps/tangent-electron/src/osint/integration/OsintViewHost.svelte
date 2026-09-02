@@ -29,6 +29,8 @@ export let onKeyboardExit: any = null
 let container: HTMLElement
 let error: string = null
 let mounted = false
+/** Held synchronously so onDestroy does not have to re-await the leaf promise. */
+let attachedView: any = null
 
 async function attach() {
 	try {
@@ -39,6 +41,16 @@ async function attach() {
 		}
 		if (!mounted || !container) return
 		container.appendChild(leaf.view.containerEl)
+		attachedView = leaf.view
+		// Next frame, so the element has actually been through layout: a view that
+		// measures its own container (Leaflet needs invalidateSize) reads a real box
+		// rather than the 0x0 it had while detached. Panel and width transitions are
+		// still running -- the view's own ResizeObserver covers those.
+		requestAnimationFrame(() => {
+			if (attachedView === leaf.view && leaf.view.containerEl.isConnected) {
+				leaf.view.attachedToDocument?.()
+			}
+		})
 		onViewReady?.()
 	}
 	catch (e) {
@@ -56,17 +68,22 @@ onDestroy(() => {
 	mounted = false
 	// Detach without unloading: the view stays alive so getLeavesOfType() keeps finding
 	// it and background refreshes keep working. Its DOM is re-adopted on the next mount.
-	state.osintLeaf?.then(leaf => {
-		const el = leaf?.view?.containerEl
-		if (el?.parentElement === container) container.removeChild(el)
-	}).catch(() => {})
+	//
+	// Synchronous, unlike the promise this used to await: that microtask could run after
+	// a new host had already adopted the element, and then remove it out from under it.
+	const view = attachedView
+	attachedView = null
+	const el = view?.containerEl
+	if (el?.parentElement === container) container.removeChild(el)
+	// After the removal, so isConnected truthfully answers "did it really detach".
+	view?.detachedFromDocument?.()
 })
 </script>
 
 <div
 	class="OsintViewHost {layout}"
-	style:top={extraTop + 'px'}
-	style:bottom={extraBottom + 'px'}
+	style:--osint-extra-top={extraTop + 'px'}
+	style:--osint-extra-bottom={extraBottom + 'px'}
 	bind:this={container}
 >
 	{#if error}
@@ -79,12 +96,25 @@ onDestroy(() => {
 	position: absolute;
 	left: 0;
 	right: 0;
+	top: var(--osint-extra-top, 0px);
+	bottom: var(--osint-extra-bottom, 0px);
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
 }
+/*
+ * position: relative here, where `top` would shift the box without reserving space and
+ * `bottom` would do nothing at all. Tangent's own views reserve it with padding --
+ * ImageView.svelte:122-123, PdfView.svelte:206-207 -- so this does the same, from the
+ * same two variables.
+ */
 .OsintViewHost.auto {
 	position: relative;
+	top: auto;
+	bottom: auto;
+	padding-top: var(--osint-extra-top, 0px);
+	padding-bottom: var(--osint-extra-bottom, 0px);
+	box-sizing: border-box;
 	min-height: 24em;
 }
 /* The Obsidian view's own container fills the panel. */

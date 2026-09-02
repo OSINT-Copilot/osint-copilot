@@ -7,7 +7,7 @@ import { App, ItemView, WorkspaceLeaf, Notice, Modal, Menu, TFile, normalizePath
 import { type Entity, EntityType, ENTITY_CONFIGS } from '../entities/types';
 import { EntityManager } from '../services/entity-manager';
 import { EntityCreationModal } from '../modals/entity-modal';
-import { GeocodingService, GeocodingError } from '../services/geocoding-service';
+import { GeocodingService, GeocodingError, geocodingService } from '../services/geocoding-service';
 
 // Leaflet types (simplified for bundling)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Leaflet library types not available
@@ -50,6 +50,26 @@ export class MapView extends ItemView {
     private onLocationClick: ((entityId: string) => void) | null = null;
     private geocodingService: GeocodingService;
 
+    /**
+     * Leaflet installs nothing of its own -- no ResizeObserver, no ancestor
+     * transitionend/animationend listeners -- so every size change has to be pushed in
+     * with invalidateSize(). The host detaches and re-attaches our DOM across panel
+     * remounts, Tangent animates panels and the thread width, and extraTop/extraBottom
+     * change at runtime. Hence an observer for the steady state and an attach hook for
+     * the ordering; both call the same idempotent invalidate.
+     */
+    private resizeObserver: ResizeObserver | null = null;
+    private invalidateTimer: number | null = null;
+    private lastSize = { width: 0, height: 0 };
+    /** A fit deferred because the map had no usable size when it was asked. */
+    private fitPending = false;
+    /** Fit once when markers first arrive; never again, or refresh steals the viewport. */
+    private hasFitOnce = false;
+    /** refresh() is reachable from eight places, three of them floating promises. */
+    private refreshInFlight: Promise<void> | null = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Leaflet control
+    private layerControl: any = null;
+
     constructor(
         leaf: WorkspaceLeaf,
         entityManager: EntityManager,
@@ -58,7 +78,9 @@ export class MapView extends ItemView {
         super(leaf);
         this.entityManager = entityManager;
         this.onLocationClick = onLocationClick || null;
-        this.geocodingService = new GeocodingService();
+        // The exported singleton, not a new instance: rate limiting is per-instance, so
+        // two open map views would otherwise double Nominatim's 1 req/s allowance.
+        this.geocodingService = geocodingService;
     }
 
     getViewType(): string {
@@ -83,17 +105,10 @@ export class MapView extends ItemView {
         this.createToolbar(toolbar);
 
         // Create map container
+        // No id, and no inline height. The id was the old way of finding this element
+        // (see initializeMap) and the inline `height: calc(100% - 50px)` was a hardcoded
+        // guess at the toolbar height that fought the `flex: 1` in styles.css.
         this.container = container.createDiv({ cls: 'graph_copilot-map-canvas' });
-        this.container.id = 'graph_copilot-map-' + Date.now();
-        this.container.id = 'graph_copilot-map-' + Date.now();
-        this.container.setCssProps({
-            width: '100%',
-            height: 'calc(100% - 50px)'
-        });
-
-        // Load Leaflet and initialize
-        await this.loadLeaflet();
-        this.initializeMap();
 
         const basePrefix = normalizePath(this.entityManager.getBasePath()).toLowerCase() + '/';
 
@@ -130,10 +145,82 @@ export class MapView extends ItemView {
             }),
         );
 
-        // Wait for map to be ready before refreshing
-        setTimeout(() => {
-            void this.refresh();
-        }, 200);
+        // The map is built last, and deliberately after the vault subscriptions above:
+        // when this threw, it took the whole rest of onOpen() with it and left the view
+        // silently deaf to every note change as well as mapless.
+        await this.loadLeaflet();
+        this.initializeMap();
+
+        void this.refresh();
+    }
+
+    // ---------------------------------------------------------------- attachment
+
+    protected onAttached(): void {
+        this.observeCanvas();
+        // One-shot, because a ResizeObserver that has only ever seen 0x0 may have
+        // nothing to report a change *from*, and under jsdom it is a stub that never
+        // fires at all.
+        requestAnimationFrame(() => this.invalidateNow());
+    }
+
+    protected onDetached(): void {
+        this.unobserveCanvas();
+    }
+
+    private observeCanvas(): void {
+        if (this.resizeObserver || !this.container) return;
+        if (typeof ResizeObserver === 'undefined') return;
+        this.resizeObserver = new ResizeObserver((entries) => {
+            const box = entries[entries.length - 1]?.contentRect;
+            if (!box) return;
+            // 0x0 means detached, hidden, or mid-collapse. lastSize is deliberately NOT
+            // updated, so a detach-and-reattach at the same size stays a no-op.
+            if (box.width < 1 || box.height < 1) return;
+            if (Math.abs(box.width - this.lastSize.width) < 1
+                && Math.abs(box.height - this.lastSize.height) < 1) return;
+            this.lastSize = { width: box.width, height: box.height };
+            this.scheduleInvalidate();
+        });
+        this.resizeObserver.observe(this.container);
+    }
+
+    private unobserveCanvas(): void {
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = null;
+        if (this.invalidateTimer !== null) {
+            window.clearTimeout(this.invalidateTimer);
+            this.invalidateTimer = null;
+        }
+    }
+
+    /**
+     * Trailing debounce. Tangent's width transition emits a record per frame for 300ms,
+     * and invalidateSize relays every pane and marker, so running it eighteen times is
+     * visible.
+     */
+    private scheduleInvalidate(): void {
+        if (this.invalidateTimer !== null) window.clearTimeout(this.invalidateTimer);
+        this.invalidateTimer = window.setTimeout(() => {
+            this.invalidateTimer = null;
+            this.invalidateNow();
+        }, 120);
+    }
+
+    private invalidateNow(): void {
+        const canvas = this.container;
+        if (!this.map || !canvas?.isConnected) return;
+        if (canvas.clientWidth < 1 || canvas.clientHeight < 1) return;
+        this.lastSize = { width: canvas.clientWidth, height: canvas.clientHeight };
+        // pan:true (the default) is mandatory here, not cosmetic. invalidateSize computes
+        // offset = oldSize/2 - newSize/2 and only applies it when pan is true; going from
+        // the 0x0 the map was created at to a real viewport, pan:false would leave every
+        // layer displaced by half a screen.
+        this.map.invalidateSize({ animate: false, pan: true, debounceMoveend: true });
+        if (this.fitPending) {
+            this.fitPending = false;
+            this.fitAllMarkers();
+        }
     }
 
     async onClose(): Promise<void> {
@@ -143,10 +230,8 @@ export class MapView extends ItemView {
         }
         // Initialize handlers
         if (this.map && this.map._handlers) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Accessing internal Leaflet handlers
-            this.map._handlers.forEach((handler: any) => {
-                handler.enable();
-            });
+            // (Removed: a loop that re-enabled Leaflet's internal _handlers immediately
+            // before destroying the map.)
         }
         if (this.map) {
             this.map.remove();
@@ -227,87 +312,88 @@ export class MapView extends ItemView {
      * Initialize the Leaflet map.
      */
     private initializeMap(): void {
-        if (!this.container || typeof L === 'undefined') return;
+        if (!this.container) return;
+        try {
+            this.buildMap();
+        } catch (e) {
+            // This used to throw into the void: onOpen() is invoked as `void this.onOpen()`,
+            // so the failure surfaced only as an unhandled rejection and the user saw a
+            // toolbar above an empty box.
+            console.error('[MapView] could not initialise the map:', e);
+            this.showMapError(e instanceof Error ? e.message : String(e));
+        }
+    }
 
-        // Create map centered on world view
-        this.map = L.map(this.container.id, {
+    /** Renders an initialisation failure where the map would have been. */
+    private showMapError(message: string): void {
+        if (!this.container) return;
+        this.container.empty();
+        const box = this.container.createDiv({ cls: 'graph_copilot-map-error' });
+        box.createEl('strong', { text: 'The map could not be created.' });
+        box.createEl('p', { text: message });
+    }
+
+    private buildMap(): void {
+        // The ELEMENT, not its id.
+        //
+        // onOpen() always runs while containerEl is a detached orphan -- the shim creates
+        // it and never inserts it; OsintViewHost adopts it later -- so the old
+        // `L.map(this.container.id, ...)` resolved through document.getElementById, got
+        // null, and threw "Map container not found." every single time. graph-view.ts
+        // already passes the element to cytoscape for the same reason.
+        this.map = L.map(this.container as HTMLElement, {
             center: [20, 0],
             zoom: 2,
-            zoomControl: true
+            zoomControl: true,
         });
 
-        // Add tile layer with fallback providers for reliability
-        // Primary: OpenStreetMap standard tiles (no API key required)
+        // Basemaps. These are replaced wholesale in the next step -- OSM's tile policy
+        // forbids this usage for applications, and CARTO and Esri both need accounts --
+        // but they stay for now so this change can be verified against a visible map.
         const osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
             maxZoom: 19,
-            crossOrigin: 'anonymous'
+            crossOrigin: 'anonymous',
         });
-
-        // Satellite Layer: Esri World Imagery
         const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
-            maxZoom: 19
+            attribution: 'Tiles &copy; Esri',
+            maxZoom: 19,
+            crossOrigin: 'anonymous',
         });
-
-        // Fallback 2: Carto Positron (light theme, no API key required)
         const cartoLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
             attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
             subdomains: 'abcd',
             maxZoom: 20,
-            crossOrigin: 'anonymous'
-        });
-
-        // Try primary layer first, with error handling for fallbacks
-        osmLayer.on('tileerror', () => {
-            console.debug('OSM tiles failed, trying fallback...');
-            if (!this.map.hasLayer(cartoLayer)) {
-                osmLayer.remove();
-                cartoLayer.addTo(this.map);
-            }
+            crossOrigin: 'anonymous',
         });
 
         osmLayer.addTo(this.map);
 
-        // Add layer control for manual switching if needed
-        const baseMaps = {
-            "OpenStreetMap": osmLayer,
-            "Satellite": satelliteLayer,
-            "Carto Light": cartoLayer
-        };
-        L.control.layers(baseMaps).addTo(this.map);
-
-        // Update layer control visual on change
-        const updateLayerControl = (layerName: string) => {
-            const container = this.container?.querySelector('.leaflet-control-layers-toggle') as HTMLElement;
-            if (container) {
-                // Use actual tiles as icons
-                if (layerName === 'Satellite') {
-                    // Esri Satellite tile (rich green/terrain)
-                    container.setCssProps({ 'background-image': 'url("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/4/5/8")' });
-                } else if (layerName === 'Carto Light') {
-                    // Carto Light tile (clean/grey)
-                    container.setCssProps({ 'background-image': 'url("https://a.basemaps.cartocdn.com/light_all/5/15/12.png")' });
-                } else {
-                    // Default OSM tile (standard map colors)
-                    container.setCssProps({ 'background-image': 'url("https://tile.openstreetmap.org/5/16/10.png")' });
-                }
-            }
-        };
-
-        // Listen for layer changes
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        this.map.on('baselayerchange', (e: any) => {
-            updateLayerControl(e.name);
+        // One failed tile used to tear down the whole base layer and swap provider, from
+        // a handler that dereferenced this.map with no null guard -- so a late tileerror
+        // after onClose() threw. Count failures instead, and only give up once.
+        let tileFailures = 0;
+        let swapped = false;
+        osmLayer.on('tileerror', () => {
+            if (swapped || !this.map) return;
+            if (++tileFailures < 8) return;
+            swapped = true;
+            console.warn('[MapView] base tiles are not loading; switching provider');
+            osmLayer.remove();
+            cartoLayer.addTo(this.map);
         });
 
-        // Set initial state (OSM is default)
-        setTimeout(() => updateLayerControl('OpenStreetMap'), 100);
+        this.layerControl = L.control.layers({
+            'OpenStreetMap': osmLayer,
+            'Satellite': satelliteLayer,
+            'Carto Light': cartoLayer,
+        }, {}, { position: 'topright' });
+        this.layerControl.addTo(this.map);
 
-        // Fix map size after container is visible
-        setTimeout(() => {
-            this.map?.invalidateSize();
-        }, 100);
+        L.control.scale({ imperial: false }).addTo(this.map);
+
+        this.observeCanvas();
+        this.invalidateNow();
 
         // Add context menu for the map
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -344,39 +430,48 @@ export class MapView extends ItemView {
     /**
      * Refresh the map with current data.
      */
+    /**
+     * Single-flight. refresh() is reachable from eight places -- the debounced vault
+     * watcher, the toolbar, two modal callbacks, the edit menu, the geocoder, and the
+     * workspace controller for *background* views -- three of them floating promises.
+     * Two overlapping runs both clear and rebuild the shared entity store, so the second
+     * can observe a half-populated one.
+     */
     async refresh(): Promise<void> {
-        console.debug('[MapView] refresh() called, map exists:', !!this.map);
         if (!this.map) return;
+        if (this.refreshInFlight) return this.refreshInFlight;
+        this.refreshInFlight = this.doRefresh().finally(() => {
+            this.refreshInFlight = null;
+        });
+        return this.refreshInFlight;
+    }
 
-        // Reload entities from notes to ensure we have the latest data
+    private async doRefresh(): Promise<void> {
         try {
             await this.entityManager.loadEntitiesFromNotes();
-            console.debug('[MapView] Entities reloaded from notes');
         } catch (error) {
-            console.error('[MapView] Failed to reload entities:', error);
+            // Stop here. This used to log and carry on into the marker rebuild, which
+            // turned a transient read failure into a blanked map -- and, because
+            // loadEntitiesFromNotes() clears the shared entity store first, into a
+            // truncated store for the graph and timeline views too.
+            console.error('[MapView] failed to reload entities; keeping the current markers:', error);
+            return;
         }
 
-        // Clear existing markers
-        this.markers.forEach(marker => marker.remove());
+        if (!this.map) return;
+
+        this.markers.forEach((marker) => marker.remove());
         this.markers.clear();
 
-        // Get all Location, Address, and GeoLocation entities with coordinates
         const entities = this.entityManager.getAllEntities().filter((e) => isLocationEntityType(e.type));
-        console.debug('[MapView] Found Location and Address entities:', entities.length, entities);
-
         const locations = this.parseLocations(entities);
-        console.debug('[MapView] Parsed locations with coordinates:', locations.length, locations);
+        locations.forEach((location) => this.addMarker(location));
 
-        // Add markers
-        locations.forEach(location => {
-            console.debug('[MapView] Adding marker for:', location.label, 'at', location.lat, location.lng);
-            this.addMarker(location);
-        });
-
-        console.debug('[MapView] Total markers added:', this.markers.size);
-
-        // Fit bounds if we have markers
-        if (locations.length > 0) {
+        // Fit once, when markers first appear. This used to run on every refresh, so any
+        // note save reset the analyst's pan and zoom -- pinning a location and editing a
+        // note was impossible.
+        if (locations.length > 0 && !this.hasFitOnce) {
+            this.hasFitOnce = true;
             this.fitAllMarkers();
         }
     }
@@ -532,34 +627,56 @@ export class MapView extends ItemView {
             this.entityManager.openEntityNote(location.id);
         });
 
+        // Remove any marker already registered under this id before overwriting the
+        // entry, or the old one stays on the map with nothing referencing it -- one
+        // orphan per refresh, forever.
+        this.markers.get(location.id)?.remove();
         this.markers.set(location.id, marker);
     }
 
     /**
      * Create popup content for a location.
      */
-    private createPopupContent(location: MapLocation): string {
-        let content = `<div style="min-width: 150px;">`;
-        content += `<strong>${location.label}</strong>`;
+    /**
+     * Built as DOM with textContent, never as an HTML string.
+     *
+     * label / address / city / country come straight from note frontmatter, which the
+     * AI agent writes. This used to be string concatenation handed to bindPopup(), which
+     * Leaflet assigns with innerHTML -- so `city: <img src=x onerror=...>` executed
+     * script in a renderer that has no CSP and exposes the whole window.api IPC bridge.
+     */
+    private createPopupContent(location: MapLocation): HTMLElement {
+        const root = document.createElement('div');
+        root.addClass('graph_copilot-map-popup');
+
+        root.createEl('strong', { text: location.label });
 
         if (location.address) {
-            content += `<br><small>${location.address}</small>`;
-        }
-        if (location.city || location.country) {
-            const parts = [location.city, location.country].filter(Boolean);
-            content += `<br><small>${parts.join(', ')}</small>`;
+            root.createEl('br');
+            root.createEl('small', { text: location.address });
         }
 
-        content += `<br><small style="color: #888;">
-            ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}
-        </small>`;
-        content += `<br><a href="#" onclick="return false;" style="font-size: 11px;">
-            Double-click to open note
-        </a>`;
-        content += `</div>`;
+        const parts = [location.city, location.country].filter(Boolean) as string[];
+        if (parts.length > 0) {
+            root.createEl('br');
+            root.createEl('small', { text: parts.join(', ') });
+        }
 
-        return content;
+        root.createEl('br');
+        root.createEl('small', {
+            text: `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`,
+            cls: 'graph_copilot-map-popup-coords',
+        });
+
+        root.createEl('br');
+        root.createEl('small', {
+            text: 'Double-click the marker to open its note',
+            cls: 'graph_copilot-map-popup-hint',
+        });
+
+        return root;
     }
+
 
     /**
      * Fit the map to show all markers.
@@ -567,12 +684,23 @@ export class MapView extends ItemView {
     fitAllMarkers(): void {
         if (!this.map || this.markers.size === 0) return;
 
-        const bounds = L.latLngBounds([]);
-        this.markers.forEach(marker => {
-            bounds.extend(marker.getLatLng());
-        });
+        // fitBounds derives a zoom from the viewport size. On a 0x0 map -- which is what
+        // it is until the host attaches our DOM -- it returns maxZoom and lands fully
+        // zoomed in on the bounds centre. Defer to the next successful invalidate.
+        if (!this.container?.isConnected || this.container.clientHeight < 1) {
+            this.fitPending = true;
+            return;
+        }
 
-        this.map.fitBounds(bounds, { padding: [50, 50] });
+        const bounds = L.latLngBounds([]);
+        this.markers.forEach((marker) => bounds.extend(marker.getLatLng()));
+
+        // A single marker gives zero-area bounds, which otherwise snap to the layer's
+        // maxZoom -- a street-level view of one pin, with no context.
+        this.map.fitBounds(bounds, {
+            padding: [50, 50],
+            maxZoom: this.markers.size === 1 ? 13 : undefined,
+        });
     }
 
     /**
