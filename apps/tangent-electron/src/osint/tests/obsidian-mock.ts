@@ -92,28 +92,20 @@ export class WorkspaceLeaf {
     openFile = vi.fn();
 }
 
-export class TFile {
-    path: string;
-    basename: string;
-    constructor() {
-        this.path = '';
-        this.basename = '';
-    }
-}
-
-export class TFolder {
-    path: string;
-    children: unknown[];
-    constructor() {
-        this.path = '';
-        this.children = [];
-    }
-}
-
-/** Minimal path normalizer for unit tests (forward slashes, trim). */
-export function normalizePath(path: string): string {
-    return path.replace(/\\/g, '/').replace(/^\/+/, '').trim();
-}
+/**
+ * These are the real implementations, not stubs.
+ *
+ * `instanceof TFile` appears in 92 places in the product code. A separate mock class
+ * makes every one of those checks false against the files a real Vault hands out, which
+ * is not a test-only quirk — it silently sends EntityManager down its "create" branch
+ * for a note that already exists. Anything that models vault semantics has to be shared
+ * with production, or the two drift exactly where it matters.
+ *
+ * normalizePath likewise: the mock's version had no NFC normalisation, no trailing-slash
+ * strip and no ""-to-"/" fallback, so tests agreed with a normalizer the app does not use.
+ */
+export { TAbstractFile, TFile, TFolder } from '../obsidian-shim/vault/tfile';
+export { normalizePath } from '../obsidian-shim/vault/normalize-path';
 
 export const requestUrl = vi.fn();
 

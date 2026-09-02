@@ -100,7 +100,8 @@ interface CytoscapeCore {
     animate(options: Record<string, unknown>, duration?: { duration: number }): void;
 }
 
-declare const cytoscape: (options?: Record<string, unknown>) => CytoscapeCore;
+import cytoscapeLib from 'cytoscape';
+const cytoscape = cytoscapeLib as unknown as (options?: Record<string, unknown>) => CytoscapeCore;
 
 type RearrangeLayout = 'decentralized' | 'circle' | 'spectral';
 
@@ -148,6 +149,15 @@ export class GraphView extends ItemView {
     private nodePositionsCache: Map<string, NodePosition> = new Map();
     /** Per-graph id → node id → position (persisted as JSON v2). */
     private allGraphPositions: Record<string, Record<string, NodePosition>> = {};
+    /**
+     * Explicit per-workspace membership.
+     *
+     * Membership used to be implicit -- an entity was "in" a workspace iff it had a
+     * saved position there -- which meant a node that had never been dragged did not
+     * belong anywhere, and clearing a layout silently emptied the workspace. Positions
+     * and membership are now separate facts. Migrated from position keys on first load.
+     */
+    private allGraphMembers: Record<string, Set<string>> = {};
     private graphHost: OSINTCopilotGraphHost;
     private graphSelectEl: HTMLSelectElement | null = null;
     private rearrangeLayout: RearrangeLayout = 'decentralized';
@@ -345,34 +355,12 @@ export class GraphView extends ItemView {
             });
             errorMsg.setCssProps({ 'margin-bottom': '15px' });
 
-            // Common issues and solutions
-            const solutions = errorDiv.createDiv();
-            solutions.setCssProps({ 'text-align': 'left', 'max-width': '600px', margin: '0 auto' });
-
-            solutions.createEl('p').createEl('strong', { text: 'Possible causes:' });
-            const ul = solutions.createEl('ul');
-            const li1 = ul.createEl('li');
-            li1.createEl('strong', { text: 'CDN blocked:' });
-            li1.appendText(' Cytoscape.js cannot be loaded from unpkg.com CDN. Check:');
-            const subUl = li1.createEl('ul');
-            subUl.createEl('li', { text: 'Browser extensions (ad blockers, privacy tools)' });
-            subUl.createEl('li', { text: 'Corporate firewall or network restrictions' });
-            subUl.createEl('li', { text: 'Content security policy settings' });
-
-            const li2 = ul.createEl('li');
-            li2.createEl('strong', { text: 'Network issues' });
-            li2.appendText(' Check your internet connection');
-
-            const li3 = ul.createEl('li');
-            li3.createEl('strong', { text: 'Entity manager' });
-            li3.appendText(' Check console for EntityManager initialization errors');
-
-            solutions.createEl('p').createEl('strong', { text: 'To debug:' });
-            const ol = solutions.createEl('ol');
-            ol.createEl('li', { text: 'Open Developer Tools (Ctrl+Shift+I)' });
-            ol.createEl('li', { text: 'Check console tab for errors' });
-            ol.createEl('li', { text: 'Check network tab for failed requests to unpkg.com' });
-            ol.createEl('li', { text: 'Verify plugin settings: enableGraphFeatures should be enabled' });
+            // The CDN-diagnostics panel that stood here is gone: Cytoscape is bundled
+            // now, so "unpkg blocked by your firewall" is no longer a way this can fail.
+            const hint = errorDiv.createEl('p', {
+                text: 'Check the developer console for details, and verify that graph features are enabled in settings.',
+            });
+            hint.setCssProps({ 'margin-top': '10px', color: 'var(--text-muted)' });
 
             new Notice('Graph failed to load. Check console for details.', 10000);
         }
@@ -597,43 +585,16 @@ export class GraphView extends ItemView {
     }
 
     /**
-     * Load Cytoscape.js library.
+     * Cytoscape is bundled, not fetched.
+     *
+     * It used to be injected as a <script src="https://unpkg.com/..."> at runtime,
+     * which meant the graph was dead on an air-gapped or firewalled machine -- a real
+     * defect for an OSINT tool, and one the app apologised for in a 40-line
+     * diagnostics panel. It is also incompatible with a CSP worth having: our
+     * script-src is 'self'. Kept async so callers need no change.
      */
     private async loadCytoscape(): Promise<void> {
-        // Check if already loaded
-        if (typeof cytoscape !== 'undefined') {
-            console.debug('[GraphView] Cytoscape.js already loaded');
-            return;
-        }
-
-        // Load from CDN
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js';
-
-            const timeout = setTimeout(() => {
-                reject(new Error('Cytoscape.js load timeout - CDN request took too long. Check network connection or firewall settings.'));
-            }, 30000); // 30 second timeout
-
-            script.onload = () => {
-                clearTimeout(timeout);
-                // Double-check that cytoscape is actually available
-                if (typeof cytoscape === 'undefined') {
-                    reject(new Error('Cytoscape script loaded but cytoscape object is undefined. Possible CSP or script execution issue.'));
-                } else {
-                    console.debug('[GraphView] Cytoscape.js loaded from CDN');
-                    resolve();
-                }
-            };
-
-            script.onerror = (error) => {
-                clearTimeout(timeout);
-                console.error('[GraphView] Failed to load Cytoscape.js from CDN:', error);
-                reject(new Error('Failed to load Cytoscape.js from CDN. Possible causes: network issue, firewall blocking unpkg.com, or Content Security Policy restrictions.'));
-            };
-
-            document.head.appendChild(script);
-        });
+        return Promise.resolve();
     }
 
     /**
@@ -2637,15 +2598,36 @@ export class GraphView extends ItemView {
     }
 
     /**
-     * Default workspace shows all vault entities; other workspaces only show entities
-     * that have a saved position on that graph (membership = keys in nodePositionsCache).
+     * The default workspace shows every vault entity; a named workspace shows exactly
+     * its members. Membership is explicit and independent of layout, so rearranging or
+     * clearing positions no longer changes which entities belong to a graph.
      */
     private getEntitiesForActiveWorkspace(allEntities: Entity[]): Entity[] {
-        if (this.graphHost.getActiveGraphId() === 'default') {
+        const activeId = this.graphHost.getActiveGraphId();
+        if (activeId === 'default') {
             return allEntities;
         }
-        const allowed = new Set(this.nodePositionsCache.keys());
-        return allEntities.filter((e) => allowed.has(e.id));
+        const members = this.allGraphMembers[activeId] ?? new Set<string>();
+        return allEntities.filter((e) => members.has(e.id));
+    }
+
+    /** Adds entities to the active workspace. No-op on the default graph, which holds everything. */
+    addToActiveWorkspace(entityIds: string[]): void {
+        const activeId = this.graphHost.getActiveGraphId();
+        if (activeId === 'default') return;
+        const members = this.allGraphMembers[activeId] ?? new Set<string>();
+        for (const id of entityIds) members.add(id);
+        this.allGraphMembers[activeId] = members;
+        void this.savePositions();
+    }
+
+    removeFromActiveWorkspace(entityIds: string[]): void {
+        const activeId = this.graphHost.getActiveGraphId();
+        if (activeId === 'default') return;
+        const members = this.allGraphMembers[activeId];
+        if (!members) return;
+        for (const id of entityIds) members.delete(id);
+        void this.savePositions();
     }
 
     /**
@@ -3188,12 +3170,29 @@ export class GraphView extends ItemView {
                 const content = await this.app.vault.read(file);
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const raw = JSON.parse(content) as any;
-                if (raw && raw.version === 2 && raw.byGraph && typeof raw.byGraph === 'object') {
+                if (raw && (raw.version === 2 || raw.version === 3) && raw.byGraph && typeof raw.byGraph === 'object') {
                     this.allGraphPositions = raw.byGraph as Record<string, Record<string, NodePosition>>;
                 } else {
                     // Legacy: flat map of nodeId → position → single default graph
                     const legacy = raw as Record<string, NodePosition>;
                     this.allGraphPositions = { default: legacy || {} };
+                }
+
+                // v3 stores membership explicitly. Anything older gets it derived from
+                // position keys, which is exactly what the old implicit rule meant --
+                // so an existing vault keeps the same workspace contents.
+                this.allGraphMembers = {};
+                const storedMembers = raw?.version === 3 ? raw.membersByGraph : null;
+                for (const graphId of Object.keys(this.allGraphPositions)) {
+                    const explicit = storedMembers?.[graphId] as string[] | undefined;
+                    this.allGraphMembers[graphId] = new Set(
+                        explicit ?? Object.keys(this.allGraphPositions[graphId] ?? {}),
+                    );
+                }
+                for (const graphId of Object.keys(storedMembers ?? {})) {
+                    if (!this.allGraphMembers[graphId]) {
+                        this.allGraphMembers[graphId] = new Set(storedMembers[graphId] as string[]);
+                    }
                 }
                 const activeId = this.graphHost.getActiveGraphId();
                 const slice = this.allGraphPositions[activeId] || {};
@@ -3222,7 +3221,22 @@ export class GraphView extends ItemView {
             const activeId = this.graphHost.getActiveGraphId();
             this.allGraphPositions[activeId] = Object.fromEntries(this.nodePositionsCache);
 
-            const content = JSON.stringify({ version: 2, byGraph: this.allGraphPositions }, null, 2);
+            // Positioning a node on a named graph still implies membership -- that is how
+            // nodes join a workspace today -- but membership now survives losing the position.
+            if (activeId !== 'default') {
+                const members = this.allGraphMembers[activeId] ?? new Set<string>();
+                for (const nodeId of this.nodePositionsCache.keys()) members.add(nodeId);
+                this.allGraphMembers[activeId] = members;
+            }
+
+            const membersByGraph: Record<string, string[]> = {};
+            for (const [graphId, members] of Object.entries(this.allGraphMembers)) {
+                membersByGraph[graphId] = [...members];
+            }
+            const content = JSON.stringify(
+                { version: 3, byGraph: this.allGraphPositions, membersByGraph },
+                null, 2,
+            );
             console.debug(`[GraphView] Saving graph "${activeId}" (${this.nodePositionsCache.size} nodes) to ${NODE_POSITIONS_FILE}`);
 
             // Ensure directory exists first

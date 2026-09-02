@@ -234,6 +234,16 @@ export class ChatView extends ItemView {
     }
   }
 
+  /** Applied once the runtime probe settles; see the note in render(). */
+  private applyRuntimeAvailabilityToSendButton(av: ChatRuntimeAvailability): void {
+    if (!this.sendButtonEl) return;
+    const none = av.availableIds.length === 0;
+    this.sendButtonEl.disabled = none;
+    this.sendButtonEl.title = none
+      ? "Install and configure Claude, Codex, Hermes, or a custom runtime in Settings → OSINT Copilot."
+      : "";
+  }
+
   private buildRuntimeHeaderRow(buttonGroup: HTMLElement, av: ChatRuntimeAvailability): void {
     const wrap = buttonGroup.createDiv({ cls: "vault-ai-runtime-header" });
     wrap.style.display = "flex";
@@ -434,9 +444,32 @@ export class ChatView extends ItemView {
       void this.startNewConversation();
     });
 
-    const runtimeAvailability = await getChatRuntimeAvailability(this.plugin);
-    await this.syncRuntimeSelectionToAvailability(runtimeAvailability);
-    this.buildRuntimeHeaderRow(buttonGroup, runtimeAvailability);
+    // Detecting which agent runtimes are available means spawning a health check for
+    // each of Claude, Codex, Hermes and any custom runtime. That took ~8 seconds here,
+    // and awaiting it before building the rest of the view left the chat with a header
+    // and nothing else for that whole time -- no message list, no input box. It now runs
+    // alongside, and fills in its row and the Send button when it lands.
+    const runtimeRow = buttonGroup.createDiv({ cls: "vault-ai-runtime-header-slot" });
+    runtimeRow.createEl("span", {
+      text: "Checking agent runtimes…",
+      cls: "setting-item-description",
+    });
+    const runtimeReady = (async () => {
+      const availability = await getChatRuntimeAvailability(this.plugin);
+      await this.syncRuntimeSelectionToAvailability(availability);
+      runtimeRow.empty();
+      this.buildRuntimeHeaderRow(runtimeRow, availability);
+      this.applyRuntimeAvailabilityToSendButton(availability);
+      return availability;
+    })();
+    runtimeReady.catch((e) => {
+      runtimeRow.empty();
+      runtimeRow.createEl("span", {
+        text: "Could not detect agent runtimes. See Settings → OSINT Copilot.",
+        cls: "setting-item-description",
+      });
+      console.error("[OSINT Copilot] runtime availability probe failed:", e);
+    });
     await this.buildTaskAgentHeaderRow(buttonGroup);
 
     // Settings shortcut button
@@ -554,13 +587,11 @@ export class ChatView extends ItemView {
       cls: "vault-ai-send-btn"
     });
     this.sendButtonEl = sendBtn;
-    if (runtimeAvailability.availableIds.length === 0) {
-      sendBtn.disabled = true;
-      sendBtn.title = "Install and configure Claude, Codex, Hermes, or a custom runtime in Settings → OSINT Copilot.";
-    } else {
-      sendBtn.disabled = false;
-      sendBtn.title = "";
-    }
+    // Enabled optimistically: the probe above settles a moment later and disables Send
+    // only if nothing is actually available. Starting disabled would make the button
+    // look broken for the first few seconds.
+    sendBtn.disabled = false;
+    sendBtn.title = "";
     sendBtn.addEventListener("click", () => void this.handleSend());
 
     // Drag and Drop Overlay

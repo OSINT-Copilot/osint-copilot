@@ -11,6 +11,11 @@
  * file), which is also a `modify` as far as the shim is concerned.
  *
  * Paths: Tangent's are absolute, Obsidian's are workspace-relative and NFC-normalised.
+ *
+ * Virtual nodes are dropped. Tangent creates one for every unresolved `[[wikilink]]` so
+ * the link has somewhere to point, and our entity note template ships placeholder links
+ * ("[[Entity Name]]", "[[Target Entity]]"). Forwarding those as 'create' sends the
+ * plugin's indexer to read files that do not exist, once per link per reindex.
  */
 import { normalizePath } from '../obsidian-shim/vault/normalize-path';
 import type { StatDto, WatchEvent } from '../host/types';
@@ -21,6 +26,8 @@ interface TangentNode {
     fileType?: string;
     created?: Date | string | number;
     modified?: Date | string | number;
+    /** Tangent's index data. `virtual: true` means the node has no file behind it. */
+    meta?: { virtual?: boolean };
 }
 
 interface TangentTreeChange {
@@ -70,11 +77,13 @@ export function treeChangeToWatchEvents(
     const events: WatchEvent[] = [];
 
     for (const node of change.added ?? []) {
+        if (node.meta?.virtual) continue;
         const stat = statOf(root, node);
         events.push({ kind: knows(stat.path) ? 'modify' : 'create', path: stat.path, stat });
     }
 
     for (const node of change.changed ?? []) {
+        if (node.meta?.virtual) continue;
         const stat = statOf(root, node);
         events.push({ kind: 'modify', path: stat.path, stat });
     }

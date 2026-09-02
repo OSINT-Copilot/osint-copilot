@@ -18,6 +18,7 @@ import PopUpButton from 'app/utils/PopUpButton.svelte'
 import ModalStateView from 'app/modal/ModalStateView.svelte'
 import LeftSidebar from './LeftSidebar.svelte'
 import SvgIcon from './smart-icons/SVGIcon.svelte'
+import OsintRibbon from 'osint/integration/OsintRibbon.svelte'
 import ThreadHistoryListView from './summaries/ThreadHistoryListView.svelte'
 import { createCommandHandler } from 'app/model/commands/Command'
 import { shortcutDisplayString } from 'app/utils/shortcuts'
@@ -398,6 +399,8 @@ function onViewContextMenu(event: MouseEvent) {
 		</span>
 	</nav>
 	<nav class="buttonBar" slot="right">
+
+		<OsintRibbon />
 
 		<PopUpButton
 			buttonClass="subtle"
