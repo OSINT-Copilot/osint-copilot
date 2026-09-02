@@ -7,7 +7,7 @@ import type { QueryResult } from './indexing/queryResults'
 import type { QueryParseResult } from '@such-n-such/tangent-query-parser'
 import type { UrlData } from './urlData'
 import type {
-	ExecOptions, ExecResult, HttpRequest, HttpResponse, PlatformInfo, SecretRef
+	ExecOptions, ExecResult, HttpRequest, HttpResponse, PlatformInfo, SecretRef, StatDto
 } from '../osint/host/types'
 
 export interface SelectPathOptions {
@@ -183,6 +183,27 @@ export default interface WindowAPI {
 		extract: {
 			pdfText(data: ArrayBuffer): Promise<string>
 			docxText(data: ArrayBuffer): Promise<string>
+		}
+
+		/**
+		 * File I/O for the Obsidian Vault shim. Alongside `file` above rather than
+		 * instead of it: the shim needs a stat back from every write, binary I/O, real
+		 * OS trash, and Obsidian's exact error strings. No second watcher — change
+		 * events come from Tangent's own TreeChange stream.
+		 */
+		vault: {
+			/** `dir` must be a workspace Tangent already has open. */
+			open(dir: string): Promise<StatDto[]>
+			read(path: string): Promise<string>
+			readBinary(path: string): Promise<Uint8Array>
+			write(path: string, data: string): Promise<StatDto>
+			writeBinary(path: string, data: Uint8Array): Promise<StatDto>
+			create(path: string, data: string): Promise<StatDto>
+			mkdir(path: string): Promise<StatDto>
+			remove(path: string): Promise<void>
+			trash(path: string): Promise<void>
+			rename(from: string, to: string): Promise<void>
+			stat(path: string): Promise<StatDto | null>
 		}
 	}
 }

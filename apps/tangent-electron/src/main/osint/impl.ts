@@ -9,6 +9,7 @@ import { resolveCliPath } from './node/cli';
 import * as vaultFs from './node/vault';
 import * as secretStore from './node/secrets';
 import { assertRequestAllowed } from './node/net-guard';
+import { extractPdfText, extractDocxText } from './node/extract';
 
 /**
  * Getters, not a snapshot: the resolve-binary-path suite overrides process.platform
@@ -155,15 +156,11 @@ export const host: Host = {
         async rememberVault() { /* no-op outside Electron */ },
     },
     extract: {
-        // require(), not await import(): kept lazy so pdfjs stays out of main's startup
-        // path, without needing `module` set on Tangent's main tsconfig.
-        async pdfText(data: ArrayBuffer) {
-            const { extractPdfText } = require('./node/extract') as typeof import('./node/extract');
-            return extractPdfText(data);
-        },
-        async docxText(data: ArrayBuffer) {
-            const { extractDocxText } = require('./node/extract') as typeof import('./node/extract');
-            return extractDocxText(data);
-        },
+        // A static import of extract.ts is cheap: the module is small and pdfjs itself
+        // stays deferred inside loadPdfJs(), which requires it on first use. A relative
+        // require() here would not resolve under vitest, and a dynamic import() needs
+        // `module` set on Tangent's main tsconfig, which is an upstream file.
+        pdfText: (data: ArrayBuffer) => extractPdfText(data),
+        docxText: async (data: ArrayBuffer) => extractDocxText(data),
     },
 };

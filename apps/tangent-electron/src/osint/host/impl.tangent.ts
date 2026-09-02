@@ -7,7 +7,7 @@
  * There is deliberately no fallback. A missing bridge is a wiring bug and should fail
  * loudly rather than silently degrade into a half-working app.
  */
-import type { Host, VaultHost } from './types';
+import type { Host, StatDto, WatchEvent } from './types';
 
 function api() {
     const injected = (globalThis as any).window?.api?.osint;
@@ -16,23 +16,66 @@ function api() {
             'OSINT host bridge unavailable: preload did not run, or window.api.osint is missing.',
         );
     }
-    return injected as Host & { platform(): Host['platform'] };
+    return injected;
 }
 
 /**
- * File I/O is Tangent's job, not ours: the Vault shim is re-pointed at Tangent's
- * DirectoryStore and `window.api.file` in phase 2. Until then these throw rather than
- * pretend, so a premature caller is obvious.
+ * The vault root, cached so `basePath()` can stay synchronous — it is the cwd handed to
+ * every CLI runtime, and the shim reads it during construction.
  */
-const notYetWired = (member: string) => () => {
-    throw new Error(
-        `host.${member} is not wired yet: the Vault shim moves onto Tangent's DirectoryStore in phase 2.`,
-    );
-};
+let vaultRoot = '';
 
-const vault = new Proxy({} as VaultHost, {
-    get: (_target, prop) => notYetWired(`vault.${String(prop)}`),
-});
+/**
+ * Vault change events do not come from a watcher of ours. Tangent already watches the
+ * workspace recursively; the integration layer converts its TreeChange stream into
+ * WatchEvents and pushes them here, so exactly one watcher runs over the tree.
+ */
+const changeListeners = new Set<(events: WatchEvent[]) => void>();
+
+/**
+ * Echo suppression for our own writes.
+ *
+ * The Vault shim emits its events synchronously from the mutating call, the way
+ * Obsidian does. Tangent's watcher then reports the same write about half a second
+ * later (its dirty-cache debounce), which would arrive as a second `modify`. Left
+ * unsuppressed that becomes a loop: modify -> the four watched-folder registries
+ * invalidate -> the schema catalog rebuilds -> whatever that writes starts it again.
+ *
+ * Content writes are keyed on path+mtime so an genuinely newer external edit still gets
+ * through. Deletes have no mtime, so they are keyed on path alone.
+ */
+const selfWrites = new Map<string, number>();
+const SELF_WRITE_TTL_MS = 5000;
+
+function markSelfWrite(key: string): void {
+    selfWrites.set(key, Date.now());
+    if (selfWrites.size > 512) {
+        const cutoff = Date.now() - SELF_WRITE_TTL_MS;
+        for (const [k, at] of selfWrites) if (at < cutoff) selfWrites.delete(k);
+    }
+}
+
+function stamp<T extends StatDto>(stat: T): T {
+    markSelfWrite(`w:${stat.path}:${stat.mtime}`);
+    return stat;
+}
+
+function isSelfWrite(event: WatchEvent): boolean {
+    const key = event.kind === 'delete'
+        ? `d:${event.path}`
+        : `w:${event.path}:${event.stat?.mtime}`;
+    const at = selfWrites.get(key);
+    if (at === undefined) return false;
+    selfWrites.delete(key);
+    return Date.now() - at < SELF_WRITE_TTL_MS;
+}
+
+/** Called by the integration layer (see integration/vault-bridge.ts). */
+export function pushVaultEvents(events: WatchEvent[]): void {
+    const fresh = events.filter(event => !isSelfWrite(event));
+    if (fresh.length === 0) return;
+    for (const listener of changeListeners) listener(fresh);
+}
 
 export const host: Host = {
     get platform() { return api().platform(); },
@@ -52,10 +95,44 @@ export const host: Host = {
         pdfText: (data) => api().extract.pdfText(data),
         docxText: (data) => api().extract.docxText(data),
     },
-    vault,
+    vault: {
+        async open(dir: string): Promise<StatDto[]> {
+            const snapshot = await api().vault.open(dir);
+            vaultRoot = dir;
+            return snapshot;
+        },
+        basePath: () => vaultRoot,
+        read: (p) => api().vault.read(p),
+        readBinary: (p) => api().vault.readBinary(p),
+        write: (p, data) => api().vault.write(p, data).then(stamp),
+        writeBinary: (p, data) => api().vault.writeBinary(p, data).then(stamp),
+        create: (p, data) => api().vault.create(p, data).then(stamp),
+        mkdir: (p) => api().vault.mkdir(p).then(stamp),
+        async remove(p) { markSelfWrite(`d:${p}`); return api().vault.remove(p); },
+        async trash(p) { markSelfWrite(`d:${p}`); return api().vault.trash(p); },
+        async rename(from, to) { markSelfWrite(`d:${from}`); return api().vault.rename(from, to); },
+        stat: (p) => api().vault.stat(p),
+        onChange(callback) {
+            changeListeners.add(callback);
+            return () => changeListeners.delete(callback);
+        },
+        /**
+         * Tangent serves its window from file://, so a vault image can be referenced
+         * directly. `?v=<mtime>` busts Electron's image cache, which otherwise serves a
+         * stale thumbnail forever after a re-import. Per-segment encoding matters:
+         * entity labels routinely contain spaces, #, ? and &.
+         */
+        resourceUrl(p: string): string {
+            const encoded = p.split('/').map(encodeURIComponent).join('/');
+            const root = vaultRoot.split('/').map(encodeURIComponent).join('/');
+            return `file://${root}/${encoded}`;
+        },
+    },
     app: {
-        pickVault: notYetWired('app.pickVault'),
-        lastVault: notYetWired('app.lastVault'),
-        rememberVault: notYetWired('app.rememberVault'),
+        async pickVault() {
+            throw new Error('host.app.pickVault is not used under Tangent: it owns workspace selection.');
+        },
+        async lastVault() { return vaultRoot || null; },
+        async rememberVault() { /* Tangent persists the open workspace itself. */ },
     },
 };

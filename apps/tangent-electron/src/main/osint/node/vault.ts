@@ -85,7 +85,14 @@ async function walk(dir: string, out: StatDto[]): Promise<void> {
     }
 }
 
-export async function open(dir: string): Promise<StatDto[]> {
+/**
+ * @param watch  Start our own filesystem watcher. Off under Tangent: Tangent already
+ *               watches the workspace recursively and pushes TreeChange to the
+ *               renderer, and a second watcher over the same tree would double every
+ *               event and double the cost on a large case vault. On is kept for tests
+ *               and for any host that does not watch for us.
+ */
+export async function open(dir: string, { watch = true }: { watch?: boolean } = {}): Promise<StatDto[]> {
     await watcher?.close();
     watcher = null;
     root = nodePath.resolve(dir);
@@ -93,7 +100,7 @@ export async function open(dir: string): Promise<StatDto[]> {
 
     const snapshot: StatDto[] = [];
     await walk(root, snapshot);
-    await startWatching();
+    if (watch) await startWatching();
     return snapshot;
 }
 

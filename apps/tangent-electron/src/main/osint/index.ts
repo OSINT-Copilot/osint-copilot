@@ -14,11 +14,12 @@
  *   - HTTP is checked against the per-enricher domain allowlist and refuses private,
  *     loopback, link-local, CGNAT and cloud-metadata addresses after DNS resolution
  */
-import { app, ipcMain, safeStorage } from 'electron'
+import { app, ipcMain, safeStorage, shell } from 'electron'
 import Logger from 'js-logger'
 
 import { workspaceMap } from 'main/workspaces'
 import { host } from './impl'
+import * as vaultFs from './node/vault'
 import { configureKeychain } from './node/secrets'
 import {
 	assertCwdPermitted,
@@ -95,5 +96,50 @@ ipcMain.handle('osint:net.request', (_e, request: HttpRequest) => host.net.reque
 // ----------------------------------------------------------------------- extract
 ipcMain.handle('osint:extract.pdfText', (_e, data: ArrayBuffer) => host.extract.pdfText(data))
 ipcMain.handle('osint:extract.docxText', (_e, data: ArrayBuffer) => host.extract.docxText(data))
+
+// --------------------------------------------------------------------------- vault
+/**
+ * File I/O for the Obsidian Vault shim.
+ *
+ * This exists alongside Tangent's own `file` API rather than replacing it, because the
+ * shim needs four things Tangent's API does not offer: a stat back from every write
+ * (the shim's read cache and its self-write suppression are keyed on path+mtime+size),
+ * binary read/write, real OS trash, and Obsidian's exact error strings
+ * ("File already exists." / "Folder already exists."), which vault-bootstrap-fs.ts
+ * matches on.
+ *
+ * It does NOT bring a second filesystem watcher: `open` is called with watch:false and
+ * change events are derived from Tangent's own TreeChange stream in the renderer.
+ *
+ * Confinement is doubled up. vault.ts refuses any path escaping the open root, and the
+ * root itself must be a workspace Tangent has open — the renderer cannot point this at
+ * an arbitrary directory.
+ */
+function assertIsOpenWorkspace(dir: string): void {
+	const roots = [...workspaceMap.keys()]
+	if (!roots.includes(dir)) {
+		throw new Error(`Refusing to open "${dir}" as a vault: it is not an open workspace.`)
+	}
+}
+
+ipcMain.handle('osint:vault.open', (_e, dir: string) => {
+	assertIsOpenWorkspace(dir)
+	return vaultFs.open(dir, { watch: false })
+})
+
+ipcMain.handle('osint:vault.read', (_e, p: string) => vaultFs.read(p))
+ipcMain.handle('osint:vault.readBinary', (_e, p: string) => vaultFs.readBinary(p))
+ipcMain.handle('osint:vault.write', (_e, p: string, d: string) => vaultFs.write(p, d))
+ipcMain.handle('osint:vault.writeBinary', (_e, p: string, d: Uint8Array) => vaultFs.writeBinary(p, d))
+ipcMain.handle('osint:vault.create', (_e, p: string, d: string) => vaultFs.create(p, d))
+ipcMain.handle('osint:vault.mkdir', (_e, p: string) => vaultFs.mkdir(p))
+ipcMain.handle('osint:vault.remove', (_e, p: string) => vaultFs.remove(p))
+ipcMain.handle('osint:vault.rename', (_e, from: string, to: string) => vaultFs.rename(from, to))
+ipcMain.handle('osint:vault.stat', (_e, p: string) => vaultFs.stat(p))
+
+/** Real OS trash, not unlink: four fileManager.trashFile call sites depend on it. */
+ipcMain.handle('osint:vault.trash', async (_e, p: string) => {
+	await shell.trashItem(vaultFs.absolutePathOf(p))
+})
 
 Logger.info('[osint] main-process handlers registered')

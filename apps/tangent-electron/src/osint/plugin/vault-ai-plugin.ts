@@ -61,7 +61,6 @@ import {
   ORCHESTRATION_TOOL_DISPLAY_NAMES,
   type OrchestrationProgressMeta,
 } from '../services/orchestration-service';
-import { UpdaterService } from '../services/updater-service';
 import { VaultPromptLoader } from '../services/vault-prompt-loader';
 import { VaultPromptBootstrapService } from '../services/vault-prompt-bootstrap';
 import { TaskAgentRegistry } from '../task-agents/task-agent-registry';
@@ -156,7 +155,6 @@ export default class VaultAIPlugin extends Plugin {
   conversationService!: ConversationService;
   customTypesService!: CustomTypesService;
   orchestrationService!: OrchestrationService;
-  updaterService!: UpdaterService;
   claudeCodeService: ClaudeCodeService | null = null;
   codexCliService: CodexCliService | null = null;
   vaultPromptLoader!: VaultPromptLoader;
@@ -355,9 +353,6 @@ export default class VaultAIPlugin extends Plugin {
 
     // Initialize Orchestration Service
     this.orchestrationService = new OrchestrationService(this);
-
-    // Initialize Updater Service
-    this.updaterService = new UpdaterService(this);
 
     // Initialize entity manager if graph features are enabled
     // This is done separately from API health check to ensure local features work

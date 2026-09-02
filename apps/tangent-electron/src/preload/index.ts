@@ -308,6 +308,20 @@ const bridge: WindowApi = {
 		extract: {
 			pdfText: data => ipcRenderer.invoke('osint:extract.pdfText', data),
 			docxText: data => ipcRenderer.invoke('osint:extract.docxText', data)
+		},
+
+		vault: {
+			open: dir => ipcRenderer.invoke('osint:vault.open', dir),
+			read: p => ipcRenderer.invoke('osint:vault.read', p),
+			readBinary: p => ipcRenderer.invoke('osint:vault.readBinary', p),
+			write: (p, data) => ipcRenderer.invoke('osint:vault.write', p, data),
+			writeBinary: (p, data) => ipcRenderer.invoke('osint:vault.writeBinary', p, data),
+			create: (p, data) => ipcRenderer.invoke('osint:vault.create', p, data),
+			mkdir: p => ipcRenderer.invoke('osint:vault.mkdir', p),
+			remove: p => ipcRenderer.invoke('osint:vault.remove', p),
+			trash: p => ipcRenderer.invoke('osint:vault.trash', p),
+			rename: (from, to) => ipcRenderer.invoke('osint:vault.rename', from, to),
+			stat: p => ipcRenderer.invoke('osint:vault.stat', p)
 		}
 	}
 }

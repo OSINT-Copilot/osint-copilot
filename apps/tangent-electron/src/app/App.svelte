@@ -219,6 +219,17 @@ async function setState(state: WorkspaceInitState) {
 			doc.workspace = workspace
 			
 			await workspace.startup()
+
+			// OSINT Copilot starts once the workspace is live. Failures are contained:
+			// a bug on our side must not stop the note workspace from opening.
+			try {
+				const { startOsintCopilot } = await import('osint/integration/bootstrap')
+				await startOsintCopilot(workspace as any)
+			}
+			catch (e) {
+				console.error('[osint] failed to start', e)
+			}
+
 			applicationState = 'usingWorkspace'
 		}
 		catch (e) {
