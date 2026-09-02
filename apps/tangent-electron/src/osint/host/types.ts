@@ -145,6 +145,36 @@ export interface VaultHost {
     resourceUrl(path: string): string;
 }
 
+/** A PMTiles archive main holds open on the renderer's behalf. */
+export interface BasemapArchive {
+    /** Opaque capability. The only thing the renderer may name on a read. */
+    handleId: string;
+    /** Absolute and symlink-resolved. For display only; never sent back. */
+    path: string;
+    size: number;
+    /** `${mtimeMs}-${size}` at open. Changes if the file is replaced. */
+    etag: string;
+}
+
+export interface BasemapRange {
+    /** Exactly sized and unpooled in main, so `new Uint8Array(data)` is the range. */
+    data: ArrayBuffer;
+    etag: string;
+}
+
+/** Why a configured archive could not be opened. Mapped to UI copy in the renderer. */
+export type BasemapProblem =
+    | 'not-configured'
+    | 'missing'
+    | 'not-a-file'
+    | 'unreadable'
+    | 'not-pmtiles'
+    | 'unsupported-version';
+
+export type BasemapOpenResult =
+    | { ok: true; archive: BasemapArchive }
+    | { ok: false; problem: BasemapProblem; path: string };
+
 export interface Host {
     /**
      * Synchronous because process.platform (7 sites) and os.homedir() never change
@@ -183,6 +213,19 @@ export interface Host {
     };
 
     vault: VaultHost;
+    /**
+     * Offline basemap archives. `open()` takes no path: main holds the only copy of it,
+     * chosen through a dialog main itself opened, so a byte-range read cannot be aimed
+     * at a file of the renderer's choosing.
+     */
+    basemap: {
+        /** Native picker. Resolves null if the user cancelled. */
+        pick(): Promise<BasemapOpenResult | null>;
+        open(): Promise<BasemapOpenResult>;
+        forget(): Promise<void>;
+        read(handleId: string, offset: number, length: number): Promise<BasemapRange>;
+        close(handleId: string): Promise<void>;
+    };
 
     app: {
         /** Native folder picker. Returns null if the user cancels. */

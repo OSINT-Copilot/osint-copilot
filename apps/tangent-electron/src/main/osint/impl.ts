@@ -10,6 +10,7 @@ import * as vaultFs from './node/vault';
 import * as secretStore from './node/secrets';
 import { assertRequestAllowed } from './node/net-guard';
 import { extractPdfText, extractDocxText } from './node/extract';
+import * as basemapStore from './node/basemap';
 
 /**
  * Getters, not a snapshot: the resolve-binary-path suite overrides process.platform
@@ -148,6 +149,13 @@ export const host: Host = {
         stat: vaultFs.stat,
         onChange: vaultFs.onChange,
         resourceUrl: (path: string) => `osint-vault://${encodeURI(path)}`,
+    },
+    basemap: {
+        pick: () => basemapStore.pick(),
+        open: () => basemapStore.open(),
+        forget: () => basemapStore.forget(),
+        read: (handleId: string, offset: number, length: number) => basemapStore.read(handleId, offset, length),
+        close: (handleId: string) => basemapStore.close(handleId),
     },
     // Overridden in main (electron/ipc) where dialog and userData exist; inert under vitest.
     app: {

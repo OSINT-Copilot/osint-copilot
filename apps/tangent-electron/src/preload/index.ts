@@ -322,6 +322,15 @@ const bridge: WindowApi = {
 			trash: p => ipcRenderer.invoke('osint:vault.trash', p),
 			rename: (from, to) => ipcRenderer.invoke('osint:vault.rename', from, to),
 			stat: p => ipcRenderer.invoke('osint:vault.stat', p)
+		},
+
+		basemap: {
+			pick: () => ipcRenderer.invoke('osint:basemap.pick'),
+			open: () => ipcRenderer.invoke('osint:basemap.open'),
+			forget: () => ipcRenderer.invoke('osint:basemap.forget'),
+			read: (handleId, offset, length) =>
+				ipcRenderer.invoke('osint:basemap.read', handleId, offset, length),
+			close: handleId => ipcRenderer.invoke('osint:basemap.close', handleId)
 		}
 	}
 }

@@ -8,6 +8,10 @@ import { type Entity, EntityType, ENTITY_CONFIGS } from '../entities/types';
 import { EntityManager } from '../services/entity-manager';
 import { EntityCreationModal } from '../modals/entity-modal';
 import { GeocodingService, GeocodingError, geocodingService } from '../services/geocoding-service';
+import { host } from '../host';
+import { IpcPMTilesSource } from '../services/basemap/ipc-pmtiles-source';
+import { basemapProblemMessage, rendererForTileType } from '../services/basemap/basemap-types';
+import { formatDegrees, graticuleLines, graticuleSpacingForZoom } from '../services/basemap/graticule';
 
 // Leaflet types (simplified for bundling)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Leaflet library types not available
@@ -39,6 +43,11 @@ interface MapLocation {
     country?: string;
 }
 
+/** Always present, always offline: the map is never blank. */
+const GRID_LAYER_NAME = 'Coordinate grid';
+const OFFLINE_LAYER_NAME = 'Offline basemap';
+const CUSTOM_LAYER_NAME = 'Online tiles';
+
 export class MapView extends ItemView {
     private entityManager: EntityManager;
     private vaultRefreshTimer: number | null = null;
@@ -69,6 +78,11 @@ export class MapView extends ItemView {
     private refreshInFlight: Promise<void> | null = null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Leaflet control
     private layerControl: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Leaflet layers by name
+    private baseLayers: Record<string, any> = {};
+    private activeBaseLayerName = '';
+    private basemapStatusEl: HTMLElement | null = null;
+    private offlineHandleId: string | null = null;
 
     constructor(
         leaf: WorkspaceLeaf,
@@ -240,6 +254,187 @@ export class MapView extends ItemView {
         this.markers.clear();
     }
 
+    // ------------------------------------------------------------------ basemaps
+
+    /**
+     * A latitude/longitude grid drawn from computed lines. Zero data, zero network, so
+     * it works air-gapped and can never fail — which is what makes it safe to use as the
+     * layer the map starts on and falls back to.
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Leaflet layer
+    private createGraticuleLayer(): any {
+        const group = L.layerGroup();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const self = this;
+
+        const redraw = (): void => {
+            if (!self.map) return;
+            group.clearLayers();
+            const zoom = self.map.getZoom();
+            const spacing = graticuleSpacingForZoom(zoom);
+            const b = self.map.getBounds();
+            const lines = graticuleLines({
+                south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast(),
+            }, spacing);
+
+            for (const line of lines) {
+                const coords = line.axis === 'lat'
+                    ? [[line.value, b.getWest()], [line.value, b.getEast()]]
+                    : [[b.getSouth(), line.value], [b.getNorth(), line.value]];
+                L.polyline(coords, {
+                    className: 'osint-map-graticule',
+                    interactive: false,
+                }).addTo(group);
+
+                const at = line.axis === 'lat'
+                    ? [line.value, b.getWest()]
+                    : [b.getSouth(), line.value];
+                L.marker(at, {
+                    interactive: false,
+                    icon: L.divIcon({
+                        className: 'osint-map-graticule-label',
+                        html: '',
+                    }),
+                }).addTo(group).bindTooltip(formatDegrees(line.value, line.axis, spacing), {
+                    permanent: true,
+                    direction: line.axis === 'lat' ? 'right' : 'top',
+                    className: 'osint-map-graticule-tooltip',
+                });
+            }
+        };
+
+        group.on('add', () => {
+            redraw();
+            self.map?.on('moveend zoomend', redraw);
+        });
+        group.on('remove', () => {
+            self.map?.off('moveend zoomend', redraw);
+            group.clearLayers();
+        });
+
+        return group;
+    }
+
+    /** The user's own tile provider, if they configured one. */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Leaflet layer
+    private createCustomTileLayer(): any | null {
+        const settings = this.mapSettings();
+        if (settings.provider !== 'custom') return null;
+        if (!settings.url) return null;
+        return L.tileLayer(settings.url, {
+            attribution: settings.attribution || '',
+            maxZoom: 19,
+            crossOrigin: 'anonymous',
+        });
+    }
+
+    /**
+     * Opens the configured PMTiles archive and adds it as a base layer.
+     *
+     * Failure is a persistent state, not an event: it is reported in the toolbar strip
+     * rather than as a toast, and the grid stays selected so the markers remain readable.
+     */
+    private async attachOfflineBasemap(): Promise<void> {
+        let result;
+        try {
+            result = await host.basemap.open();
+        } catch (e) {
+            this.setBasemapStatus(`Offline basemap unavailable: ${e instanceof Error ? e.message : String(e)}`);
+            return;
+        }
+        if (!this.map) return;
+
+        if (!result.ok) {
+            this.setBasemapStatus(basemapProblemMessage(result.problem, result.path));
+            return;
+        }
+
+        this.offlineHandleId = result.archive.handleId;
+        try {
+            const { PMTiles } = await import('pmtiles');
+            const archive = new PMTiles(new IpcPMTilesSource(result.archive, host.basemap));
+            const header = await archive.getHeader();
+            const kind = rendererForTileType(header.tileType);
+            if (!kind) {
+                this.setBasemapStatus(
+                    `This archive holds tile type ${header.tileType}, which this build can't draw.`,
+                );
+                return;
+            }
+
+            const layer = kind === 'raster'
+                ? await this.createRasterPmtilesLayer(archive, header)
+                : await this.createVectorPmtilesLayer(archive);
+            if (!this.map || !layer) return;
+
+            this.baseLayers[OFFLINE_LAYER_NAME] = layer;
+            this.layerControl?.addBaseLayer(layer, OFFLINE_LAYER_NAME);
+
+            // Select it: an analyst who configured an offline archive wants it, and it
+            // leaks nothing.
+            this.map.removeLayer(this.baseLayers[GRID_LAYER_NAME]);
+            layer.addTo(this.map);
+            this.activeBaseLayerName = OFFLINE_LAYER_NAME;
+            this.applyZoomLimitsForActiveLayer();
+            this.setBasemapStatus('');
+        } catch (e) {
+            console.error('[MapView] could not read the offline basemap:', e);
+            this.setBasemapStatus('The offline basemap could not be read. See Settings → OSINT Copilot.');
+        }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private async createRasterPmtilesLayer(archive: any, header: any): Promise<any> {
+        const { leafletRasterLayer } = await import('pmtiles');
+        return leafletRasterLayer(archive, {
+            maxNativeZoom: header.maxZoom,
+            maxZoom: 19,
+            attribution: 'Offline basemap',
+        });
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private async createVectorPmtilesLayer(archive: any): Promise<any> {
+        const protomaps = await import('protomaps-leaflet');
+        return protomaps.leafletLayer({
+            attribution: 'Offline basemap',
+            // The PMTiles instance directly, so tiles come through our IPC Source rather
+            // than a URL. Labels are drawn with system fonts, so no glyph files ship.
+            url: archive,
+            flavor: 'light',
+        });
+    }
+
+    /** With no basemap there is nothing meaningful past z10. */
+    private applyZoomLimitsForActiveLayer(): void {
+        if (!this.map) return;
+        const gridOnly = this.activeBaseLayerName === GRID_LAYER_NAME;
+        this.map.setMaxZoom(gridOnly ? 10 : 19);
+    }
+
+    /**
+     * MapView is constructed with (leaf, entityManager, onLocationClick) and has no
+     * plugin reference, so the settings come off the runtime the bootstrap publishes --
+     * the same route OsintSettings.svelte uses. Every field is re-validated here because
+     * this is a plain settings bag, not a typed channel.
+     */
+    private mapSettings(): { provider: string; url: string; attribution: string } {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- settings bag
+        const s = (globalThis as any).osint?.plugin?.settings ?? {};
+        return {
+            provider: typeof s.mapOnlineTileProvider === 'string' ? s.mapOnlineTileProvider : 'none',
+            url: typeof s.mapCustomTileUrl === 'string' ? s.mapCustomTileUrl : '',
+            attribution: typeof s.mapCustomTileAttribution === 'string' ? s.mapCustomTileAttribution : '',
+        };
+    }
+
+    /** A persistent strip in the toolbar, not a toast: this is a state, not an event. */
+    private setBasemapStatus(message: string): void {
+        if (!this.basemapStatusEl) return;
+        this.basemapStatusEl.setText(message);
+        this.basemapStatusEl.style.display = message ? '' : 'none';
+    }
+
     /**
      * Load Leaflet library and CSS.
      */
@@ -290,6 +485,11 @@ export class MapView extends ItemView {
             color: 'var(--text-muted)',
             'font-size': '12px'
         });
+
+        // A persistent strip, not a toast: a missing basemap is a state the analyst needs
+        // to keep seeing, not an event that scrolls away.
+        this.basemapStatusEl = toolbar.createEl('span', { cls: 'graph_copilot-map-basemap-status' });
+        this.basemapStatusEl.style.display = 'none';
     }
 
     /**
@@ -347,48 +547,41 @@ export class MapView extends ItemView {
             zoomControl: true,
         });
 
-        // Basemaps. These are replaced wholesale in the next step -- OSM's tile policy
-        // forbids this usage for applications, and CARTO and Esri both need accounts --
-        // but they stay for now so this change can be verified against a visible map.
-        const osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-            maxZoom: 19,
-            crossOrigin: 'anonymous',
-        });
-        const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            attribution: 'Tiles &copy; Esri',
-            maxZoom: 19,
-            crossOrigin: 'anonymous',
-        });
-        const cartoLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
-            subdomains: 'abcd',
-            maxZoom: 20,
-            crossOrigin: 'anonymous',
-        });
+        // Basemaps.
+        //
+        // No default online provider, deliberately. There is no key-free,
+        // commercially-permitted, global street-level raster basemap: OSM's tile policy
+        // forbids application use, CARTO requires an API key and an Enterprise licence
+        // for commercial use, and Esri's endpoint needs an ArcGIS entitlement.
+        //
+        // There is a second reason, specific to this product. Leaflet fetches tiles with
+        // <img src> straight out of the renderer, which bypasses osint:net.request and
+        // its SSRF allowlist entirely — so every tile is outbound HTTP carrying the exact
+        // z/x/y of what the analyst is looking at. That is a live feed of the case's
+        // bounding box to a third party. The offline archive is the primary basemap; an
+        // online provider is opt-in, with the user's own account and terms.
+        this.baseLayers = {};
 
-        osmLayer.addTo(this.map);
+        const grid = this.createGraticuleLayer();
+        this.baseLayers[GRID_LAYER_NAME] = grid;
 
-        // One failed tile used to tear down the whole base layer and swap provider, from
-        // a handler that dereferenced this.map with no null guard -- so a late tileerror
-        // after onClose() threw. Count failures instead, and only give up once.
-        let tileFailures = 0;
-        let swapped = false;
-        osmLayer.on('tileerror', () => {
-            if (swapped || !this.map) return;
-            if (++tileFailures < 8) return;
-            swapped = true;
-            console.warn('[MapView] base tiles are not loading; switching provider');
-            osmLayer.remove();
-            cartoLayer.addTo(this.map);
-        });
+        const custom = this.createCustomTileLayer();
+        if (custom) this.baseLayers[CUSTOM_LAYER_NAME] = custom;
 
-        this.layerControl = L.control.layers({
-            'OpenStreetMap': osmLayer,
-            'Satellite': satelliteLayer,
-            'Carto Light': cartoLayer,
-        }, {}, { position: 'topright' });
+        // Starts on the grid so the map is never blank while the archive opens.
+        grid.addTo(this.map);
+        this.activeBaseLayerName = GRID_LAYER_NAME;
+
+        this.layerControl = L.control.layers(this.baseLayers, {}, { position: 'topright' });
         this.layerControl.addTo(this.map);
+
+        this.map.on('baselayerchange', (e: { name: string }) => {
+            this.activeBaseLayerName = e.name;
+            this.applyZoomLimitsForActiveLayer();
+        });
+
+        // The offline archive opens asynchronously; it is added and selected when ready.
+        void this.attachOfflineBasemap();
 
         L.control.scale({ imperial: false }).addTo(this.map);
 

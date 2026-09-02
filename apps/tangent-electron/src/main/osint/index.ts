@@ -14,12 +14,13 @@
  *   - HTTP is checked against the per-enricher domain allowlist and refuses private,
  *     loopback, link-local, CGNAT and cloud-metadata addresses after DNS resolution
  */
-import { app, ipcMain, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
 import Logger from 'js-logger'
 
 import { workspaceMap } from 'main/workspaces'
 import { host } from './impl'
 import * as vaultFs from './node/vault'
+import * as basemap from './node/basemap'
 import { configureKeychain } from './node/secrets'
 import {
 	assertCwdPermitted,
@@ -141,5 +142,49 @@ ipcMain.handle('osint:vault.stat', (_e, p: string) => vaultFs.stat(p))
 ipcMain.handle('osint:vault.trash', async (_e, p: string) => {
 	await shell.trashItem(vaultFs.absolutePathOf(p))
 })
+
+// ------------------------------------------------------------------------ basemap
+/**
+ * Byte-range reads of a local PMTiles archive, for the offline map basemap.
+ *
+ * Note what is absent: no channel takes a path. `pick` opens a dialog main owns, `open`
+ * reads the remembered path from main's own userData, and reads address an opaque handle
+ * bound to a descriptor main holds. A byte-range read of a caller-supplied path would be
+ * an arbitrary-file-read primitive; see node/basemap.ts.
+ */
+app.whenReady().then(() => {
+	basemap.configureBasemap(app.getPath('userData'), async () => {
+		const focused = BrowserWindow.getFocusedWindow()
+		const options: Electron.OpenDialogOptions = {
+			title: 'Select an offline basemap',
+			buttonLabel: 'Use this archive',
+			properties: ['openFile', 'dontAddToRecent'],
+			filters: [{ name: 'PMTiles archive', extensions: ['pmtiles'] }],
+		}
+		const result = focused
+			? await dialog.showOpenDialog(focused, options)
+			: await dialog.showOpenDialog(options)
+		return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
+	})
+})
+
+/** Handles die with the window that opened them. */
+const basemapSenders = new Set<number>()
+function trackBasemapOwner(event: Electron.IpcMainInvokeEvent): void {
+	const id = event.sender.id
+	if (basemapSenders.has(id)) return
+	basemapSenders.add(id)
+	event.sender.once('destroyed', () => {
+		basemapSenders.delete(id)
+		void basemap.closeAll()
+	})
+}
+
+ipcMain.handle('osint:basemap.pick', (e) => { trackBasemapOwner(e); return basemap.pick() })
+ipcMain.handle('osint:basemap.open', (e) => { trackBasemapOwner(e); return basemap.open() })
+ipcMain.handle('osint:basemap.forget', () => basemap.forget())
+ipcMain.handle('osint:basemap.read', (_e, handleId: string, offset: number, length: number) =>
+	basemap.read(handleId, offset, length))
+ipcMain.handle('osint:basemap.close', (_e, handleId: string) => basemap.close(handleId))
 
 Logger.info('[osint] main-process handlers registered')

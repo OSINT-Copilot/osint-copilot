@@ -7,7 +7,8 @@ import type { QueryResult } from './indexing/queryResults'
 import type { QueryParseResult } from '@such-n-such/tangent-query-parser'
 import type { UrlData } from './urlData'
 import type {
-	ExecOptions, ExecResult, HttpRequest, HttpResponse, PlatformInfo, SecretRef, StatDto
+	BasemapOpenResult, BasemapRange, ExecOptions, ExecResult, HttpRequest, HttpResponse,
+	PlatformInfo, SecretRef, StatDto
 } from '../osint/host/types'
 
 export interface SelectPathOptions {
@@ -204,6 +205,21 @@ export default interface WindowAPI {
 			trash(path: string): Promise<void>
 			rename(from: string, to: string): Promise<void>
 			stat(path: string): Promise<StatDto | null>
+		}
+
+		/**
+		 * Offline basemap: byte-range reads of a PMTiles archive.
+		 *
+		 * `open()` deliberately takes no path. Main holds the only copy of it, chosen
+		 * through a native dialog main opened itself, so the renderer cannot aim a
+		 * byte-range read at a file of its choosing — the same rule cli.exec follows.
+		 */
+		basemap: {
+			pick(): Promise<BasemapOpenResult | null>
+			open(): Promise<BasemapOpenResult>
+			forget(): Promise<void>
+			read(handleId: string, offset: number, length: number): Promise<BasemapRange>
+			close(handleId: string): Promise<void>
 		}
 	}
 }

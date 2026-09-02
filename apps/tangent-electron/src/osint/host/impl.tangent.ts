@@ -128,6 +128,13 @@ export const host: Host = {
             return `file://${root}/${encoded}`;
         },
     },
+    basemap: {
+        pick: () => api().basemap.pick(),
+        open: () => api().basemap.open(),
+        forget: () => api().basemap.forget(),
+        read: (handleId, offset, length) => api().basemap.read(handleId, offset, length),
+        close: (handleId) => api().basemap.close(handleId),
+    },
     app: {
         async pickVault() {
             throw new Error('host.app.pickVault is not used under Tangent: it owns workspace selection.');

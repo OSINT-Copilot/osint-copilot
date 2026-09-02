@@ -57,6 +57,18 @@ export interface VaultAISettings {
 	lockedVaultPaths: string[];
 	activeGraphId: string;
 	graphWorkspaces: { id: string; name: string }[];
+	/**
+	 * Map basemap. Online tiles default to off: there is no key-free,
+	 * commercially-permitted global street-level raster provider, and a tile request is
+	 * outbound HTTP carrying the exact z/x/y of what the analyst is looking at — a live
+	 * feed of the case's bounding box to a third party, outside net-guard's allowlist
+	 * because Leaflet fetches tiles with <img src>.
+	 */
+	mapOnlineTileProvider: "none" | "custom";
+	mapCustomTileUrl: string;
+	mapCustomTileAttribution: string;
+	/** Display copy of the archive main remembers in userData; main is authoritative. */
+	mapOfflineBasemapPath: string;
 	enabledSchemaFamilies: EnabledSchemaFamilies;
 	oidsfModalLayers: OIDSFModalLayers;
 	miroAccessToken: string;
@@ -103,6 +115,10 @@ export const DEFAULT_SETTINGS: VaultAISettings = {
 	lockedVaultPaths: [],
 	activeGraphId: "default",
 	graphWorkspaces: [{ id: "default", name: "Default" }],
+	mapOnlineTileProvider: "none",
+	mapCustomTileUrl: "",
+	mapCustomTileAttribution: "",
+	mapOfflineBasemapPath: "",
 	enabledSchemaFamilies: { ...DEFAULT_ENABLED_SCHEMA_FAMILIES },
 	oidsfModalLayers: { ...DEFAULT_OIDSF_MODAL_LAYERS },
 	miroAccessToken: "",
