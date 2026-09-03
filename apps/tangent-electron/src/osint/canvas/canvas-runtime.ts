@@ -13,8 +13,14 @@ import { getEntityColor } from '../entities/types';
 interface MinimalVaultAdapter {
     read(path: string): Promise<string>;
     write(path: string, data: string): Promise<void>;
+    writeBinary(path: string, data: ArrayBuffer): Promise<void>;
     exists(path: string): Promise<boolean>;
     mkdir(path: string): Promise<void>;
+}
+
+interface MinimalVault {
+    adapter: MinimalVaultAdapter;
+    getFiles(): { path: string; name: string; extension: string }[];
 }
 
 interface MinimalEntity {
@@ -27,7 +33,7 @@ interface MinimalEntity {
 
 interface OsintRuntime {
     vaultRoot?: string;
-    app?: { vault?: { adapter?: MinimalVaultAdapter } };
+    app?: { vault?: MinimalVault };
     plugin?: {
         entityManager?: {
             getAllEntities(): MinimalEntity[];
@@ -56,6 +62,24 @@ export function vaultRelativePath(path: string): string {
 }
 
 /**
+ * Vault-relative, or an error.
+ *
+ * The lenient version above returns its input when the runtime is not up yet -- so an
+ * absolute path stayed absolute, and writing it as if it were relative created a whole
+ * shadow tree inside the vault (`<vault>/home/b/Documents/...`). Anything that touches
+ * the filesystem uses this one, so a not-ready runtime fails loudly instead.
+ */
+export function requireVaultRelativePath(path: string): string {
+    const root = runtime()?.vaultRoot;
+    if (!root) throw new Error('The vault is not available yet.');
+    const relative = vaultRelativePath(path);
+    if (relative.startsWith('/') || /^[A-Za-z]:[\\/]/.test(relative)) {
+        throw new Error(`"${path}" is outside this vault.`);
+    }
+    return relative;
+}
+
+/**
  * The inverse. JSON Canvas stores vault-relative file paths -- that is what Obsidian
  * writes and what keeps a board portable -- while Tangent's directoryStore is keyed by
  * absolute path, so resolving a card's note needs the conversion back.
@@ -67,10 +91,17 @@ export function absoluteVaultPath(relativePath: string): string {
     return prefix + relativePath;
 }
 
-/** Vault-backed file store for a canvas document. */
+/**
+ * Vault-backed file store for a canvas document.
+ *
+ * Paths arrive as Tangent gives them -- absolute -- and are resolved on every call rather
+ * than once at construction, because a lens can be built before the runtime exists and a
+ * path resolved then would be wrong forever.
+ */
 export function vaultFileStore(): CanvasFileStore {
     return {
-        async read(path: string): Promise<string | null> {
+        async read(absolutePath: string): Promise<string | null> {
+            const path = requireVaultRelativePath(absolutePath);
             const adapter = runtime()?.app?.vault?.adapter;
             // Throwing, NOT returning null. null means "no such file", which the store
             // treats as a new empty board -- and a lens can be constructed while the
@@ -81,7 +112,8 @@ export function vaultFileStore(): CanvasFileStore {
             if (!(await adapter.exists(path))) return null;
             return adapter.read(path);
         },
-        async write(path: string, contents: string): Promise<void> {
+        async write(absolutePath: string, contents: string): Promise<void> {
+            const path = requireVaultRelativePath(absolutePath);
             const adapter = runtime()?.app?.vault?.adapter;
             if (!adapter) throw new Error('The vault is not available yet.');
             const folder = path.slice(0, path.lastIndexOf('/'));
@@ -162,4 +194,84 @@ export function allEntities(): MinimalEntity[] {
 
 export function openEntityNote(entityId: string): void {
     void runtime()?.plugin?.entityManager?.openEntityNote(entityId);
+}
+
+/**
+ * Where downloaded thumbnails and imported files live.
+ *
+ * Beside the boards rather than in Evidence: these are board furniture, not case exhibits,
+ * and mixing them into the evidence tree would make that folder untrustworthy as a record
+ * of what the analyst actually collected.
+ */
+export const CANVAS_ASSETS_FOLDER = 'OSINTCopilot/boards/assets';
+
+/**
+ * A filename safe to join onto a vault path.
+ *
+ * Enforced HERE rather than trusted from the callers, because this is the sink: the two
+ * generators upstream are careful, but a single future caller that is not would turn this
+ * into an arbitrary-file-write, and in a vault that includes files the app executes.
+ */
+const SAFE_ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/;
+
+export function isSafeAssetName(name: string): boolean {
+    // The character class already excludes separators and control characters; the explicit
+    // dot-segment check makes the traversal case impossible to misread.
+    return SAFE_ASSET_NAME.test(name) && !name.includes('..');
+}
+
+/** Writes bytes into the board's asset folder and returns the vault-relative path. */
+export async function writeAsset(fileName: string, bytes: ArrayBuffer): Promise<string> {
+    if (!isSafeAssetName(fileName)) {
+        throw new Error(`Refusing to write an unsafe asset name: ${JSON.stringify(fileName)}`);
+    }
+    const adapter = runtime()?.app?.vault?.adapter;
+    if (!adapter) throw new Error('The vault is not available yet.');
+    await adapter.mkdir(CANVAS_ASSETS_FOLDER).catch(() => { /* already there */ });
+    const path = `${CANVAS_ASSETS_FOLDER}/${fileName}`;
+    await adapter.writeBinary(path, bytes);
+    return path;
+}
+
+/**
+ * A vault filename for an imported OS file.
+ *
+ * The dropped name is attacker-influenced only in the weak sense that the analyst chose
+ * the file, but it still reaches the filesystem, so directory separators, traversal
+ * segments, control characters and absurd lengths are removed rather than trusted. The
+ * content hash suffix means two different files with the same name do not collide -- the
+ * graph view's importer reuses any existing file of that name, which silently substitutes
+ * the wrong image.
+ */
+export function importedFileName(originalName: string, bytes: ArrayBuffer): string {
+    // Reduced to the safe charset rather than merely having separators replaced: the
+    // output has to satisfy isSafeAssetName, or writeAsset refuses it and the drop fails
+    // silently. Building a valid name is better than filtering an invalid one.
+    const cleaned = originalName.normalize('NFC').replace(/[^A-Za-z0-9._-]/g, '_');
+    const dot = cleaned.lastIndexOf('.');
+    const rawStem = dot > 0 ? cleaned.slice(0, dot) : cleaned;
+    const extension = (dot > 0 ? cleaned.slice(dot + 1) : '').replace(/[^A-Za-z0-9]/g, '').slice(0, 10);
+
+    // No dots in the stem, so "..", leading dots and double extensions are all impossible;
+    // and it must start alphanumeric, which isSafeAssetName requires.
+    const stem = rawStem.replace(/\./g, '_').replace(/^[^A-Za-z0-9]+/, '').slice(0, 60) || 'file';
+
+    let hash = 2166136261;
+    const view = new Uint8Array(bytes);
+    // A bounded sample: hashing a 200MB video just to name it is not worth the stall.
+    const step = Math.max(1, Math.floor(view.length / 4096));
+    for (let i = 0; i < view.length; i += step) {
+        hash ^= view[i];
+        hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    // The length too is included, so two files sampled identically still differ.
+    hash = Math.imul(hash ^ view.length, 16777619) >>> 0;
+
+    const suffix = hash.toString(16).padStart(8, '0');
+    return extension ? `${stem}-${suffix}.${extension}` : `${stem}-${suffix}`;
+}
+
+/** Every file in the vault, for the card picker. */
+export function vaultFiles(): { path: string; name: string; extension: string }[] {
+    return runtime()?.app?.vault?.getFiles() ?? [];
 }

@@ -99,6 +99,24 @@ export interface CanvasParseResult {
     problems: string[];
 }
 
+/**
+ * A colour the spec allows: a preset "1".."6", or a hex string.
+ *
+ * Validated rather than passed through, because an unrecognised value is not merely
+ * cosmetic -- Obsidian and this renderer would disagree about it, and a board is meant to
+ * look the same in both.
+ */
+export function normalizeCanvasColor(value: unknown): CanvasColor | undefined {
+    if (typeof value !== 'string') return undefined;
+    const text = value.trim();
+    if (!text) return undefined;
+    if ((CANVAS_PRESET_COLORS as readonly string[]).includes(text)) return text;
+    // #rgb, #rrggbb, #rrggbbaa -- normalised to lowercase so the file does not churn on
+    // case alone when it is co-edited.
+    if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(text)) return text.toLowerCase();
+    return undefined;
+}
+
 export function emptyCanvas(): CanvasDocument {
     return { nodes: [], edges: [], extra: {} };
 }
@@ -185,7 +203,7 @@ function parseNode(raw: unknown, index: number, problems: string[]): CanvasNode 
 
     const base: CanvasNodeBase = {
         id, x, y, width, height,
-        color: readString(raw, 'color'),
+        color: normalizeCanvasColor(raw.color),
         osintEntityId: readString(raw, 'osintEntityId'),
         extra: collectExtra(raw, NODE_KEYS_BY_TYPE[type]),
     };
@@ -248,7 +266,7 @@ function parseEdge(
         toSide: readEnum(raw, 'toSide', SIDES),
         fromEnd: readEnum(raw, 'fromEnd', ENDS),
         toEnd: readEnum(raw, 'toEnd', ENDS),
-        color: readString(raw, 'color'),
+        color: normalizeCanvasColor(raw.color),
         label: readString(raw, 'label'),
         extra: collectExtra(raw, EDGE_KEYS),
     };

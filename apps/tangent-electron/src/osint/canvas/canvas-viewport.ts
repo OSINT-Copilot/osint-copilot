@@ -253,10 +253,36 @@ export function oppositeSide(side: Side): Side {
  * MapConnectionView draws. The control distance grows with separation but is capped, so
  * edges across a large board do not balloon into circles.
  */
-export function edgePath(start: Point, startSide: Side, end: Point, endSide: Side): string {
+/** Where an arrowhead points, as a rotation in degrees, given the side it arrives at. */
+export function arrowAngle(side: Side): number {
+    // The head sits ON the anchor and points INTO the card, so an edge meeting the left
+    // side points right.
+    switch (side) {
+        case 'left': return 0;
+        case 'right': return 180;
+        case 'top': return 90;
+        case 'bottom': return 270;
+    }
+}
+
+/**
+ * The point halfway along the curve, for placing a label.
+ *
+ * The midpoint of the straight line between the anchors is not on the curve, and for the
+ * strongly-pulled shape below it can sit well outside it -- so the label would float away
+ * from its own edge. This evaluates the cubic at t=0.5, which is (P0 + 3C1 + 3C2 + P3) / 8.
+ */
+export function edgeMidpoint(start: Point, startSide: Side, end: Point, endSide: Side): Point {
+    const { c1, c2 } = edgeControlPoints(start, startSide, end, endSide);
+    return {
+        x: (start.x + 3 * c1.x + 3 * c2.x + end.x) / 8,
+        y: (start.y + 3 * c1.y + 3 * c2.y + end.y) / 8,
+    };
+}
+
+function edgeControlPoints(start: Point, startSide: Side, end: Point, endSide: Side) {
     const distance = Math.hypot(end.x - start.x, end.y - start.y);
     const pull = Math.min(150, Math.max(30, distance * 0.4));
-
     const control = (point: Point, side: Side): Point => {
         switch (side) {
             case 'top': return { x: point.x, y: point.y - pull };
@@ -265,8 +291,10 @@ export function edgePath(start: Point, startSide: Side, end: Point, endSide: Sid
             case 'right': return { x: point.x + pull, y: point.y };
         }
     };
+    return { c1: control(start, startSide), c2: control(end, endSide) };
+}
 
-    const c1 = control(start, startSide);
-    const c2 = control(end, endSide);
+export function edgePath(start: Point, startSide: Side, end: Point, endSide: Side): string {
+    const { c1, c2 } = edgeControlPoints(start, startSide, end, endSide);
     return `M ${start.x} ${start.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${end.x} ${end.y}`;
 }

@@ -52,6 +52,12 @@ export interface CanvasState {
     problems: string[];
     loaded: boolean;
     dirty: boolean;
+    /**
+     * True when the parser dropped something, so the in-memory board is NOT the whole
+     * file. Saving would delete whatever it could not read, and a board is a user's own
+     * record -- so editing is held until they say to go ahead.
+     */
+    lossyLoad: boolean;
 }
 
 type Subscriber = (state: CanvasState) => void;
@@ -68,6 +74,7 @@ export class CanvasDocumentStore {
         problems: [],
         loaded: false,
         dirty: false,
+        lossyLoad: false,
     };
 
     private subscribers = new Set<Subscriber>();
@@ -119,6 +126,7 @@ export class CanvasDocumentStore {
                 this.state.problems = problems;
                 this.state.loaded = true;
                 this.state.dirty = false;
+                this.state.lossyLoad = problems.length > 0;
                 this.emit();
                 return;
             } catch (e) {
@@ -141,6 +149,9 @@ export class CanvasDocumentStore {
         // Never write a board we never managed to read: that would replace the file with
         // whatever this empty in-memory document happens to hold.
         if (!this.state.loaded) return;
+        // Nor one we only partly read. The first edit would otherwise silently drop every
+        // entry the parser refused, with no way back.
+        if (this.state.lossyLoad) return;
         this.state.dirty = true;
         this.emit();
         this.scheduleSave();
@@ -162,7 +173,7 @@ export class CanvasDocumentStore {
      * writes of the same path can land out of order and persist the older board.
      */
     async save(): Promise<void> {
-        if (!this.state.loaded) return;
+        if (!this.state.loaded || this.state.lossyLoad) return;
         if (this.saveInFlight) {
             this.saveAgain = true;
             return this.saveInFlight;
@@ -202,6 +213,18 @@ export class CanvasDocumentStore {
         this.subscribers.clear();
     }
 
+    /**
+     * Accepts the loss and unlocks editing.
+     *
+     * Deliberately explicit and one-way: from here on, saving rewrites the file without
+     * whatever the parser dropped, which is what the user has just agreed to.
+     */
+    acceptLossyLoad(): void {
+        if (!this.state.lossyLoad) return;
+        this.state.lossyLoad = false;
+        this.emit();
+    }
+
     // ------------------------------------------------------------------ mutations
 
     addNode(node: Omit<CanvasNode, 'id' | 'extra'> & { id?: string }): CanvasNode {
@@ -211,7 +234,13 @@ export class CanvasDocumentStore {
         return created;
     }
 
-    /** A card placed at a world point, centred on it — where a drop or paste lands. */
+    /**
+     * A card placed at a world point, centred on it — where a drop or paste lands.
+     *
+     * The per-type required field is defaulted here. Without it a new text card was
+     * written with no `text` key at all, which the spec requires and which Obsidian shows
+     * as an empty card it cannot edit.
+     */
     addNodeAt(
         type: CanvasNodeType,
         at: { x: number; y: number },
@@ -219,7 +248,14 @@ export class CanvasDocumentStore {
     ): CanvasNode {
         const width = fields.width ?? DEFAULT_NODE_SIZE.width;
         const height = fields.height ?? DEFAULT_NODE_SIZE.height;
+        const required: Record<CanvasNodeType, Record<string, unknown>> = {
+            text: { text: '' },
+            file: { file: '' },
+            link: { url: '' },
+            group: {},
+        };
         return this.addNode({
+            ...required[type],
             ...fields,
             type,
             x: at.x - width / 2,
@@ -227,6 +263,29 @@ export class CanvasDocumentStore {
             width,
             height,
         } as Omit<CanvasNode, 'id' | 'extra'>);
+    }
+
+    /**
+     * Merges into a node's `extra` bag rather than replacing it.
+     *
+     * updateNode with `{extra}` would discard every key we do not know about -- which is
+     * exactly the unknown-property preservation the format layer exists to guarantee, so
+     * link previews and anything Obsidian wrote get their own path.
+     */
+    setNodeExtra(id: string, patch: Record<string, unknown>): void {
+        let found = false;
+        this.state.doc.nodes = this.state.doc.nodes.map((node) => {
+            if (node.id !== id) return node;
+            found = true;
+            const extra = { ...node.extra };
+            for (const [key, value] of Object.entries(patch)) {
+                // undefined means "remove", so a cleared field does not persist as null.
+                if (value === undefined) delete extra[key];
+                else extra[key] = value;
+            }
+            return { ...node, extra };
+        });
+        if (found) this.touch();
     }
 
     updateNode(id: string, changes: Partial<CanvasNode>): void {

@@ -17,6 +17,14 @@ export interface VaultStorage {
     snapshot(): Promise<StatDto[]>;
     read(path: string): Promise<string>;
     write(path: string, data: string): Promise<StatDto>;
+    /**
+     * Real bytes, not text.
+     *
+     * Without this the only way down to disk was `write`, so binary content had to be
+     * squeezed through a string -- which corrupts it, because the byte-preserving latin1
+     * decode on the way in is undone by a UTF-8 encode on the way out.
+     */
+    writeBinary(path: string, data: Uint8Array): Promise<StatDto>;
     /** Throws Error("File already exists.") if present. */
     create(path: string, data: string): Promise<StatDto>;
     /** Creates intermediates; throws Error("Folder already exists.") if the target exists. */
@@ -48,6 +56,17 @@ export class MemoryStorage implements VaultStorage {
     async write(path: string, data: string): Promise<StatDto> {
         this.ensureParents(path);
         this.files.set(path, data);
+        return this.stamp(path, 'file', data.length);
+    }
+
+    async writeBinary(path: string, data: Uint8Array): Promise<StatDto> {
+        // The in-memory backend has no real disk, so it keeps the byte-preserving latin1
+        // form. Round-tripping through readBinary is lossless because both directions use
+        // latin1; nothing here ever re-encodes as UTF-8.
+        this.ensureParents(path);
+        let binary = '';
+        for (const byte of data) binary += String.fromCharCode(byte);
+        this.files.set(path, binary);
         return this.stamp(path, 'file', data.length);
     }
 
@@ -152,6 +171,7 @@ export function hostStorage(host: { vault: import('../../host/types').VaultHost 
         snapshot: () => host.vault.open(dir),
         read: (p) => host.vault.read(p),
         write: (p, d) => host.vault.write(p, d),
+        writeBinary: (p, d) => host.vault.writeBinary(p, d),
         create: (p, d) => host.vault.create(p, d),
         mkdir: (p) => host.vault.mkdir(p),
         remove: (p) => host.vault.remove(p),

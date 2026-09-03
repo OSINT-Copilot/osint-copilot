@@ -378,3 +378,86 @@ describe('vaultRelativePath', () => {
         });
     });
 });
+
+describe('setNodeExtra', () => {
+    it('merges rather than replacing, so unknown keys survive', async () => {
+        // updateNode({extra}) would discard everything we do not know about -- which is
+        // precisely the preservation guarantee the format layer exists to provide.
+        const files = fakeFiles(JSON.stringify({
+            nodes: [{
+                id: 'n', type: 'link', url: 'https://example.org', x: 0, y: 0, width: 1, height: 1,
+                obsidianWroteThis: 'keep me',
+            }],
+            edges: [],
+        }));
+        const store = new CanvasDocumentStore('a.canvas', files);
+        await store.load();
+
+        store.setNodeExtra('n', { osintLinkTitle: 'A title' });
+        expect(store.current.doc.nodes[0].extra).toEqual({
+            obsidianWroteThis: 'keep me',
+            osintLinkTitle: 'A title',
+        });
+
+        // undefined removes, so a cleared preview does not persist as a null.
+        store.setNodeExtra('n', { osintLinkTitle: undefined });
+        expect(store.current.doc.nodes[0].extra).toEqual({ obsidianWroteThis: 'keep me' });
+    });
+});
+
+describe('a board the parser could only partly read', () => {
+    const partlyReadable = JSON.stringify({
+        nodes: [
+            { id: 'good', type: 'text', x: 0, y: 0, width: 1, height: 1, text: 'kept' },
+            { id: 'bad', type: 'sticky', x: 0, y: 0, width: 1, height: 1 },
+        ],
+        edges: [],
+    });
+
+    it('holds edits, because saving would delete what it could not read', async () => {
+        vi.useFakeTimers();
+        const files = fakeFiles(partlyReadable);
+        const store = new CanvasDocumentStore('a.canvas', files);
+        await store.load();
+
+        expect(store.current.lossyLoad).toBe(true);
+        expect(store.current.problems).toHaveLength(1);
+
+        store.addNode({ type: 'text', text: 'new', x: 0, y: 0, width: 1, height: 1 });
+        await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS + 50);
+        // The unreadable node is still on disk because nothing was written.
+        expect(files.written).toEqual([]);
+        expect(files.latest()).toBe(partlyReadable);
+        vi.useRealTimers();
+    });
+
+    it('saves once the loss is explicitly accepted', async () => {
+        vi.useFakeTimers();
+        const files = fakeFiles(partlyReadable);
+        const store = new CanvasDocumentStore('a.canvas', files);
+        await store.load();
+
+        store.acceptLossyLoad();
+        expect(store.current.lossyLoad).toBe(false);
+        store.addNode({ type: 'text', text: 'new', x: 0, y: 0, width: 1, height: 1 });
+        await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS + 50);
+
+        expect(files.written).toHaveLength(1);
+        expect(files.latest()).toMatch(/new/);
+        // And the unreadable node is gone -- which is what was agreed to.
+        expect(files.latest()).not.toMatch(/sticky/);
+        vi.useRealTimers();
+    });
+
+    it('does not hold edits on a board that read cleanly', async () => {
+        vi.useFakeTimers();
+        const files = fakeFiles(JSON.stringify({ nodes: [], edges: [] }));
+        const store = new CanvasDocumentStore('a.canvas', files);
+        await store.load();
+        expect(store.current.lossyLoad).toBe(false);
+        store.addNode({ type: 'text', text: 'fine', x: 0, y: 0, width: 1, height: 1 });
+        await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS + 50);
+        expect(files.written).toHaveLength(1);
+        vi.useRealTimers();
+    });
+});

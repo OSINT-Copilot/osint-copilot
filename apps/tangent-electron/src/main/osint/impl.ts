@@ -8,7 +8,7 @@ import type { ExecOptions, ExecResult, Host, HttpRequest, HttpResponse, Platform
 import { resolveCliPath } from './node/cli';
 import * as vaultFs from './node/vault';
 import * as secretStore from './node/secrets';
-import { assertRequestAllowed } from './node/net-guard';
+import { guardedFetch, BlockedRequestError } from './node/net-guard';
 import { extractPdfText, extractDocxText } from './node/extract';
 import * as basemapStore from './node/basemap';
 
@@ -69,6 +69,50 @@ async function exec(execId: string, binary: string, args: string[], options: Exe
     });
 }
 
+/**
+ * How much of a response body main will hold.
+ *
+ * `response.arrayBuffer()` decompresses without limit, so a 199KB gzip bomb becomes
+ * hundreds of megabytes in the main process -- and main has no renderer to crash instead
+ * of it. Reading the stream and stopping lets an oversized body fail as a request rather
+ * than as an out-of-memory.
+ */
+const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
+
+/** A wall-clock ceiling, so a slow-drip response cannot pin memory indefinitely. */
+const REQUEST_TIMEOUT_MS = 60_000;
+
+async function readCapped(response: Response, limit: number): Promise<ArrayBuffer> {
+    const body = response.body;
+    // No stream (204, HEAD, or a stub in tests): the body is already small or absent.
+    if (!body) return response.arrayBuffer();
+
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.byteLength;
+            if (total > limit) {
+                // Cancel rather than drain: the point is to stop receiving.
+                await reader.cancel();
+                throw new BlockedRequestError(
+                    `Response from ${response.url || 'the server'} exceeded ${limit} bytes.`);
+            }
+            chunks.push(value);
+        }
+    } finally {
+        reader.releaseLock();
+    }
+
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.byteLength; }
+    return out.buffer;
+}
+
 async function request(req: HttpRequest): Promise<HttpResponse> {
     const url = new URL(req.url);
     const headers: Record<string, string> = {
@@ -93,16 +137,23 @@ async function request(req: HttpRequest): Promise<HttpResponse> {
         }
     }
 
-    // Allowlist + private-address denial, after any auth rewrote the URL.
-    await assertRequestAllowed(url.toString(), req.allowedDomains);
+    // Allowlist + private-address denial, after any auth rewrote the URL, and re-applied
+    // to every redirect hop rather than only to the URL the caller passed.
+    // Names the header the caller's auth was injected into, so guardedFetch can strip it
+    // if a redirect crosses origins.
+    const credentialHeaders = req.auth?.placement === 'header'
+        ? [req.auth.headerName || 'X-API-Key']
+        : [];
 
-    const response = await fetch(url.toString(), {
+    const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+    const response = await guardedFetch(url.toString(), {
         method: req.method ?? 'GET',
         headers,
-        body: req.body as BodyInit | undefined,
-    });
+        body: req.body,
+        signal: timeout,
+    }, req.allowedDomains, credentialHeaders);
 
-    const arrayBuffer = await response.arrayBuffer();
+    const arrayBuffer = await readCapped(response, MAX_RESPONSE_BYTES);
     const responseHeaders: Record<string, string> = {};
     response.headers.forEach((value, key) => { responseHeaders[key.toLowerCase()] = value; });
 

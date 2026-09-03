@@ -140,8 +140,10 @@ export class Vault {
     async createBinary(path: string, data: ArrayBuffer): Promise<TFile> {
         const target = normalizePath(path);
         if (this.index.has(target)) throw new Error('File already exists.');
-        await this.adapter.writeBinary(target, data);
-        const stat = await this.storage.write(target, '');
+        // One write, and it is the bytes. The second call here used to be
+        // `storage.write(target, '')` purely to obtain a stat -- which truncated the file
+        // that had just been written, so every dropped image landed as zero bytes.
+        const stat = await this.storage.writeBinary(target, new Uint8Array(data));
         const file = this.upsert({ ...stat, path: target, type: 'file' }) as TFile;
         this.emit('create', file);
         return file;
@@ -226,8 +228,24 @@ export class Vault {
             else await this.create(path, data);
         },
         writeBinary: async (path: string, data: ArrayBuffer): Promise<void> => {
-            // Binary writes bypass the text cache; chat attachments are the only caller.
-            await this.storage.write(path, new TextDecoder('latin1').decode(new Uint8Array(data)));
+            const target = normalizePath(path);
+            const existing = this.getAbstractFileByPath(target);
+            if (existing instanceof TFile) {
+                // Straight to the backend as bytes. This used to latin1-decode into a
+                // string and call storage.write, handing a UTF-8 encoder byte values it
+                // would re-encode -- silently corrupting every image and PDF.
+                const stat = await this.storage.writeBinary(target, new Uint8Array(data));
+                this.applyStat(existing, stat);
+                this.emit('modify', existing);
+            } else {
+                // createBinary indexes the new file. Writing through the backend alone
+                // left it invisible to getAbstractFileByPath and getFiles, so a thumbnail
+                // written this way could never be found again.
+                await this.createBinary(target, data);
+            }
+            // The text cache is keyed by path; a binary overwrite must not leave a stale
+            // text entry behind for the same path.
+            this.contentCache.delete(target);
         },
         mkdir: async (path: string): Promise<void> => {
             if (!this.getAbstractFileByPath(path)) await this.createFolder(path);
