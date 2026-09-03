@@ -544,7 +544,8 @@
 
 /* Specific button styles */
 .vault-ai-upload-btn,
-.vault-ai-url-btn {
+.vault-ai-url-btn,
+.vault-ai-miro-btn {
   font-size: 1.2em;
   background: transparent;
   border: 1px solid var(--background-modifier-border);
@@ -553,7 +554,8 @@
 }
 
 .vault-ai-upload-btn:hover,
-.vault-ai-url-btn:hover {
+.vault-ai-url-btn:hover,
+.vault-ai-miro-btn:hover {
   color: var(--text-normal);
   background-color: var(--background-modifier-hover);
   border-color: var(--interactive-accent);

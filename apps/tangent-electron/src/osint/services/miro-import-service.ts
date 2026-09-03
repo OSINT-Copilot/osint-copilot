@@ -336,3 +336,44 @@ export class MiroImportService {
 }
 
 export const miroImportService = new MiroImportService();
+
+export interface MiroImportOutcome {
+    snapshot: MiroBoardSnapshot;
+    path: string;
+    overwritten: boolean;
+}
+
+/**
+ * The whole import, start to finish: fetch, then write the note.
+ *
+ * One function for both entry points -- the settings tab and the chat view -- so they cannot
+ * drift in how they validate, fetch, or name the note. Throws MiroImportError for anything
+ * the user can act on; callers decide how to show it.
+ */
+export async function importMiroBoard(
+    app: App,
+    boardInput: string,
+    token: string,
+    boardsFolder: string,
+): Promise<MiroImportOutcome> {
+    const snapshot = await miroImportService.fetchBoardSnapshot(boardInput, token);
+    const result = await miroImportService.importBoardToVault(app, boardsFolder, snapshot, boardInput);
+    return { snapshot, ...result };
+}
+
+/**
+ * What goes into the chat input after an import.
+ *
+ * A wikilink to the note, so the agent -- which reads the vault straight off disk -- has the
+ * board as context, plus enough of a sentence that sending it as-is does something useful.
+ * The `.md` is dropped the way every other wikilink in this codebase is written.
+ */
+export function miroImportPrompt(outcome: MiroImportOutcome): string {
+    const link = outcome.path.replace(/\.md$/i, '');
+    const name = outcome.snapshot.board.name || outcome.snapshot.board.id;
+    const items = outcome.snapshot.items.length;
+    const connectors = outcome.snapshot.connectors.length;
+    return `I imported the Miro board "${name}" (${items} items, ${connectors} connectors) to [[${link}]]. `
+        + 'Read it and summarise the entities, relationships and open questions it contains.';
+}
+

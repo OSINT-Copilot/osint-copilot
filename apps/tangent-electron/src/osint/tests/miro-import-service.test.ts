@@ -302,3 +302,35 @@ describe('MiroImportService.importBoardToVault', () => {
         expect(resultA.path).not.toBe(resultB.path);
     });
 });
+
+describe('miroImportPrompt', () => {
+    const outcome = {
+        path: 'OSINTCopilot/MiroBoards/Case 7 (uXjVabc).md',
+        overwritten: false,
+        snapshot: {
+            board: { id: 'uXjVabc', name: 'Case 7' },
+            items: [{}, {}, {}],
+            connectors: [{}],
+        },
+    } as never;
+
+    it('links the note without its extension, the way wikilinks are written here', async () => {
+        const { miroImportPrompt } = await import('../services/miro-import-service');
+        const prompt = miroImportPrompt(outcome);
+        expect(prompt).toContain('[[OSINTCopilot/MiroBoards/Case 7 (uXjVabc)]]');
+        expect(prompt).not.toContain('.md]]');
+    });
+
+    it('names the board and says what was imported', async () => {
+        const { miroImportPrompt } = await import('../services/miro-import-service');
+        const prompt = miroImportPrompt(outcome);
+        expect(prompt).toContain('"Case 7"');
+        expect(prompt).toContain('3 items, 1 connectors');
+    });
+
+    it('falls back to the board id when it has no name', async () => {
+        const { miroImportPrompt } = await import('../services/miro-import-service');
+        const unnamed = { ...outcome, snapshot: { ...outcome.snapshot, board: { id: 'uXjVabc', name: '' } } } as never;
+        expect(miroImportPrompt(unnamed)).toContain('"uXjVabc"');
+    });
+});

@@ -18,7 +18,7 @@ import { HermesAgentProvider } from "../services/agent-runtime/hermes-agent-prov
 import { isTaskAgentRunnable } from "../task-agents/task-agent-settings";
 import { ClaudeCodeService } from "../services/claude-code-service";
 import { CodexCliService } from "../services/codex-cli-service";
-import { miroImportService, MiroImportError } from "../services/miro-import-service";
+import { importMiroBoard, MiroImportError } from "../services/miro-import-service";
 import { DEFAULT_SETTINGS } from "./vault-ai-settings";
 import { ensureFolderExists } from "../utils/vault-bootstrap-fs";
 import {
@@ -828,15 +828,12 @@ export class VaultAISettingTab extends PluginSettingTab {
 					btn.setDisabled(true);
 					btn.setButtonText("Importing...");
 					try {
-						const snapshot = await miroImportService.fetchBoardSnapshot(boardInput, token);
-						const result = await miroImportService.importBoardToVault(
-							this.plugin.app,
-							DEFAULT_MIRO_BOARDS_FOLDER,
-							snapshot,
-							boardInput,
+						// The same path the chat view's "Import from Miro" takes.
+						const { snapshot, path, overwritten } = await importMiroBoard(
+							this.plugin.app, boardInput, token, DEFAULT_MIRO_BOARDS_FOLDER,
 						);
 						new Notice(
-							`Imported "${snapshot.board.name || snapshot.board.id}" (${snapshot.items.length} items, ${snapshot.connectors.length} connectors) to ${result.path}${result.overwritten ? " (overwritten)" : ""}.`,
+							`Imported "${snapshot.board.name || snapshot.board.id}" (${snapshot.items.length} items, ${snapshot.connectors.length} connectors) to ${path}${overwritten ? " (overwritten)" : ""}.`,
 							8000,
 						);
 					} catch (e) {

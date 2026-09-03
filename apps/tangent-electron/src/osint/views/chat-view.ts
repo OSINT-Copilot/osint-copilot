@@ -8,6 +8,8 @@ import {
   MarkdownRenderer,
   normalizePath,
 } from "obsidian";
+import { importMiroBoard, miroImportPrompt, parseMiroBoardId, MiroImportError } from "../services/miro-import-service";
+import { DEFAULT_MIRO_BOARDS_FOLDER } from "../constants/vault-layout";
 
 import {
   EntityType,
@@ -61,6 +63,7 @@ export class ChatView extends ItemView {
   plugin: VaultAIPlugin;
   chatHistory: ChatHistoryItem[] = [];
   inputEl!: HTMLTextAreaElement;
+  miroButtonEl!: HTMLButtonElement;
   messagesContainer!: HTMLDivElement;
   sidebarContainer!: HTMLDivElement;
   conversationListEl!: HTMLDivElement;
@@ -577,6 +580,19 @@ export class ChatView extends ItemView {
     this.urlButtonEl.addEventListener("click", () => this.showUrlInputModal());
     this.updateUrlButtonVisibility();
 
+    // Miro import: the importer already existed, reachable only from Settings. A board is
+    // context for the conversation, so it belongs beside the other ways of bringing content
+    // in -- file upload and URL extraction.
+    this.miroButtonEl = actionRow.createEl("button", {
+      text: "📋",
+      cls: "vault-ai-miro-btn",
+      attr: {
+        "aria-label": "Import from Miro",
+        "title": "Import a Miro board into the vault and reference it in the chat (needs a Miro API token)"
+      }
+    });
+    this.miroButtonEl.addEventListener("click", () => this.showMiroImportModal());
+
     // Spacer to push Send button to the right
     const spacer = actionRow.createDiv("vault-ai-action-spacer");
     spacer.style.flexGrow = "1";
@@ -760,6 +776,154 @@ export class ChatView extends ItemView {
    * Show modal for URL input to extract content from webpage.
    * Extracted content is sent directly to graph generation.
    */
+  /**
+   * Import a Miro board and hand the chat a link to it.
+   *
+   * Modelled on showUrlInputModal. The token lives in settings (miroAccessToken); if none
+   * is set the modal asks for it and saves it, so the first import does not detour through
+   * Settings. The board input is remembered the way the settings tab remembers it.
+   */
+  showMiroImportModal() {
+    const overlay = document.createElement("div");
+    overlay.className = "vault-ai-modal-overlay";
+    overlay.style.cssText = `
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.6); display: flex; align-items: center;
+      justify-content: center; z-index: 9999;
+    `;
+
+    const modal = document.createElement("div");
+    modal.className = "vault-ai-url-modal vault-ai-miro-modal";
+    modal.style.cssText = `
+      background: var(--background-primary); border-radius: 8px; padding: 20px;
+      min-width: 420px; max-width: 600px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    `;
+
+    const hasToken = Boolean(this.plugin.settings.miroAccessToken?.trim());
+    const fieldStyle = "width: 100%; padding: 10px; border: 1px solid var(--background-modifier-border); border-radius: 4px; background: var(--background-secondary); color: var(--text-normal); margin-bottom: 12px; box-sizing: border-box;";
+
+    // Static template only: every user-supplied value is set through .value below, never
+    // interpolated into markup.
+    modal.innerHTML = `
+      <h3 style="margin-top: 0; margin-bottom: 12px;">📋 Import from Miro</h3>
+      <p style="color: var(--text-muted); margin-bottom: 14px; font-size: 0.9em;">
+        Fetches the board's items and connectors into a note under ${DEFAULT_MIRO_BOARDS_FOLDER},
+        then puts a link to it in the chat so the agent can read it. Re-importing a board overwrites its note.
+      </p>
+      <label style="display: block; font-size: 0.85em; color: var(--text-muted); margin-bottom: 4px;">Board URL or ID</label>
+      <input type="text" id="miro-board" placeholder="https://miro.com/app/board/uXjV.../" style="${fieldStyle}" />
+      <div id="miro-token-row">
+        <label style="display: block; font-size: 0.85em; color: var(--text-muted); margin-bottom: 4px;">Miro access token</label>
+        <input type="password" id="miro-token" placeholder="Personal access token from your Miro account" autocomplete="off" style="${fieldStyle}" />
+        <p style="color: var(--text-muted); margin: -6px 0 12px; font-size: 0.8em;">Saved to this plugin's settings, in plain text. You can change or clear it under Settings → OSINT Copilot → Miro import.</p>
+      </div>
+      <div id="miro-token-set" style="display: none; color: var(--text-muted); font-size: 0.85em; margin-bottom: 12px;">
+        Token: set · <a href="#" id="miro-token-change">change</a>
+      </div>
+      <div id="miro-status" style="color: var(--text-muted); margin-bottom: 14px; min-height: 20px;"></div>
+      <div style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button id="miro-cancel" style="padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; background: var(--background-modifier-border);">Cancel</button>
+        <button id="miro-import" style="padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; background: var(--interactive-accent); color: white;">Import</button>
+      </div>
+    `;
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const boardInput = modal.querySelector("#miro-board") as HTMLInputElement;
+    const tokenRow = modal.querySelector("#miro-token-row") as HTMLElement;
+    const tokenInput = modal.querySelector("#miro-token") as HTMLInputElement;
+    const tokenSet = modal.querySelector("#miro-token-set") as HTMLElement;
+    const tokenChange = modal.querySelector("#miro-token-change") as HTMLAnchorElement;
+    const statusEl = modal.querySelector("#miro-status") as HTMLElement;
+    const cancelBtn = modal.querySelector("#miro-cancel") as HTMLButtonElement;
+    const importBtn = modal.querySelector("#miro-import") as HTMLButtonElement;
+
+    boardInput.value = this.plugin.settings.miroLastBoardInput ?? "";
+    if (hasToken) {
+      tokenRow.style.display = "none";
+      tokenSet.style.display = "block";
+    }
+    tokenChange.addEventListener("click", (e) => {
+      e.preventDefault();
+      tokenSet.style.display = "none";
+      tokenRow.style.display = "block";
+      tokenInput.focus();
+    });
+
+    // The Escape listener is removed on EVERY close path, so a cancelled dialog does not
+    // leave a keydown handler on the document for the rest of the session.
+    //
+    // preventDefault matters: Tangent's window-level Escape handler (WorkspaceView
+    // onWindowKeydown) skips events that are already handled, and otherwise treats a bare
+    // Escape as "toggle Thread/Map focus" -- so dismissing this dialog would also yank
+    // the user out of their thread and unmount the chat panel underneath it.
+    const escHandler = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      closeModal();
+    };
+    const closeModal = () => {
+      document.removeEventListener("keydown", escHandler);
+      overlay.remove();
+    };
+    document.addEventListener("keydown", escHandler);
+    cancelBtn.addEventListener("click", closeModal);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(); });
+    (hasToken ? boardInput : tokenInput).focus();
+
+    const fail = (message: string) => {
+      statusEl.textContent = `❌ ${message}`;
+      statusEl.style.color = "var(--text-error)";
+    };
+
+    importBtn.addEventListener("click", async () => {
+      const board = boardInput.value.trim();
+      // A freshly typed token wins; otherwise the stored one.
+      const typed = tokenRow.style.display !== "none" ? tokenInput.value.trim() : "";
+      const token = typed || this.plugin.settings.miroAccessToken?.trim() || "";
+
+      if (!board) { fail("Paste a Miro board URL or ID."); return; }
+      if (!parseMiroBoardId(board)) { fail("That does not look like a Miro board URL or ID."); return; }
+      if (!token) { fail("A Miro access token is required."); return; }
+
+      importBtn.disabled = true;
+      cancelBtn.disabled = true;
+      importBtn.textContent = "Importing...";
+      statusEl.textContent = "📋 Fetching the board from Miro...";
+      statusEl.style.color = "var(--text-muted)";
+
+      try {
+        const outcome = await importMiroBoard(this.plugin.app, board, token, DEFAULT_MIRO_BOARDS_FOLDER);
+
+        // Remember what worked, the same way the settings tab does; the token only once it
+        // has actually been accepted by Miro, so a typo is not persisted.
+        this.plugin.settings.miroLastBoardInput = board;
+        if (typed) this.plugin.settings.miroAccessToken = typed;
+        await this.plugin.saveSettings();
+
+        this.inputEl.value = miroImportPrompt(outcome);
+        this.updateInputPlaceholder();
+        new Notice(
+          `Imported "${outcome.snapshot.board.name || outcome.snapshot.board.id}" `
+          + `(${outcome.snapshot.items.length} items, ${outcome.snapshot.connectors.length} connectors) `
+          + `to ${outcome.path}${outcome.overwritten ? " (overwritten)" : ""}.`,
+          8000,
+        );
+        closeModal();
+        this.inputEl.focus();
+      } catch (error) {
+        const msg = error instanceof MiroImportError ? error.message
+          : error instanceof Error ? error.message : String(error);
+        fail(msg);
+        importBtn.disabled = false;
+        cancelBtn.disabled = false;
+        importBtn.textContent = "Import";
+      }
+    });
+  }
+
   showUrlInputModal() {
     // Create modal overlay
     const overlay = document.createElement("div");
@@ -827,9 +991,12 @@ export class ChatView extends ItemView {
       if (e.target === overlay) closeModal();
     });
 
-    // Escape key to close
+    // Escape key to close. Marked handled so Tangent's window-level Escape does not also
+    // toggle Thread/Map focus underneath the dialog (see the Miro modal for the detail).
     const escHandler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
         closeModal();
         document.removeEventListener("keydown", escHandler);
       }
