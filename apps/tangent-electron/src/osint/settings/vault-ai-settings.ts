@@ -64,7 +64,9 @@ export interface VaultAISettings {
 	 * feed of the case's bounding box to a third party, outside net-guard's allowlist
 	 * because Leaflet fetches tiles with <img src>.
 	 */
-	mapOnlineTileProvider: "none" | "custom";
+	mapOnlineTileProvider: "none" | "openfreemap" | "custom";
+	/** One of OpenFreeMap's published styles. */
+	mapOpenFreeMapStyle: "positron" | "bright" | "liberty" | "dark";
 	mapCustomTileUrl: string;
 	mapCustomTileAttribution: string;
 	/** Display copy of the archive main remembers in userData; main is authoritative. */
@@ -116,6 +118,7 @@ export const DEFAULT_SETTINGS: VaultAISettings = {
 	activeGraphId: "default",
 	graphWorkspaces: [{ id: "default", name: "Default" }],
 	mapOnlineTileProvider: "none",
+	mapOpenFreeMapStyle: "positron",
 	mapCustomTileUrl: "",
 	mapCustomTileAttribution: "",
 	mapOfflineBasemapPath: "",

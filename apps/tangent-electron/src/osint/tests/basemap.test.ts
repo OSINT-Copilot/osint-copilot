@@ -2,7 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import {
     basemapProblemMessage,
     isUsableTileUrl,
+    openFreeMapStyleUrl,
+    tileUrlFromTileJson,
     rendererForTileType,
+    OPEN_FREE_MAP_ATTRIBUTION,
+    OPEN_FREE_MAP_STYLES,
 } from '../services/basemap/basemap-types';
 import {
     formatDegrees,
@@ -36,6 +40,52 @@ describe('basemap problem messages', () => {
         expect(basemapProblemMessage('missing', '/media/usb/uk.pmtiles')).toContain('/media/usb/uk.pmtiles');
         expect(basemapProblemMessage('not-configured', '')).toMatch(/coordinate grid/i);
         expect(basemapProblemMessage('not-pmtiles', '/tmp/x')).toMatch(/PMTiles marker/);
+    });
+});
+
+describe('OpenFreeMap', () => {
+    it('builds a style URL for each published style', () => {
+        for (const style of OPEN_FREE_MAP_STYLES) {
+            expect(openFreeMapStyleUrl(style)).toBe(`https://tiles.openfreemap.org/styles/${style}`);
+        }
+    });
+
+    it('falls back to positron rather than requesting a style that does not exist', () => {
+        // The value comes from a settings bag, so it can be anything.
+        expect(openFreeMapStyleUrl('nonsense')).toMatch(/\/positron$/);
+        expect(openFreeMapStyleUrl('')).toMatch(/\/positron$/);
+    });
+
+    it('carries the attribution OpenFreeMap requires', () => {
+        // Required by their terms; the OpenFreeMap credit itself is optional but asked for.
+        expect(OPEN_FREE_MAP_ATTRIBUTION).toContain('OpenMapTiles');
+        expect(OPEN_FREE_MAP_ATTRIBUTION).toContain('OpenStreetMap');
+        expect(OPEN_FREE_MAP_ATTRIBUTION).toContain('OpenFreeMap');
+    });
+});
+
+describe('TileJSON parsing', () => {
+    it('pulls the tile template out of a TileJSON document', () => {
+        // OpenFreeMap's tiles sit under a dated path that rotates with each weekly build,
+        // so the URL has to be read at runtime rather than hardcoded.
+        const doc = { tiles: ['https://tiles.openfreemap.org/planet/20260830_080001_pt/{z}/{x}/{y}.pbf'] };
+        expect(tileUrlFromTileJson(doc)).toBe(doc.tiles[0]);
+    });
+
+    it('refuses anything that is not a usable tile template', () => {
+        // This is remote JSON, so it is validated rather than trusted.
+        expect(tileUrlFromTileJson({ tiles: ['https://example.com/no-placeholders.pbf'] })).toBeNull();
+        expect(tileUrlFromTileJson({ tiles: ['javascript:alert(1)'] })).toBeNull();
+        expect(tileUrlFromTileJson({ tiles: [] })).toBeNull();
+        expect(tileUrlFromTileJson({ tiles: 'not-an-array' })).toBeNull();
+        expect(tileUrlFromTileJson({})).toBeNull();
+        expect(tileUrlFromTileJson(null)).toBeNull();
+    });
+
+    it('skips unusable entries and takes the first good one', () => {
+        expect(tileUrlFromTileJson({
+            tiles: ['not a url', 'https://a.example/{z}/{x}/{y}.pbf'],
+        })).toBe('https://a.example/{z}/{x}/{y}.pbf');
     });
 });
 

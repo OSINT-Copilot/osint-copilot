@@ -41,3 +41,47 @@ export function isUsableTileUrl(url: string): boolean {
     if (!/^https?:\/\//i.test(trimmed)) return false;
     return trimmed.includes('{z}') && trimmed.includes('{x}') && trimmed.includes('{y}');
 }
+
+
+/**
+ * OpenFreeMap: MIT-licensed, no API key, no registration, no usage limits, and
+ * commercial use explicitly permitted -- the only provider found that is all four and
+ * still global and street-level. Data is OpenStreetMap via the OpenMapTiles schema.
+ *
+ * It serves vector tiles, so it is drawn by MapLibre GL behind Leaflet rather than as
+ * plain raster. The whole stack is open source and self-hostable, so an organisation can
+ * point `mapOpenFreeMapStyleUrl` at its own instance and keep the same code path.
+ */
+export const OPEN_FREE_MAP_STYLES = ['positron', 'bright', 'liberty', 'dark'] as const;
+export type OpenFreeMapStyle = typeof OPEN_FREE_MAP_STYLES[number];
+
+/** Required by OpenFreeMap's terms. The OpenFreeMap credit itself is optional but asked for. */
+export const OPEN_FREE_MAP_ATTRIBUTION =
+    '<a href="https://openfreemap.org">OpenFreeMap</a> © <a href="https://www.openmaptiles.org/">OpenMapTiles</a> ' +
+    'Data from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+
+export function openFreeMapStyleUrl(style: string): string {
+    const chosen = (OPEN_FREE_MAP_STYLES as readonly string[]).includes(style)
+        ? style
+        : 'positron';
+    return `https://tiles.openfreemap.org/styles/${chosen}`;
+}
+
+/** OpenFreeMap's TileJSON. The tile URL inside it carries a build date that rotates. */
+export const OPEN_FREE_MAP_TILEJSON = 'https://tiles.openfreemap.org/planet';
+
+/**
+ * Pulls the tile URL template out of a TileJSON document.
+ *
+ * Needed because OpenFreeMap's tiles live under a dated path
+ * (`/planet/20260830_080001_pt/{z}/{x}/{y}.pbf`) that changes with each weekly build, so
+ * it cannot be hardcoded. Validated rather than trusted: this is remote JSON.
+ */
+export function tileUrlFromTileJson(doc: unknown): string | null {
+    const tiles = (doc as { tiles?: unknown })?.tiles;
+    if (!Array.isArray(tiles)) return null;
+    for (const entry of tiles) {
+        if (typeof entry === 'string' && isUsableTileUrl(entry)) return entry;
+    }
+    return null;
+}

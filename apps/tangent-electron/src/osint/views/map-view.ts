@@ -3,14 +3,27 @@
  * Map View for visualizing Location entities using Leaflet.
  */
 
-import { App, ItemView, WorkspaceLeaf, Notice, Modal, Menu, TFile, normalizePath } from 'obsidian';
+import { App, ItemView, WorkspaceLeaf, Notice, Modal, Menu, TFile, normalizePath, requestUrl } from 'obsidian';
 import { type Entity, EntityType, ENTITY_CONFIGS } from '../entities/types';
 import { EntityManager } from '../services/entity-manager';
 import { EntityCreationModal } from '../modals/entity-modal';
 import { GeocodingService, GeocodingError, geocodingService } from '../services/geocoding-service';
 import { host } from '../host';
 import { IpcPMTilesSource } from '../services/basemap/ipc-pmtiles-source';
-import { basemapProblemMessage, rendererForTileType } from '../services/basemap/basemap-types';
+import {
+    basemapProblemMessage,
+    isUsableTileUrl,
+    rendererForTileType,
+    tileUrlFromTileJson,
+    OPEN_FREE_MAP_ATTRIBUTION,
+    OPEN_FREE_MAP_TILEJSON,
+} from '../services/basemap/basemap-types';
+import {
+    DARK_PALETTE,
+    LIGHT_PALETTE,
+    openMapTilesLabelRules,
+    openMapTilesPaintRules,
+} from '../services/basemap/openmaptiles-theme';
 import { formatDegrees, graticuleLines, graticuleSpacingForZoom } from '../services/basemap/graticule';
 
 // Leaflet types (simplified for bundling)
@@ -47,6 +60,7 @@ interface MapLocation {
 const GRID_LAYER_NAME = 'Coordinate grid';
 const OFFLINE_LAYER_NAME = 'Offline basemap';
 const CUSTOM_LAYER_NAME = 'Online tiles';
+const ONLINE_LAYER_NAME = 'OpenFreeMap';
 
 export class MapView extends ItemView {
     private entityManager: EntityManager;
@@ -315,13 +329,16 @@ export class MapView extends ItemView {
         return group;
     }
 
-    /** The user's own tile provider, if they configured one. */
+    /**
+     * A raster tile layer from the user's own provider, under their own account and
+     * terms. Synchronous, so it can be added while the map is being built.
+     */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Leaflet layer
     private createCustomTileLayer(): any | null {
         const settings = this.mapSettings();
         if (settings.provider !== 'custom') return null;
-        if (!settings.url) return null;
-        return L.tileLayer(settings.url, {
+        if (!isUsableTileUrl(settings.url)) return null;
+        return L.tileLayer(settings.url.trim(), {
             attribution: settings.attribution || '',
             maxZoom: 19,
             crossOrigin: 'anonymous',
@@ -329,11 +346,57 @@ export class MapView extends ItemView {
     }
 
     /**
-     * Opens the configured PMTiles archive and adds it as a base layer.
+     * OpenFreeMap, drawn by MapLibre GL underneath Leaflet.
      *
-     * Failure is a persistent state, not an event: it is reported in the toolbar strip
-     * rather than as a toast, and the grid stays selected so the markers remain readable.
+     * OpenFreeMap serves vector tiles, so there is no raster URL to hand L.tileLayer.
+     * They are drawn by protomaps-leaflet on a 2D canvas, with the OpenMapTiles rule set
+     * in openmaptiles-theme.ts. MapLibre would be the obvious renderer, but its tile
+     * parsing runs in a Web Worker that never starts in this webpack/file:// renderer --
+     * style, TileJSON and sprites all fetch, then zero tile requests and no error.
+     *
+     * The renderer is imported dynamically, and it is the same one the offline PMTiles
+     * basemap uses -- so an online basemap costs no extra dependency at all.
      */
+    private async attachOpenFreeMapLayer(): Promise<void> {
+        const settings = this.mapSettings();
+        if (settings.provider !== 'openfreemap') return;
+        try {
+            // The tile URL lives inside the TileJSON under a dated path that rotates with
+            // each weekly build, so it is resolved at runtime rather than hardcoded.
+            // Fetched through our guarded IPC, not the renderer, so it is subject to the
+            // same egress checks as every other request we control.
+            const response = await requestUrl({ url: OPEN_FREE_MAP_TILEJSON, throw: false });
+            if (response.status >= 400) {
+                this.setBasemapStatus(`OpenFreeMap is not reachable (HTTP ${response.status}).`);
+                return;
+            }
+            const tileUrl = tileUrlFromTileJson(response.json);
+            if (!tileUrl) {
+                this.setBasemapStatus('OpenFreeMap returned a tile list this build cannot use.');
+                return;
+            }
+            if (!this.map) return;
+
+            const protomaps = await import('protomaps-leaflet');
+            const dark = document.body.classList.contains('dark');
+            const palette = dark ? DARK_PALETTE : LIGHT_PALETTE;
+            const layer = protomaps.leafletLayer({
+                url: tileUrl,
+                paintRules: openMapTilesPaintRules(palette),
+                labelRules: openMapTilesLabelRules(palette),
+                backgroundColor: palette.background,
+                attribution: OPEN_FREE_MAP_ATTRIBUTION,
+                maxDataZoom: 14,
+            });
+
+            this.baseLayers[ONLINE_LAYER_NAME] = layer;
+            this.layerControl?.addBaseLayer(layer, ONLINE_LAYER_NAME);
+        } catch (e) {
+            console.error('[MapView] could not load the online basemap:', e);
+            this.setBasemapStatus('The online basemap could not be loaded.');
+        }
+    }
+
     private async attachOfflineBasemap(): Promise<void> {
         let result;
         try {
@@ -418,13 +481,14 @@ export class MapView extends ItemView {
      * the same route OsintSettings.svelte uses. Every field is re-validated here because
      * this is a plain settings bag, not a typed channel.
      */
-    private mapSettings(): { provider: string; url: string; attribution: string } {
+    private mapSettings(): { provider: string; url: string; attribution: string; openFreeMapStyle: string } {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- settings bag
         const s = (globalThis as any).osint?.plugin?.settings ?? {};
         return {
             provider: typeof s.mapOnlineTileProvider === 'string' ? s.mapOnlineTileProvider : 'none',
             url: typeof s.mapCustomTileUrl === 'string' ? s.mapCustomTileUrl : '',
             attribution: typeof s.mapCustomTileAttribution === 'string' ? s.mapCustomTileAttribution : '',
+            openFreeMapStyle: typeof s.mapOpenFreeMapStyle === 'string' ? s.mapOpenFreeMapStyle : 'positron',
         };
     }
 
@@ -567,6 +631,9 @@ export class MapView extends ItemView {
 
         const custom = this.createCustomTileLayer();
         if (custom) this.baseLayers[CUSTOM_LAYER_NAME] = custom;
+
+        // Added asynchronously; it is a vector source and its renderer is imported lazily.
+        void this.attachOpenFreeMapLayer();
 
         // Starts on the grid so the map is never blank while the archive opens.
         grid.addTo(this.map);
