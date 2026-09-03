@@ -18,6 +18,7 @@ import { installDomExtensions } from '../obsidian-shim/dom/dom-extensions';
 import { pushVaultEvents } from '../host/impl.tangent';
 import { treeChangeToWatchEvents } from './vault-bridge';
 import { openOsintSettings, openOsintView, openVaultNote, setTangentWorkspace } from './open-view';
+import { publishOsintPluginState } from './osint-plugin-state';
 import VaultAIPlugin from '../plugin/vault-ai-plugin';
 import { OSINT_VERSION } from '../version';
 
@@ -106,6 +107,8 @@ export async function startOsintCopilot(tangentWorkspace: {
     // onload() is async. Obsidian never awaits it; we do, so a failure surfaces here
     // instead of as an unhandled rejection behind a half-initialised plugin.
     await plugin.whenLoaded();
+    // Now the toolbar's canvas command can run and its gate has real settings to read.
+    publishOsintPluginState({ ready: true, settings: plugin.settings });
 
     // The plugin's own commands are picked up on Tangent's side, by
     // app/model/commands/OsintViewCommands.ts, which waits for this runtime to appear.
@@ -124,6 +127,7 @@ export async function startOsintCopilot(tangentWorkspace: {
         plugin,
         vaultRoot,
         async dispose() {
+            publishOsintPluginState({ ready: false, settings: null });
             try { plugin.unload(); } catch (e) { console.error('[osint] plugin teardown failed', e); }
             current = null;
         },

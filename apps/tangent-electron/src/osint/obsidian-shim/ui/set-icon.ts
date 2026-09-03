@@ -4,18 +4,15 @@
  * file-text, lock, message-square, layout-list, git-fork, calendar).
  */
 import * as lucide from 'lucide-static';
+import { hasLucideIcon, lucideSvg } from '../../integration/lucide-svg';
 
 const icons = lucide as unknown as Record<string, string>;
 
-/** lucide-static exports PascalCase keys; the codebase uses kebab-case names. */
-function toExportName(name: string): string {
-    return name.split(/[-_]/).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join('');
-}
-
 export function setIcon(el: HTMLElement, iconName: string): void {
-    const svg = icons[toExportName(iconName)];
-    if (typeof svg === 'string') {
-        el.innerHTML = svg;
+    // One mapping, shared with the toolbar pill, which cannot call this function because
+    // it mounts before installDomExtensions() has provided addClass.
+    if (hasLucideIcon(iconName)) {
+        el.innerHTML = lucideSvg(iconName);
         el.addClass('svg-icon-wrapper');
         return;
     }

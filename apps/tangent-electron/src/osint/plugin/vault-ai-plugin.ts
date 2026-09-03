@@ -121,6 +121,7 @@ import {
   DEFAULT_SETTINGS,
   type VaultAISettings,
 } from '../settings/vault-ai-settings';
+import { publishOsintPluginState } from "../integration/osint-plugin-state";
 import { VaultAISettingTab } from '../settings/vault-ai-setting-tab';
 import type { IndexedNote } from '../chat/indexed-note';
 import type { ChatHistoryItem } from '../chat/chat-types';
@@ -419,37 +420,10 @@ export default class VaultAIPlugin extends Plugin {
 
     // Add ribbon icons for all OSINT Copilot features (grouped together)
     // Ctrl/Cmd+click opens a new instance as a tab next to other OSINT views in the same tab strip
-    const chatRibbon = this.addRibbonIcon("message-square", "OSINT Copilot chat (Ctrl+click for new tab)", (evt: MouseEvent) => {
-      const forceNew = evt.ctrlKey || evt.metaKey;
-      void this.openChatView(forceNew);
-    });
-
-    this.addRibbonIcon("layout-list", "OSINT Copilot tools & skills registry (Ctrl+click for new tab)", (evt: MouseEvent) => {
-      const forceNew = evt.ctrlKey || evt.metaKey;
-      void this.openToolsSkillsRegistryView(forceNew);
-    });
-
-    // Graph features icons (Entity Graph, Timeline, Map) - shown when graph features are enabled
-    if (this.settings.enableGraphFeatures) {
-      const graphRibbon = this.addRibbonIcon("git-fork", "Entity graph (Ctrl+click for new tab)", (evt: MouseEvent) => {
-        const forceNew = evt.ctrlKey || evt.metaKey;
-        void this.openGraphView(forceNew);
-      });
-
-      const timelineRibbon = this.addRibbonIcon("calendar", "Timeline (Ctrl+click for new tab)", (evt: MouseEvent) => {
-        const forceNew = evt.ctrlKey || evt.metaKey;
-        void this.openTimelineView(forceNew);
-      });
-
-      const mapRibbon = this.addRibbonIcon("map-pin", "Location map (Ctrl+click for new tab)", (evt: MouseEvent) => {
-        const forceNew = evt.ctrlKey || evt.metaKey;
-        void this.openMapView(forceNew);
-      });
-
-      this.addRibbonIcon("layout-dashboard", "New canvas board", () => {
-        void this.createCanvasBoard();
-      });
-    }
+    // No ribbon icons: the shell renders the OSINT views as a button group in Tangent's
+    // top bar (integration/OsintViewsPill.svelte), driven by the Tangent-side commands in
+    // app/model/commands/OsintViewCommands.ts, and "New canvas board" lives in the New Note
+    // menu. addRibbonIcon still exists on the shim for API compatibility; nothing draws it.
 
     // Build initial index
     await this.buildIndex();
@@ -509,72 +483,9 @@ export default class VaultAIPlugin extends Plugin {
 
     // Register commands - grouped by feature
     // Main OSINT Copilot commands (Chat, Graph, Timeline, Map)
-    this.addCommand({
-      id: "new-canvas",
-      name: "New canvas board",
-      callback: () => { void this.createCanvasBoard(); },
-    });
-
-    this.addCommand({
-      id: "open-chat-view",
-      name: "Open chat",
-      callback: () => { void this.openChatView(); },
-    });
-
-    this.addCommand({
-      id: "open-chat-view-new-pane",
-      name: "Open chat in new tab",
-      callback: () => { void this.openChatView(true); },
-    });
-
-    this.addCommand({
-      id: "open-graph-view",
-      name: "Open entity graph",
-      callback: () => { void this.openGraphView(); },
-    });
-
-    this.addCommand({
-      id: "open-graph-view-new-pane",
-      name: "Open entity graph in new tab",
-      callback: () => { void this.openGraphView(true); },
-    });
-
-    this.addCommand({
-      id: "open-timeline-view",
-      name: "Open timeline",
-      callback: () => { void this.openTimelineView(); },
-    });
-
-    this.addCommand({
-      id: "open-timeline-view-new-pane",
-      name: "Open timeline in new tab",
-      callback: () => { void this.openTimelineView(true); },
-    });
-
-    this.addCommand({
-      id: "open-map-view",
-      name: "Open location map",
-      callback: () => { void this.openMapView(); },
-    });
-
-    this.addCommand({
-      id: "open-map-view-new-pane",
-      name: "Open location map in new tab",
-      callback: () => { void this.openMapView(true); },
-    });
-
-    this.addCommand({
-      id: "open-tools-skills-registry",
-      name: "Open tools & skills registry",
-      callback: () => { void this.openToolsSkillsRegistryView(); },
-    });
-
-    this.addCommand({
-      id: "open-tools-skills-registry-new-pane",
-      name: "Open tools & skills registry in new tab",
-      callback: () => { void this.openToolsSkillsRegistryView(true); },
-    });
-
+    // The view-opening commands are registered on Tangent's side
+    // (app/model/commands/OsintViewCommands.ts), where they carry shortcuts and an
+    // active state. Registering them here too put every view in the palette twice.
     this.addCommand({
       id: "export-investigation",
       name: "Export current investigation",
@@ -1053,6 +964,8 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
     }
 
     this.settings = merged as unknown as VaultAISettings;
+    // The toolbar and the view commands read the graph-features gate from here.
+    publishOsintPluginState({ settings: this.settings });
     if (stripped) {
       await this.saveData(this.settings);
     }
@@ -1079,6 +992,8 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
 
   async saveSettings() {
     invalidateChatRuntimeAvailabilityCache();
+    // Settings are edited in place, so nothing else can notice a change; say so.
+    publishOsintPluginState({ settings: this.settings });
     await this.saveData(this.settings);
     if (this.graphApiService) {
       this.graphApiService.setSettings({

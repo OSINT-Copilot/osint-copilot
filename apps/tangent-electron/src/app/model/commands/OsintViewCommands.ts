@@ -14,13 +14,51 @@ import type Workspace from '../Workspace'
 import WorkspaceCommand from './WorkspaceCommand'
 import type { CommandContext } from './Command'
 import { OSINT_VIEWS, type OsintViewDescriptor } from 'osint/integration/osint-view-types'
+import { osintPluginState, graphFeaturesEnabled } from 'osint/integration/osint-plugin-state'
 
+/**
+ * Opens one OSINT view. Also what the toolbar pill is built from.
+ *
+ * The pill renders each of these through Tangent's `use:command` action -- the same one
+ * the Map/Thread/Focus buttons use -- so the tooltip, the shortcut in it, and the
+ * `checked` highlight all come from this class rather than from any toolbar code.
+ * getChecked() says whether the view is the current node; canExecute() follows the
+ * focus-level convention (SetFocusLevel.ts) that the current one is disabled as well as
+ * checked. Both are re-evaluated when the thread moves or a setting changes, because the
+ * constructor subscribes and calls alertDirty(), which is how SetFocusLevelCommand keeps
+ * its buttons live.
+ */
 export class OpenOsintViewCommand extends WorkspaceCommand {
 	readonly view: OsintViewDescriptor
 
 	constructor(workspace: Workspace, view: OsintViewDescriptor) {
-		super(workspace)
+		// A default shortcut, so it shows in the tooltip and in Preferences > Shortcuts.
+		super(workspace, { shortcut: view.shortcut })
 		this.view = view
+		// viewState exists before the registry is built (Workspace.ts constructs it first),
+		// which is what makes subscribing here safe -- and it is exactly what
+		// SetFocusLevelCommand does with focusLevel.
+		workspace.viewState?.tangent?.currentNode?.subscribe?.(() => this.alertDirty())
+		osintPluginState.subscribe(() => this.alertDirty())
+	}
+
+	/** Whether the thread's current node is this view's marker file. */
+	get isCurrent(): boolean {
+		const node = this.workspace.viewState?.tangent?.currentNode?.value
+		return node?.fileType === this.view.fileType
+	}
+
+	/** Refused while the graph-features setting hides it, so the palette agrees with the pill. */
+	get isEnabled(): boolean {
+		return !this.view.requiresGraphFeatures || graphFeaturesEnabled()
+	}
+
+	canExecute(_context?: CommandContext) {
+		return this.isEnabled && !this.isCurrent
+	}
+
+	getChecked(_context?: CommandContext) {
+		return this.isCurrent
 	}
 
 	async execute(_context?: CommandContext) {
@@ -30,20 +68,54 @@ export class OpenOsintViewCommand extends WorkspaceCommand {
 	}
 
 	getLabel(_context?: CommandContext) {
-		return `OSINT: Open ${this.view.title}`
+		return `OSINT: Open ${this.view.label}`
 	}
 
 	getTooltip(_context?: CommandContext) {
-		return `Opens OSINT Copilot's ${this.view.title} view.`
+		// use:command appends the shortcut itself.
+		return `Open ${this.view.label}`
+	}
+}
+
+/**
+ * Creates a canvas board and opens it.
+ *
+ * Not a view: a board is a real .canvas file, and there can be any number of them. That is
+ * why it lives in the New Note menu next to the creation rules rather than in the views
+ * pill, and why it is not gated by the graph-features setting.
+ */
+export class NewOsintCanvasCommand extends WorkspaceCommand {
+	constructor(workspace: Workspace) {
+		super(workspace)
+		osintPluginState.subscribe(() => this.alertDirty())
+	}
+
+	canExecute(_context?: CommandContext) {
+		// createCanvasBoard needs the plugin's vault adapter, which exists once it is up.
+		return osintPluginState.value.ready
+	}
+
+	async execute(_context?: CommandContext) {
+		const plugin = (globalThis as any).osint?.plugin
+		await plugin?.createCanvasBoard?.()
+	}
+
+	getLabel(_context?: CommandContext) {
+		return 'OSINT: New Canvas Board'
+	}
+
+	getTooltip(_context?: CommandContext) {
+		return 'Create a new canvas board and open it.'
 	}
 }
 
 /** Keyed by the descriptor's commandKey, ready to spread into the command registry. */
 export function createOsintViewCommands(workspace: Workspace) {
-	const commands: Record<string, OpenOsintViewCommand> = {}
+	const commands: Record<string, WorkspaceCommand> = {}
 	for (const view of OSINT_VIEWS) {
 		commands[view.commandKey] = new OpenOsintViewCommand(workspace, view)
 	}
+	commands.osintNewCanvas = new NewOsintCanvasCommand(workspace)
 	// The plugin's own commands only exist after its async startup, so they are added
 	// later. CommandPalette reads Object.keys(workspace.commands) each time it opens.
 	void attachPluginCommandsWhenReady(workspace)

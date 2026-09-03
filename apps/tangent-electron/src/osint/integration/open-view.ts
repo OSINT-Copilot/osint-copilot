@@ -16,10 +16,17 @@ interface TangentNodeLike { path: string }
 interface TangentWorkspaceLike {
     directoryStore: { files: { path: string }, get(path: string): TangentNodeLike | undefined };
     commands: { createNewFile: { execute(context: unknown): unknown } };
+    /** Workspace.navigateTo: how a link click or the file tree opens a node in the thread. */
+    navigateTo(data: {
+        target: TangentNodeLike;
+        origin?: TangentNodeLike | 'current';
+        direction?: 'in' | 'out' | 'replace';
+    }): void;
     viewState: {
         tangent: {
             updateThread(options: unknown): void;
             focusLevel: { value: number, set(value: number): void };
+            thread: { value: TangentNodeLike[] };
         };
         system: { showMenu: { set(value: boolean): void }, section: { set(value: string): void } };
     };
@@ -55,14 +62,34 @@ function nodeFor(relativePath: string): TangentNodeLike | null {
     return (created as TangentNodeLike) ?? null;
 }
 
-function show(node: TangentNodeLike): void {
-    const tangent = workspace!.viewState.tangent;
-    tangent.updateThread({ currentNode: node });
-    // In Map focus the thread panels are not rendered at all, so opening a view while
-    // the map is up would silently appear to do nothing.
-    if (tangent.focusLevel.value < FOCUS_LEVEL_THREAD) {
-        tangent.focusLevel.set(FOCUS_LEVEL_THREAD);
+/**
+ * Puts the node in the thread the way Tangent itself opens things.
+ *
+ * This used to call `updateThread({ currentNode })` with nothing else, which Session
+ * resolves to a thread of exactly one node -- so every click on a view wiped whatever the
+ * analyst had open. Two branches now, both borrowed from Tangent:
+ *
+ * - already in the thread: `thread: 'retain'` just moves the current marker, the way
+ *   CreateNewFile does for an existing note. Without this, re-clicking an open view would
+ *   truncate everything to its right.
+ * - otherwise: `navigateTo({ origin: 'current', direction: 'out' })`, which is the file
+ *   tree's "Open to the Right" -- appends beside the current pane, and leaves Map focus
+ *   on its own.
+ */
+export function show(node: TangentNodeLike): void {
+    const ws = workspace!;
+    const tangent = ws.viewState.tangent;
+    if (tangent.thread.value.includes(node)) {
+        tangent.updateThread({ currentNode: node, thread: 'retain' });
+        // In Map focus the thread panels are not rendered at all, so opening a view while
+        // the map is up would silently appear to do nothing. navigateTo does this itself;
+        // the retain branch has to.
+        if (tangent.focusLevel.value < FOCUS_LEVEL_THREAD) {
+            tangent.focusLevel.set(FOCUS_LEVEL_THREAD);
+        }
+        return;
     }
+    ws.navigateTo({ target: node, origin: 'current', direction: 'out' });
 }
 
 /** Navigates Tangent to the node backing `viewType`, creating it the first time. */

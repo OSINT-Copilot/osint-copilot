@@ -16,18 +16,60 @@ export interface OsintViewDescriptor {
     viewType: string;
     /** File extension that makes a node open as this view. */
     fileType: string;
-    /** Base filename, and what the panel is called. */
+    /**
+     * Base filename under .tangent/osint, and the node name Tangent shows.
+     *
+     * Do not rename: nodePathFor() derives the marker path from it, and saved sessions
+     * store that path -- Session.ts turns a missing path into a placeholder node that
+     * cannot render. User-facing wording lives in `label` instead.
+     */
     title: string;
+    /** What the toolbar tooltip, command palette and shortcut editor call the view. */
+    label: string;
+    /** lucide-static icon name, kebab-case, as set-icon.ts already resolves it. */
+    icon: string;
+    /** Default shortcut in Tangent's 'Mod+...' syntax. Reassignable in Settings -> Shortcuts. */
+    shortcut: string;
+    /** Hidden from the toolbar, and refused by its command, while enableGraphFeatures is off. */
+    requiresGraphFeatures: boolean;
     /** Key under which the open command is registered with Tangent. */
     commandKey: string;
 }
 
+/**
+ * Order matters twice over: it is the toolbar order, and the shortcut digit.
+ *
+ * On names: Tangent's own "Map View" (Mod+G) is a node-link diagram of the thread, so
+ * calling the entity graph "graph" and the geographic map "map" put three different things
+ * under two overlapping words in the same strip. "Entities" and "Locations" say what the
+ * views actually show and collide with nothing.
+ */
 export const OSINT_VIEWS: readonly OsintViewDescriptor[] = [
-    { viewType: 'vault-ai-chat-view', fileType: '.osintchat', title: 'OSINT Chat', commandKey: 'osintOpenChat' },
-    { viewType: 'graph_copilot-graph-view', fileType: '.osintgraph', title: 'Entity Graph', commandKey: 'osintOpenGraph' },
-    { viewType: 'graph_copilot-timeline-view', fileType: '.osinttimeline', title: 'Timeline', commandKey: 'osintOpenTimeline' },
-    { viewType: 'graph_copilot-map-view', fileType: '.osintmap', title: 'Location Map', commandKey: 'osintOpenMap' },
-    { viewType: 'osint-copilot-tools-skills-registry', fileType: '.osintregistry', title: 'Tools & Skills', commandKey: 'osintOpenRegistry' },
+    {
+        viewType: 'vault-ai-chat-view', fileType: '.osintchat', title: 'OSINT Chat',
+        label: 'Chat', icon: 'message-square', shortcut: 'Mod+Alt+1',
+        requiresGraphFeatures: false, commandKey: 'osintOpenChat',
+    },
+    {
+        viewType: 'graph_copilot-graph-view', fileType: '.osintgraph', title: 'Entity Graph',
+        label: 'Entities', icon: 'git-fork', shortcut: 'Mod+Alt+2',
+        requiresGraphFeatures: true, commandKey: 'osintOpenGraph',
+    },
+    {
+        viewType: 'graph_copilot-timeline-view', fileType: '.osinttimeline', title: 'Timeline',
+        label: 'Timeline', icon: 'calendar', shortcut: 'Mod+Alt+3',
+        requiresGraphFeatures: true, commandKey: 'osintOpenTimeline',
+    },
+    {
+        viewType: 'graph_copilot-map-view', fileType: '.osintmap', title: 'Location Map',
+        label: 'Locations', icon: 'map-pin', shortcut: 'Mod+Alt+4',
+        requiresGraphFeatures: true, commandKey: 'osintOpenMap',
+    },
+    {
+        viewType: 'osint-copilot-tools-skills-registry', fileType: '.osintregistry', title: 'Tools & Skills',
+        label: 'Tools & Skills', icon: 'layout-list', shortcut: 'Mod+Alt+5',
+        requiresGraphFeatures: false, commandKey: 'osintOpenRegistry',
+    },
 ] as const;
 
 export const OSINT_FILE_TYPES = OSINT_VIEWS.map(v => v.fileType);

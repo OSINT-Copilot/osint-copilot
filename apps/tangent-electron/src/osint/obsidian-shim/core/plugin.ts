@@ -58,8 +58,9 @@ export abstract class Plugin extends Component {
             const at = this.ribbonActions.indexOf(action);
             if (at >= 0) this.ribbonActions.splice(at, 1);
         });
-        // Obsidian returns the created element; the shell owns rendering, so this is a
-        // detached stand-in for the handful of callers that style the returned node.
+        // Obsidian returns the created element. Nothing in this shell renders ribbon
+        // actions any more (the OSINT views are a toolbar button group driven by Tangent
+        // commands), so this is a detached stand-in kept for API compatibility.
         return document.createElement('div');
     }
 
