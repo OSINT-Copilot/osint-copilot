@@ -445,6 +445,10 @@ export default class VaultAIPlugin extends Plugin {
         const forceNew = evt.ctrlKey || evt.metaKey;
         void this.openMapView(forceNew);
       });
+
+      this.addRibbonIcon("layout-dashboard", "New canvas board", () => {
+        void this.createCanvasBoard();
+      });
     }
 
     // Build initial index
@@ -505,6 +509,12 @@ export default class VaultAIPlugin extends Plugin {
 
     // Register commands - grouped by feature
     // Main OSINT Copilot commands (Chat, Graph, Timeline, Map)
+    this.addCommand({
+      id: "new-canvas",
+      name: "New canvas board",
+      callback: () => { void this.createCanvasBoard(); },
+    });
+
     this.addCommand({
       id: "open-chat-view",
       name: "Open chat",
@@ -1045,6 +1055,25 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
     this.settings = merged as unknown as VaultAISettings;
     if (stripped) {
       await this.saveData(this.settings);
+    }
+  }
+
+  /**
+   * Creates a canvas board and navigates to it.
+   *
+   * A board is a real `.canvas` file, not one of the singleton marker files the other
+   * OSINT views use, so there can be any number of them and each opens as its own document.
+   */
+  async createCanvasBoard(): Promise<void> {
+    try {
+      const { createCanvas } = await import("../canvas/canvas-commands");
+      const result = await createCanvas(this.app.vault);
+      if (!result.opened) {
+        new Notice(`Created ${result.path}, but it could not be opened yet.`);
+      }
+    } catch (e) {
+      console.error("[osint] could not create a canvas", e);
+      new Notice(`Could not create the canvas: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 

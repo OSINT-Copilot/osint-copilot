@@ -80,6 +80,28 @@ export function openOsintView(viewType: string): boolean {
     }
 }
 
+/**
+ * Navigates to a node ONLY if Tangent has already indexed it.
+ *
+ * Unlike openVaultNote, this never falls back to createNewFile. That fallback is right for
+ * the marker files the OSINT views hang off -- they are empty by design -- but fatal for a
+ * file with content: Tangent's createFile calls initializeContents(), which writes an empty
+ * string, so navigating to a freshly written canvas before the watcher had indexed it
+ * blanked the file we had just saved.
+ */
+export function openIndexedVaultNode(relativePath: string): boolean {
+    if (!workspace) return false;
+    try {
+        const existing = workspace.directoryStore.get(absolutePathOf(relativePath));
+        if (!existing) return false;
+        show(existing as TangentNodeLike);
+        return true;
+    } catch (e) {
+        console.error('[osint] could not open node', relativePath, e);
+        return false;
+    }
+}
+
 /** Navigates Tangent to a vault note, by workspace-relative path. */
 export function openVaultNote(relativePath: string): boolean {
     if (!workspace) return false;

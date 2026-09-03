@@ -11,3 +11,7 @@ node_modules/
 **/.tangent/Temp/
 **/.tangent/Generated/
 .obsidian
+
+# Plugin settings, written into whatever directory is opened as a vault. Ends up in
+# the repo whenever the app is launched with the checkout itself as the workspace.
+.osint-copilot/

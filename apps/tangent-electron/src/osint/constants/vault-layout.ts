@@ -27,6 +27,12 @@ export const DEFAULT_TASK_AGENT_OUTPUT_ALLOWLIST = `${OSINT_COPILOT_CUSTOM_ROOT}
 export const GRAPH_NODE_POSITIONS_FILE = `${OSINT_COPILOT_VAULT_ROOT}/graph-positions.json`;
 
 /**
+ * Canvas boards (JSON Canvas `.canvas` files). Visible analyst content, so it sits beside
+ * graph-yaml/ and MiroBoards/ rather than in a hidden folder.
+ */
+export const DEFAULT_CANVAS_FOLDER = `${OSINT_COPILOT_VAULT_ROOT}/boards`;
+
+/**
  * FollowTheMoney-style parallel export: one `.yaml` per entity/connection, synced from notes.
  * Lives under the configured entity base path, e.g. `OSINTCopilot/graph-yaml/`.
  */

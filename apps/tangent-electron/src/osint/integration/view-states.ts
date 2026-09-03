@@ -13,6 +13,8 @@
  * errors in code we do not own).
  */
 import OsintViewHost from './OsintViewHost.svelte';
+import CanvasView from '../canvas/CanvasView.svelte';
+import { CANVAS_FILE_TYPE } from '../canvas/canvas-file-type';
 import { leafForViewType } from './osint-views';
 import { viewForFileType } from './osint-view-types';
 import type { WorkspaceLeaf } from '../obsidian-shim/workspace/layout';
@@ -68,11 +70,40 @@ export class OsintNodeViewState {
 }
 
 /**
+ * A canvas is a document, not a singleton view.
+ *
+ * The five views above are one-per-vault and hang off an empty marker file, so their state
+ * only has to name a view type. A `.canvas` file has real content and there can be any
+ * number of them, so this state carries the node itself and a native Svelte lens reads and
+ * writes it -- no Obsidian leaf, no ItemView, no DOM adoption.
+ */
+export class CanvasNodeViewState {
+    readonly node: MinimalNode;
+    readonly currentLens: ReturnType<typeof constant<unknown>>;
+
+    constructor(node: MinimalNode) {
+        this.node = node;
+        // The node goes ON THE LENS, not just on the state: NodeViewSelector renders
+        // `<svelte:component state={$lensState}>`, so the component receives the lens.
+        // OsintViewHost works the same way, via osintViewType/osintLeaf.
+        this.currentLens = constant({
+            parent: this,
+            viewComponent: CanvasView,
+            canvasNode: node,
+        });
+    }
+
+    /** CanvasView flushes its own pending save in onDestroy. */
+    dispose(): void { /* see above */ }
+}
+
+/**
  * Registered into ViewStateContext.creators. Returns undefined for anything that is not
  * one of ours, which is how Tangent's creator chain expects a decline.
  */
 export function osintViewStateCreator(_context: unknown, node: MinimalNode): unknown {
     if (!node?.fileType) return undefined;
+    if (node.fileType === CANVAS_FILE_TYPE) return new CanvasNodeViewState(node);
     const view = viewForFileType(node.fileType);
     if (!view) return undefined;
     return new OsintNodeViewState(node, view.viewType);

@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { OSINT_VIEWS, OSINT_FILE_TYPES } from '../integration/osint-view-types';
-import { visibleFileTypeMatch } from '../../common/fileExtensions';
+import { knownExtensions, visibleFileTypeMatch } from '../../common/fileExtensions';
 import { CHAT_VIEW_TYPE } from '../views/chat-view';
 import { GRAPH_VIEW_TYPE } from '../views/graph-view';
 import { TIMELINE_VIEW_TYPE } from '../views/timeline-view';
 import { MAP_VIEW_TYPE } from '../views/map-view';
 import { TOOLS_SKILLS_REGISTRY_VIEW_TYPE } from '../views/tools-skills-registry-view';
+import { CANVAS_FILE_TYPE } from '../canvas/canvas-file-type';
 
 /**
  * osint-view-types.ts spells its view types out as literals so that Tangent's command
@@ -32,6 +33,16 @@ describe('OSINT view descriptors', () => {
 
     it('does not match an unrelated extension', () => {
         expect('.osintnope').not.toMatch(visibleFileTypeMatch);
+    });
+
+    it('registers the canvas extension so boards appear in the tree and quick-open', () => {
+        // Same literal-string constraint as the view types: common/ is shared with the
+        // main process and cannot import from osint/, so the two lists must be kept in
+        // step by hand -- which is what this asserts.
+        expect(CANVAS_FILE_TYPE).toMatch(visibleFileTypeMatch);
+        // And in knownExtensions, or [[Board.canvas]] gets '.md' appended and resolves to
+        // a virtual note instead of the board.
+        expect(knownExtensions).toContain(CANVAS_FILE_TYPE);
     });
 
     it('has a unique file type, view type and command key per view', () => {

@@ -95,7 +95,10 @@ export const knownExtensions = [
 	...videoFileExtensions,
 	...pdfFileExtensions,
 	...codeExtensions,
-	...mscExtensions
+	...mscExtensions,
+	// So [[Board.canvas]] resolves to the board rather than having '.md' appended and
+	// creating a virtual note. Same literal-string constraint as visibleFileTypeMatch.
+	'.canvas'
 ]
 
 export const knownExtensionsMatch = getExtensionRegex(knownExtensions)
@@ -112,7 +115,9 @@ export const visibleFileTypeMatch = getFileTypeRegex([
 	// Spelled out rather than imported: common/ is shared with the main process, whose
 	// tsconfig cannot resolve `osint/*`. osint-view-types.test.ts asserts the two lists
 	// stay in step.
-	'.osintchat', '.osintgraph', '.osinttimeline', '.osintmap', '.osintregistry'
+	'.osintchat', '.osintgraph', '.osinttimeline', '.osintmap', '.osintregistry',
+	// Canvas boards. Obsidian's extension, deliberately: the same file opens in either app.
+	'.canvas'
 ])
 
 /**
