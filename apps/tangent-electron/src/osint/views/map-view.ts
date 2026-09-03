@@ -9,6 +9,7 @@ import { EntityManager } from '../services/entity-manager';
 import { EntityCreationModal } from '../modals/entity-modal';
 import { GeocodingService, GeocodingError, geocodingService } from '../services/geocoding-service';
 import { host } from '../host';
+import { entityHasMapCoordinates } from '../ui/vault-op-previews';
 import { IpcPMTilesSource } from '../services/basemap/ipc-pmtiles-source';
 import {
     basemapProblemMessage,
@@ -37,6 +38,11 @@ const L: any = LeafletLib;
 export const MAP_VIEW_TYPE = 'graph_copilot-map-view';
 
 /** Match Location/Address/GeoLocation notes regardless of YAML casing or stray whitespace. */
+/** Address specifically, matched the same case-insensitive way as isLocationEntityType. */
+export function isAddressEntityType(entityType: string | undefined): boolean {
+    return String(entityType ?? '').trim().toLowerCase() === 'address';
+}
+
 export function isLocationEntityType(entityType: string | undefined): boolean {
     if (typeof entityType !== 'string') return false;
     const normalized = entityType.trim().toLowerCase();
@@ -46,7 +52,7 @@ export function isLocationEntityType(entityType: string | undefined): boolean {
 // Leaflet CSS inlined to avoid CSP issues with external stylesheets
 // Leaflet CSS moved to styles.css
 
-interface MapLocation {
+export interface MapLocation {
     id: string;
     label: string;
     lat: number;
@@ -61,6 +67,73 @@ const GRID_LAYER_NAME = 'Coordinate grid';
 const OFFLINE_LAYER_NAME = 'Offline basemap';
 const CUSTOM_LAYER_NAME = 'Online tiles';
 const ONLINE_LAYER_NAME = 'OpenFreeMap';
+
+
+/**
+ * Parse a frontmatter coordinate, or refuse it.
+ *
+ * Stricter than parseFloat on purpose. parseFloat("12,5") silently returns 12 --
+ * dropping a comma decimal separator and moving the pin hundreds of kilometres with no
+ * error -- and parseFloat("48.1 N") returns 48.1. Anything that is not cleanly a number
+ * is refused rather than half-read, and the result is range-checked so a transposed
+ * lat/lng cannot put a marker off the projection.
+ */
+export function parseCoordinate(value: string | number | undefined, axis: 'lat' | 'lng'): number | null {
+    if (value === undefined || value === null || value === '') return null;
+
+    let num: number;
+    if (typeof value === 'number') {
+        num = value;
+    } else {
+        const text = String(value).trim();
+        // Only a plain signed decimal. Rejects "12,5", "48.1 N", "1e5deg".
+        if (!/^[+-]?\d+(\.\d+)?$/.test(text)) {
+            console.debug('[MapView] refusing an ambiguous coordinate:', value);
+            return null;
+        }
+        num = Number(text);
+    }
+
+    if (!Number.isFinite(num)) return null;
+    const limit = axis === 'lat' ? 90 : 180;
+    if (num < -limit || num > limit) {
+        console.debug(`[MapView] ${axis} out of range:`, num);
+        return null;
+    }
+    return num;
+}
+
+export function createPopupContent(location: MapLocation): HTMLElement {
+    const root = document.createElement('div');
+    root.addClass('graph_copilot-map-popup');
+
+    root.createEl('strong', { text: location.label });
+
+    if (location.address) {
+        root.createEl('br');
+        root.createEl('small', { text: location.address });
+    }
+
+    const parts = [location.city, location.country].filter(Boolean) as string[];
+    if (parts.length > 0) {
+        root.createEl('br');
+        root.createEl('small', { text: parts.join(', ') });
+    }
+
+    root.createEl('br');
+    root.createEl('small', {
+        text: `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`,
+        cls: 'graph_copilot-map-popup-coords',
+    });
+
+    root.createEl('br');
+    root.createEl('small', {
+        text: 'Double-click the marker to open its note',
+        cls: 'graph_copilot-map-popup-hint',
+    });
+
+    return root;
+}
 
 export class MapView extends ItemView {
     private entityManager: EntityManager;
@@ -744,13 +817,16 @@ export class MapView extends ItemView {
 
         for (const entity of entities) {
             console.debug('[MapView] Parsing entity:', entity.label, 'properties:', entity.properties);
-            const lat = this.parseCoordinate(entity.properties.latitude as string | number | undefined);
-            const lng = this.parseCoordinate(entity.properties.longitude as string | number | undefined);
+            const lat = parseCoordinate(entity.properties.latitude as string | number | undefined, 'lat');
+            const lng = parseCoordinate(entity.properties.longitude as string | number | undefined, 'lng');
             console.debug('[MapView] Parsed coordinates - lat:', lat, 'lng:', lng);
 
             if (lat !== null && lng !== null) {
                 // Handle both Location and Address entity types
-                const address = entity.type === 'Address'
+                // isAddressEntityType, not `=== 'Address'`: the filter that selected these
+                // entities is case-insensitive, so an `address`-typed note reached here and
+                // silently lost its street.
+                const address = isAddressEntityType(entity.type)
                     ? ((entity.properties.street || entity.properties.full) as string)
                     : (entity.properties.address as string);
 
@@ -769,24 +845,6 @@ export class MapView extends ItemView {
         }
 
         return locations;
-    }
-
-    /**
-     * Parse a coordinate string to number.
-     */
-    private parseCoordinate(value: string | number | undefined): number | null {
-        if (value === undefined || value === null || value === '') {
-            console.debug('[MapView] parseCoordinate: value is empty/undefined:', value);
-            return null;
-        }
-
-        const num = typeof value === 'number' ? value : parseFloat(value);
-        if (isNaN(num)) {
-            console.debug('[MapView] parseCoordinate: value is NaN:', value);
-            return null;
-        }
-
-        return num;
     }
 
     /**
@@ -819,7 +877,7 @@ export class MapView extends ItemView {
             .addTo(this.map);
 
         // Create popup content
-        const popupContent = this.createPopupContent(location);
+        const popupContent = createPopupContent(location);
         marker.bindPopup(popupContent);
 
         // Click handler
@@ -894,49 +952,6 @@ export class MapView extends ItemView {
         this.markers.set(location.id, marker);
     }
 
-    /**
-     * Create popup content for a location.
-     */
-    /**
-     * Built as DOM with textContent, never as an HTML string.
-     *
-     * label / address / city / country come straight from note frontmatter, which the
-     * AI agent writes. This used to be string concatenation handed to bindPopup(), which
-     * Leaflet assigns with innerHTML -- so `city: <img src=x onerror=...>` executed
-     * script in a renderer that has no CSP and exposes the whole window.api IPC bridge.
-     */
-    private createPopupContent(location: MapLocation): HTMLElement {
-        const root = document.createElement('div');
-        root.addClass('graph_copilot-map-popup');
-
-        root.createEl('strong', { text: location.label });
-
-        if (location.address) {
-            root.createEl('br');
-            root.createEl('small', { text: location.address });
-        }
-
-        const parts = [location.city, location.country].filter(Boolean) as string[];
-        if (parts.length > 0) {
-            root.createEl('br');
-            root.createEl('small', { text: parts.join(', ') });
-        }
-
-        root.createEl('br');
-        root.createEl('small', {
-            text: `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`,
-            cls: 'graph_copilot-map-popup-coords',
-        });
-
-        root.createEl('br');
-        root.createEl('small', {
-            text: 'Double-click the marker to open its note',
-            cls: 'graph_copilot-map-popup-hint',
-        });
-
-        return root;
-    }
-
 
     /**
      * Fit the map to show all markers.
@@ -969,8 +984,8 @@ export class MapView extends ItemView {
     addLocation(entity: Entity): void {
         if (entity.type !== EntityType.Location) return;
 
-        const lat = this.parseCoordinate(entity.properties.latitude as string | number | undefined);
-        const lng = this.parseCoordinate(entity.properties.longitude as string | number | undefined);
+        const lat = parseCoordinate(entity.properties.latitude as string | number | undefined, 'lat');
+        const lng = parseCoordinate(entity.properties.longitude as string | number | undefined, 'lng');
 
         if (lat !== null && lng !== null) {
             this.addMarker({
@@ -1012,18 +1027,24 @@ export class MapView extends ItemView {
 
     /**
      * Focus on a specific location.
+     *
+     * Returns whether it found a marker, so the caller can say something rather than
+     * leaving the user staring at an unchanged map after picking "Show on map".
      */
-    focusLocation(entityId: string): void {
-        console.debug('[MapView] focusLocation called for:', entityId);
-        console.debug('[MapView] Available markers:', Array.from(this.markers.keys()));
+    focusLocation(entityId: string): boolean {
         const marker = this.markers.get(entityId);
-        if (marker && this.map) {
-            console.debug('[MapView] Found marker, focusing...');
-            this.map.setView(marker.getLatLng(), 15);
-            marker.openPopup();
-        } else {
-            console.debug('[MapView] Marker not found for entity:', entityId);
-        }
+        if (!marker || !this.map) return false;
+        // The viewport moves only because the user asked for it by name, so this is one
+        // of the two places allowed to move it (the other is the Fit button).
+        this.map.setView(marker.getLatLng(), 15);
+        marker.openPopup();
+        this.hasFitOnce = true;
+        // Drop any fit deferred from a 0x0 container. "Show on map" arrives before the
+        // host has sized the view, so the fit that refresh() queued would otherwise land
+        // on the next invalidate and pull the viewport straight back off the entity the
+        // user asked for.
+        this.fitPending = false;
+        return true;
     }
 
     /**
@@ -1033,8 +1054,13 @@ export class MapView extends ItemView {
         // Get all Location and Address entities
         const allEntities = this.entityManager.getAllEntities();
         const locationsWithoutCoords = allEntities.filter(entity => {
-            const isLocationOrAddress = entity.type === EntityType.Location || entity.type === 'Address';
-            const hasNoCoords = !entity.properties.latitude || !entity.properties.longitude;
+            // isLocationEntityType, not two exact comparisons: GeoLocation entities render
+            // on the map but were invisible to the geocoder.
+            const isLocationOrAddress = isLocationEntityType(entity.type);
+            // entityHasMapCoordinates, not a falsy test: `!0` is true, so anything on the
+            // equator or the prime meridian counted as missing and was re-geocoded and
+            // overwritten.
+            const hasNoCoords = !entityHasMapCoordinates(entity);
             const hasAddress = entity.properties.address || entity.properties.street ||
                 entity.properties.full || entity.properties.city || entity.properties.country;
             return isLocationOrAddress && hasNoCoords && hasAddress;
@@ -1140,11 +1166,31 @@ class GeolocateMissingModal extends Modal {
             'margin-top': '20px'
         });
 
+        // Progress goes here rather than into a stream of Notices.
+        this.batchProgressEl = contentEl.createEl('p', { cls: 'setting-item-description' });
+        this.batchProgressEl.style.display = 'none';
+
         const geolocateAllBtn = buttonContainer.createEl('button', { text: 'Geolocate all' });
+        const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+        cancelBtn.style.display = 'none';
+
         geolocateAllBtn.onclick = async () => {
+            this.cancelled = false;
             geolocateAllBtn.disabled = true;
-            await this.geolocateAll();
-            geolocateAllBtn.disabled = false;
+            cancelBtn.style.display = '';
+            try {
+                await this.geolocateAll();
+            } finally {
+                geolocateAllBtn.disabled = false;
+                cancelBtn.style.display = 'none';
+            }
+        };
+
+        // Each entity can take 15s+ offline (five retries with exponential backoff), so a
+        // batch has to be stoppable without closing the modal.
+        cancelBtn.onclick = () => {
+            this.cancelled = true;
+            this.setBatchProgress('Finishing the current location, then stopping…');
         };
 
         const closeBtn = buttonContainer.createEl('button', { text: 'Close' });
@@ -1212,25 +1258,40 @@ class GeolocateMissingModal extends Modal {
         }
     }
 
+    /** Set when the user cancels or closes; checked between entities. */
+    private cancelled = false;
+    private batchProgressEl: HTMLElement | null = null;
+
     private async geolocateAll(): Promise<void> {
         let success = 0;
         let failed = 0;
+        let processed = 0;
+        const total = this.locations.length;
 
         for (const entity of this.locations) {
+            // Cancellation. Without this the loop ran to completion after the modal was
+            // closed, still writing entity notes -- and offline, with five retries and
+            // exponential backoff per entity, that is 15s+ each: a hundred rows is well
+            // over twenty minutes of work nobody can stop.
+            if (this.cancelled) break;
+            processed++;
+            this.setBatchProgress(`Geocoding ${processed} of ${total}: ${entity.label}…`);
+
             try {
                 let address: string | undefined;
                 let city: string | undefined;
                 let state: string | undefined;
                 let country: string | undefined;
 
-                if (entity.type === EntityType.Location) {
-                    address = entity.properties.address as string;
-                    city = entity.properties.city as string;
-                    country = entity.properties.country as string;
-                } else if (entity.type === 'Address') {
+                const isAddress = isAddressEntityType(entity.type);
+                if (isAddress) {
                     address = entity.properties.street as string || entity.properties.full as string;
                     city = entity.properties.city as string;
                     state = entity.properties.state as string;
+                    country = entity.properties.country as string;
+                } else {
+                    address = entity.properties.address as string;
+                    city = entity.properties.city as string;
                     country = entity.properties.country as string;
                 }
 
@@ -1239,38 +1300,61 @@ class GeolocateMissingModal extends Modal {
                     city,
                     state,
                     country,
+                    // Progress in the modal, not a Notice per retry per entity: offline
+                    // that was four toasts times every row.
                     (attempt, maxAttempts, delaySeconds) => {
-                        new Notice(`Network error, retrying in ${delaySeconds}s... (attempt ${attempt}/${maxAttempts})`);
-                    }
+                        this.setBatchProgress(
+                            `Geocoding ${processed} of ${total}: ${entity.label} — retry ${attempt}/${maxAttempts} in ${delaySeconds}s`,
+                        );
+                    },
                 );
+
+                if (this.cancelled) break;
 
                 const updates: Record<string, unknown> = {
                     latitude: result.latitude,
-                    longitude: result.longitude
+                    longitude: result.longitude,
                 };
 
                 if (result.city && !city) updates.city = result.city;
-                if (result.state && !state && entity.type === 'Address') updates.state = result.state;
+                if (result.state && !state && isAddress) updates.state = result.state;
                 if (result.country && !country) updates.country = result.country;
-                if (result.postalCode && entity.type === 'Address' && !entity.properties.postalCode) {
+                if (result.postalCode && isAddress && !entity.properties.postalCode) {
                     updates.postalCode = result.postalCode;
                 }
 
                 await this.entityManager.updateEntity(entity.id, updates);
                 success++;
-
             } catch (error) {
                 console.error(`Failed to geocode ${entity.label}:`, error);
                 failed++;
             }
         }
 
-        new Notice(`Geocoded ${success} location(s). ${failed} failed.`);
-        await this.onComplete();
-        this.close();
+        const skipped = total - processed;
+        const parts = [`Geocoded ${success} location(s)`];
+        if (failed) parts.push(`${failed} failed`);
+        if (this.cancelled && skipped > 0) parts.push(`${skipped} not attempted (cancelled)`);
+        new Notice(`${parts.join('. ')}.`);
+
+        this.setBatchProgress('');
+        if (!this.cancelled) {
+            await this.onComplete();
+            this.close();
+        }
+    }
+
+    /** One line in the modal rather than a stream of toasts. */
+    private setBatchProgress(message: string): void {
+        if (!this.batchProgressEl) return;
+        this.batchProgressEl.setText(message);
+        this.batchProgressEl.style.display = message ? '' : 'none';
     }
 
     onClose(): void {
+        // Closing the modal cancels the batch. It used to keep running invisibly,
+        // writing notes and calling back into a view that might be gone.
+        this.cancelled = true;
         const { contentEl } = this;
         contentEl.empty();
     }

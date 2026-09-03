@@ -124,11 +124,21 @@ export type RetryStatusCallback = (attempt: number, maxAttempts: number, delaySe
 export class GeocodingService {
     private static readonly NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
     private static readonly NOMINATIM_REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse';
-    private static readonly USER_AGENT = 'OSINTCopilot-Obsidian-Plugin/1.0 (https://github.com/Probe-Point-Analytics-LLC/OSINT-Copilot-plugin)';
+    // Nominatim's policy requires a User-Agent that identifies the application. This
+    // still named the Obsidian plugin, which is not what is making the request.
+    private static readonly USER_AGENT = 'OSINTCopilot/3.0 (https://github.com/Probe-Point-Analytics-LLC/osint-copilot)';
     private static readonly REQUEST_TIMEOUT = 10000; // 10 seconds
 
-    // Rate limiting: track last request time
+    // Rate limiting: the timestamp of the next free slot, reserved on claim.
     private lastRequestTime: number = 0;
+    private nextRequestAt: number = 0;
+
+    /**
+     * Nominatim's policy requires that results are cached rather than re-requested.
+     * Bounded so a long session cannot grow it without limit.
+     */
+    private readonly cache = new Map<string, GeocodingResult>();
+    private static readonly MAX_CACHE_ENTRIES = 500;
     private static readonly MIN_REQUEST_INTERVAL = 1100; // 1.1 seconds between requests
 
     // Retry configuration
@@ -419,6 +429,12 @@ export class GeocodingService {
             );
         }
 
+        // Nominatim's policy requires caching results rather than re-requesting them, and
+        // a batch geocode legitimately repeats addresses (the same city on many entities).
+        const cacheKey = GeocodingService.cacheKeyFor(address, city, state, country);
+        const cached = this.cache.get(cacheKey);
+        if (cached) return cached;
+
         // Rate limiting: wait if needed
         await this.enforceRateLimit();
 
@@ -484,7 +500,7 @@ export class GeocodingService {
 
             const { city, state, country, postalCode } = extractAddressComponents(result.address);
 
-            return {
+            const geocoded: GeocodingResult = {
                 latitude: parseFloat(result.lat),
                 longitude: parseFloat(result.lon),
                 displayName: result.display_name,
@@ -494,6 +510,8 @@ export class GeocodingService {
                 postalCode,
                 confidence
             };
+            this.rememberResult(cacheKey, geocoded);
+            return geocoded;
 
         } catch (error) {
             // Re-throw GeocodingErrors as-is
@@ -604,13 +622,35 @@ export class GeocodingService {
     /**
      * Enforce rate limiting by waiting if necessary
      */
+    /**
+     * Nominatim allows an absolute maximum of one request per second.
+     *
+     * The slot is reserved *before* awaiting, not stamped after the request returns.
+     * Stamping afterwards meant concurrent callers all read the same lastRequestTime, all
+     * computed the same wait, and then all fired together -- a burst that earns a 429
+     * exactly when a batch geocode is running.
+     */
+    /** Case- and whitespace-insensitive, because these come from free-text frontmatter. */
+    private static cacheKeyFor(...parts: (string | undefined)[]): string {
+        return parts.map((p) => String(p ?? '').trim().toLowerCase()).join('|');
+    }
+
+    private rememberResult(key: string, result: GeocodingResult): void {
+        // Simple bound: drop the oldest insertion when full. A geocoding session is
+        // hundreds of lookups at most, so an LRU would be more machinery than it earns.
+        if (this.cache.size >= GeocodingService.MAX_CACHE_ENTRIES) {
+            const oldest = this.cache.keys().next().value as string | undefined;
+            if (oldest !== undefined) this.cache.delete(oldest);
+        }
+        this.cache.set(key, result);
+    }
+
     private async enforceRateLimit(): Promise<void> {
         const now = Date.now();
-        const timeSinceLastRequest = now - this.lastRequestTime;
-        
-        if (timeSinceLastRequest < GeocodingService.MIN_REQUEST_INTERVAL) {
-            const waitTime = GeocodingService.MIN_REQUEST_INTERVAL - timeSinceLastRequest;
-            console.debug(`[GeocodingService] Rate limiting: waiting ${waitTime}ms`);
+        const earliest = Math.max(now, this.nextRequestAt);
+        this.nextRequestAt = earliest + GeocodingService.MIN_REQUEST_INTERVAL;
+        const waitTime = earliest - now;
+        if (waitTime > 0) {
             await new Promise(resolve => setTimeout(resolve, waitTime));
         }
     }

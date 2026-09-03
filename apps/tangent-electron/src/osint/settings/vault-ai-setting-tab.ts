@@ -8,6 +8,10 @@ import {
 	ensureScriptsDefaultsInstalled,
 } from "../services/custom-vault-writer";
 import { runtimeSettingsVisibility } from "../chat/runtime-settings-visibility";
+import { host as osintHost } from "../host";
+import { basemapProblemMessage, OPEN_FREE_MAP_STYLES } from "../services/basemap/basemap-types";
+import type { VaultAISettings } from "./vault-ai-settings";
+import type { BasemapOpenResult } from "../host/types";
 import { CLAUDE_RUNTIME_ID, CODEX_RUNTIME_ID, getConfiguredRuntimeOptions, normalizeCustomRuntimeId, type CustomAgentRuntime } from "../services/agent-runtime/runtime-registry";
 import { createAgentProvider } from "../services/agent-runtime/create-agent-provider";
 import { HermesAgentProvider } from "../services/agent-runtime/hermes-agent-provider";
@@ -844,6 +848,120 @@ export class VaultAISettingTab extends PluginSettingTab {
 					}
 				}),
 			);
+
+		new Setting(containerEl).setName("Map").setHeading();
+
+		new Setting(containerEl)
+			.setName("Offline basemap")
+			.setDesc(
+				"A PMTiles archive read from disk — one file, no tile server, works with no network. " +
+				"This is the primary basemap: it is the only one that reveals nothing about what you are looking at. " +
+				"Get an extract for your area of interest from build.protomaps.com, or convert an existing " +
+				"MBTiles file with `pmtiles convert`.",
+			)
+			.addButton((btn) =>
+				btn
+					.setButtonText(
+						this.plugin.settings.mapOfflineBasemapPath
+							? "Change file…"
+							: "Choose a .pmtiles file…",
+					)
+					.onClick(async () => {
+						// The dialog is opened by the main process, which then remembers the
+						// path itself. The renderer never names a file: a byte-range read of
+						// a caller-supplied path would be an arbitrary-file-read primitive.
+						const result = await osintHost.basemap.pick();
+						if (!result) return;
+						// Named arms rather than `if (result.ok)`: the app builds with
+						// strict:false, which does not narrow on a boolean discriminant.
+						const failure = result as Extract<BasemapOpenResult, { ok: false }>;
+						const success = result as Extract<BasemapOpenResult, { ok: true }>;
+						if (!result.ok) {
+							new Notice(basemapProblemMessage(failure.problem, failure.path), 8000);
+							return;
+						}
+						this.plugin.settings.mapOfflineBasemapPath = success.archive.path;
+						await this.plugin.saveSettings();
+						new Notice("Offline basemap set. Reopen the map to use it.");
+						this.display();
+					}),
+			);
+
+		if (this.plugin.settings.mapOfflineBasemapPath) {
+			new Setting(containerEl)
+				.setName("Current archive")
+				.setDesc(this.plugin.settings.mapOfflineBasemapPath)
+				.addButton((btn) =>
+					btn
+						.setButtonText("Forget")
+						.setWarning()
+						.onClick(async () => {
+							await osintHost.basemap.forget();
+							this.plugin.settings.mapOfflineBasemapPath = "";
+							await this.plugin.saveSettings();
+							this.display();
+						}),
+				);
+		}
+
+		new Setting(containerEl)
+			.setName("Online basemap")
+			.setDesc(
+				"Off by default. Leaflet fetches tiles directly from the renderer, outside this app's " +
+				"network guard, so every tile request tells the provider the exact area you are viewing.",
+			)
+			.addDropdown((dd) => {
+				dd.addOption("none", "None — offline basemap or coordinate grid");
+				dd.addOption("openfreemap", "OpenFreeMap (open source, no API key)");
+				dd.addOption("custom", "Custom tile server");
+				dd.setValue(this.plugin.settings.mapOnlineTileProvider);
+				dd.onChange(async (value) => {
+					this.plugin.settings.mapOnlineTileProvider = value as VaultAISettings["mapOnlineTileProvider"];
+					await this.plugin.saveSettings();
+					this.display();
+				});
+			});
+
+		if (this.plugin.settings.mapOnlineTileProvider === "openfreemap") {
+			new Setting(containerEl)
+				.setName("OpenFreeMap style")
+				.setDesc("MIT licensed, no API key, no usage limits, commercial use permitted. Attribution is added automatically.")
+				.addDropdown((dd) => {
+					for (const style of OPEN_FREE_MAP_STYLES) dd.addOption(style, style);
+					dd.setValue(this.plugin.settings.mapOpenFreeMapStyle);
+					dd.onChange(async (value) => {
+						this.plugin.settings.mapOpenFreeMapStyle = value as VaultAISettings["mapOpenFreeMapStyle"];
+						await this.plugin.saveSettings();
+					});
+				});
+		}
+
+		if (this.plugin.settings.mapOnlineTileProvider === "custom") {
+			new Setting(containerEl)
+				.setName("Tile URL template")
+				.setDesc("Must contain {z}, {x} and {y}. Use a provider whose terms you have checked, under your own account.")
+				.addText((text) =>
+					text
+						.setPlaceholder("https://example.com/tiles/{z}/{x}/{y}.png")
+						.setValue(this.plugin.settings.mapCustomTileUrl)
+						.onChange(async (value) => {
+							this.plugin.settings.mapCustomTileUrl = value;
+							await this.plugin.saveSettings();
+						}),
+				);
+
+			new Setting(containerEl)
+				.setName("Attribution")
+				.setDesc("Shown on the map. Most providers require this.")
+				.addText((text) =>
+					text
+						.setValue(this.plugin.settings.mapCustomTileAttribution)
+						.onChange(async (value) => {
+							this.plugin.settings.mapCustomTileAttribution = value;
+							await this.plugin.saveSettings();
+						}),
+				);
+		}
 
 		new Setting(containerEl).setName("Graph view").setHeading();
 

@@ -263,21 +263,26 @@ export class OsintWorkspaceController {
     // Open or reveal the map view
     await this.openMapView();
 
-    // Wait a bit for the map to initialize, then focus on the location
-    setTimeout(() => {
-      const mapLeaves = this.plugin.app.workspace.getLeavesOfType(MAP_VIEW_TYPE);
-      if (mapLeaves.length > 0) {
-        const mapView = mapLeaves[0].view as MapView;
-        if (mapView && typeof mapView.focusLocation === 'function') {
-          // Refresh the map first to ensure the marker exists
-          void mapView.refresh();
-          // Then focus on the location
-          setTimeout(() => {
-            mapView.focusLocation(entityId);
-          }, 200);
-        }
-      }
-    }, 300);
+    const mapLeaves = this.plugin.app.workspace.getLeavesOfType(MAP_VIEW_TYPE);
+    const mapView = mapLeaves[0]?.view as MapView | undefined;
+    if (!mapView || typeof mapView.focusLocation !== 'function') {
+      new Notice('The map view could not be opened.');
+      return;
+    }
+
+    // Awaited, not two nested setTimeouts racing an un-awaited refresh(). The old code
+    // gave the map 300ms to exist and then the refresh 200ms to finish; on a cold vault
+    // the marker did not exist yet and the focus silently did nothing.
+    //
+    // whenLoaded() resolves when the view's async onOpen() has finished, so the map
+    // exists; refresh() is single-flight, so this awaits the run already in flight from
+    // onOpen() rather than starting a competing one.
+    await mapView.whenLoaded();
+    await mapView.refresh();
+
+    if (!mapView.focusLocation(entityId)) {
+      new Notice('That entity is not on the map yet. Try refreshing the map view.');
+    }
   }
   /**
    * Open the Chat View in the main editor area.

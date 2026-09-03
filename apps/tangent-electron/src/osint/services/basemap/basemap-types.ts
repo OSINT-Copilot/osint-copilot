@@ -16,7 +16,8 @@ export function rendererForTileType(tileType: number): BasemapRenderer | null {
 export function basemapProblemMessage(problem: BasemapProblem, path: string): string {
     switch (problem) {
         case 'not-configured':
-            return 'No offline basemap configured. The map shows a coordinate grid only.';
+            return 'No offline basemap configured — the map shows a coordinate grid only. '
+                + 'Add a .pmtiles archive under Settings \u2192 OSINT Copilot \u2192 Map.';
         case 'missing':
             return `Offline basemap not found at ${path}. It may be on a drive that isn't mounted.`;
         case 'not-a-file':
