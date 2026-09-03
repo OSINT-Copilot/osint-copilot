@@ -13,6 +13,7 @@ import { entityHasMapCoordinates } from '../ui/vault-op-previews';
 import { IpcPMTilesSource } from '../services/basemap/ipc-pmtiles-source';
 import {
     basemapProblemMessage,
+    normalizeBasemapTheme,
     isUsableTileUrl,
     rendererForTileType,
     tileUrlFromTileJson,
@@ -63,10 +64,43 @@ export interface MapLocation {
 }
 
 /** Always present, always offline: the map is never blank. */
-const GRID_LAYER_NAME = 'Coordinate grid';
-const OFFLINE_LAYER_NAME = 'Offline basemap';
-const CUSTOM_LAYER_NAME = 'Online tiles';
-const ONLINE_LAYER_NAME = 'OpenFreeMap';
+export const GRID_LAYER_NAME = 'Coordinate grid';
+export const OFFLINE_LAYER_NAME = 'Offline basemap';
+export const CUSTOM_LAYER_NAME = 'Online tiles';
+export const ONLINE_LAYER_NAME = 'OpenFreeMap';
+
+/** Shown only when the grid really is all there is, and phrased as a next step. */
+const NO_BASEMAP_HINT = 'No basemap \u2014 showing a coordinate grid. '
+    + 'Pick one in Settings \u2192 OSINT Copilot \u2192 Map.';
+
+/** Shown while a basemap is still resolving, so the wait is never an unexplained blank. */
+const LOADING_BASEMAP_HINT = 'Loading basemap\u2026';
+
+/**
+ * Which basemap wins when more than one becomes available.
+ *
+ * Three sources race for the map: the grid is synchronous, the online layer resolves a
+ * TileJSON over the network, and the offline archive opens a file over IPC. Whichever
+ * finished last used to be whichever the user got. Ranking them makes the outcome the
+ * same every time: an offline archive beats an online provider because it is the one that
+ * leaks nothing, and anything with imagery beats the bare grid.
+ */
+export const BASE_LAYER_RANK: Record<string, number> = {
+    [GRID_LAYER_NAME]: 0,
+    [CUSTOM_LAYER_NAME]: 1,
+    [ONLINE_LAYER_NAME]: 1,
+    [OFFLINE_LAYER_NAME]: 2,
+};
+
+/**
+ * The rule itself, separated from Leaflet so it can be tested without a map.
+ *
+ * `current` is the name of the layer on the map ('' before anything is added).
+ */
+export function shouldClaimBaseLayer(incoming: string, current: string, userPicked: boolean): boolean {
+    if (userPicked) return false;
+    return (BASE_LAYER_RANK[incoming] ?? 0) > (BASE_LAYER_RANK[current] ?? -1);
+}
 
 
 /**
@@ -168,6 +202,25 @@ export class MapView extends ItemView {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Leaflet layers by name
     private baseLayers: Record<string, any> = {};
     private activeBaseLayerName = '';
+    /** Set once the user picks a layer by hand; after that nothing auto-selects over them. */
+    private userPickedBaseLayer = false;
+    /**
+     * True while claimBaseLayer() is doing its own addTo().
+     *
+     * L.Control.Layers binds 'baselayerchange' to the LAYER's own add event
+     * (leaflet-src.js:5264 `layer.on('add remove', this._onLayerChange, this)`), not to the
+     * radio click -- its doc comment says otherwise. So a programmatic addTo() is
+     * indistinguishable from a user click unless we say so, and our first auto-claim would
+     * otherwise mark itself as a manual pick and freeze every later claim: an offline
+     * archive resolving after the online layer could never take precedence.
+     */
+    private claimingBaseLayer = false;
+    /** Basemap sources still resolving. The strip stays quiet until they have all landed. */
+    private basemapPending = 0;
+    /** A real failure (not merely "unconfigured"), shown only if nothing else arrives. */
+    private deferredBasemapProblem = '';
+    /** A *configured* offline archive that failed. Always surfaced, whatever else loads. */
+    private offlineBasemapProblem = '';
     private basemapStatusEl: HTMLElement | null = null;
     private offlineHandleId: string | null = null;
 
@@ -433,6 +486,7 @@ export class MapView extends ItemView {
     private async attachOpenFreeMapLayer(): Promise<void> {
         const settings = this.mapSettings();
         if (settings.provider !== 'openfreemap') return;
+        this.basemapPending++;
         try {
             // The tile URL lives inside the TileJSON under a dated path that rotates with
             // each weekly build, so it is resolved at runtime rather than hardcoded.
@@ -440,19 +494,19 @@ export class MapView extends ItemView {
             // same egress checks as every other request we control.
             const response = await requestUrl({ url: OPEN_FREE_MAP_TILEJSON, throw: false });
             if (response.status >= 400) {
-                this.setBasemapStatus(`OpenFreeMap is not reachable (HTTP ${response.status}).`);
+                this.deferredBasemapProblem = `OpenFreeMap is not reachable (HTTP ${response.status}). `
+                    + 'Check the network, or set an offline basemap in Settings \u2192 OSINT Copilot \u2192 Map.';
                 return;
             }
             const tileUrl = tileUrlFromTileJson(response.json);
             if (!tileUrl) {
-                this.setBasemapStatus('OpenFreeMap returned a tile list this build cannot use.');
+                this.deferredBasemapProblem = 'OpenFreeMap returned a tile list this build cannot use.';
                 return;
             }
             if (!this.map) return;
 
             const protomaps = await import('protomaps-leaflet');
-            const dark = document.body.classList.contains('dark');
-            const palette = dark ? DARK_PALETTE : LIGHT_PALETTE;
+            const palette = this.basemapPalette();
             const layer = protomaps.leafletLayer({
                 url: tileUrl,
                 paintRules: openMapTilesPaintRules(palette),
@@ -462,26 +516,44 @@ export class MapView extends ItemView {
                 maxDataZoom: 14,
             });
 
-            this.baseLayers[ONLINE_LAYER_NAME] = layer;
-            this.layerControl?.addBaseLayer(layer, ONLINE_LAYER_NAME);
+            this.claimBaseLayer(ONLINE_LAYER_NAME, layer);
         } catch (e) {
             console.error('[MapView] could not load the online basemap:', e);
-            this.setBasemapStatus('The online basemap could not be loaded.');
+            this.deferredBasemapProblem = 'The online basemap could not be loaded \u2014 '
+                + 'usually no network. Showing a coordinate grid; an offline basemap works air-gapped.';
+        } finally {
+            this.basemapPending--;
+            this.refreshBasemapStatus();
         }
     }
 
     private async attachOfflineBasemap(): Promise<void> {
+        this.basemapPending++;
+        try {
+            await this.openOfflineBasemap();
+        } finally {
+            this.basemapPending--;
+            this.refreshBasemapStatus();
+        }
+    }
+
+    private async openOfflineBasemap(): Promise<void> {
         let result;
         try {
             result = await host.basemap.open();
         } catch (e) {
-            this.setBasemapStatus(`Offline basemap unavailable: ${e instanceof Error ? e.message : String(e)}`);
+            this.offlineBasemapProblem = `Offline basemap unavailable: ${e instanceof Error ? e.message : String(e)}`;
             return;
         }
         if (!this.map) return;
 
         if (!result.ok) {
-            this.setBasemapStatus(basemapProblemMessage(result.problem, result.path));
+            // Not an error when nothing was ever configured -- that is the default state,
+            // and an online basemap may well be painting. Only a *configured* archive that
+            // failed is worth saying out loud.
+            if (result.problem !== 'not-configured') {
+                this.offlineBasemapProblem = basemapProblemMessage(result.problem, result.path);
+            }
             return;
         }
 
@@ -492,9 +564,8 @@ export class MapView extends ItemView {
             const header = await archive.getHeader();
             const kind = rendererForTileType(header.tileType);
             if (!kind) {
-                this.setBasemapStatus(
-                    `This archive holds tile type ${header.tileType}, which this build can't draw.`,
-                );
+                this.offlineBasemapProblem =
+                    `This archive holds tile type ${header.tileType}, which this build can't draw.`;
                 return;
             }
 
@@ -503,19 +574,13 @@ export class MapView extends ItemView {
                 : await this.createVectorPmtilesLayer(archive);
             if (!this.map || !layer) return;
 
-            this.baseLayers[OFFLINE_LAYER_NAME] = layer;
-            this.layerControl?.addBaseLayer(layer, OFFLINE_LAYER_NAME);
-
-            // Select it: an analyst who configured an offline archive wants it, and it
-            // leaks nothing.
-            this.map.removeLayer(this.baseLayers[GRID_LAYER_NAME]);
-            layer.addTo(this.map);
-            this.activeBaseLayerName = OFFLINE_LAYER_NAME;
-            this.applyZoomLimitsForActiveLayer();
-            this.setBasemapStatus('');
+            // Outranks every other source: an analyst who configured an archive wants it,
+            // and it is the only basemap that leaks nothing.
+            this.claimBaseLayer(OFFLINE_LAYER_NAME, layer);
         } catch (e) {
             console.error('[MapView] could not read the offline basemap:', e);
-            this.setBasemapStatus('The offline basemap could not be read. See Settings → OSINT Copilot.');
+            this.offlineBasemapProblem = 'The offline basemap could not be read. '
+                + 'See Settings \u2192 OSINT Copilot \u2192 Map.';
         }
     }
 
@@ -532,19 +597,133 @@ export class MapView extends ItemView {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private async createVectorPmtilesLayer(archive: any): Promise<any> {
         const protomaps = await import('protomaps-leaflet');
+        // `flavor`, NOT our openMapTiles* rules -- the two are mutually exclusive
+        // (protomaps-leaflet/src/frontends/leaflet.ts:82-91) and they target different
+        // schemas. Our rules name OpenMapTiles layers (transportation, boundary), which is
+        // right for OpenFreeMap; a .pmtiles extract from build.protomaps.com uses the
+        // Protomaps schema (roads, boundaries), where those rules would match nothing and
+        // the archive would draw as a blank sheet. `flavor` selects @protomaps/basemaps'
+        // own rules, which do match it.
+        //
+        // The theme is still honoured -- that part of the hardcoded `flavor: 'light'` was
+        // a real bug, painting a light basemap under a dark app.
         return protomaps.leafletLayer({
             attribution: 'Offline basemap',
             // The PMTiles instance directly, so tiles come through our IPC Source rather
             // than a URL. Labels are drawn with system fonts, so no glyph files ship.
             url: archive,
-            flavor: 'light',
+            flavor: this.basemapPalette() === DARK_PALETTE ? 'dark' : 'light',
         });
     }
 
-    /** With no basemap there is nothing meaningful past z10. */
+    /**
+     * The palette our vector rules paint with.
+     *
+     * Tangent themes by putting a class on <body>, so "auto" is read from there rather
+     * than from a media query, which would report the OS preference and disagree with the
+     * app whenever the user has overridden it.
+     */
+    private basemapPalette(): typeof LIGHT_PALETTE {
+        const theme = this.mapSettings().theme;
+        if (theme === 'light') return LIGHT_PALETTE;
+        if (theme === 'dark') return DARK_PALETTE;
+        return document.body.classList.contains('dark') ? DARK_PALETTE : LIGHT_PALETTE;
+    }
+
+    /**
+     * Register a basemap and take the map if it outranks whatever is on it.
+     *
+     * Every basemap goes through here so registration and selection cannot drift apart.
+     * They used to: the offline path added itself to the map, while the online path only
+     * put itself in the layer control -- so a user who switched the provider to
+     * OpenFreeMap in settings saw no change at all, and could only get imagery by finding
+     * the unlabelled layers button and clicking a radio.
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Leaflet layer
+    private claimBaseLayer(name: string, layer: any): void {
+        if (!this.map || !layer) return;
+
+        this.baseLayers[name] = layer;
+        this.layerControl?.addBaseLayer(layer, name);
+
+        // A hand-picked layer is the user's decision; a slow archive or TileJSON landing
+        // afterwards must not yank the map out from under them.
+        if (!shouldClaimBaseLayer(name, this.activeBaseLayerName, this.userPickedBaseLayer)) return;
+
+        const previous = this.baseLayers[this.activeBaseLayerName];
+        // A base layer's 'remove' maps to no event (leaflet-src.js:5333), so only the add
+        // needs guarding -- but the flag spans both so an exception cannot strand it set.
+        this.claimingBaseLayer = true;
+        try {
+            // Add first, remove second. The other order leaves the map with NO base layer
+            // if addTo() throws -- the exact blank canvas this change exists to prevent.
+            layer.addTo(this.map);
+            if (previous && previous !== layer) this.map.removeLayer(previous);
+        } finally {
+            this.claimingBaseLayer = false;
+        }
+        this.activeBaseLayerName = name;
+        this.applyZoomLimitsForActiveLayer();
+        this.markNoBasemapSurface();
+        this.refreshBasemapStatus();
+    }
+
+    /** Marks the canvas when the grid is all there is, so CSS can give it a map surface. */
+    private markNoBasemapSurface(): void {
+        const canvas = this.container?.querySelector('.leaflet-container')
+            ?? this.container?.closest('.leaflet-container');
+        canvas?.classList.toggle('osint-map-no-basemap', this.activeBaseLayerName === GRID_LAYER_NAME);
+    }
+
+    /**
+     * The status strip reflects the map's current state, not the last thing that failed.
+     *
+     * attachOfflineBasemap() runs unconditionally, so on a default install it reported
+     * "No offline basemap configured" even when OpenFreeMap was painting perfectly --
+     * a red warning sitting over a working map. The strip now says something only while
+     * the grid is genuinely all there is.
+     */
+    private refreshBasemapStatus(): void {
+        // Ahead of every early return below, or an offline failure would keep the deferred
+        // grid cap from ever being applied.
+        if (this.basemapPending === 0) this.applyZoomLimitsForActiveLayer();
+
+        // A configured archive that failed is reported even when an online basemap is
+        // painting happily. Staying quiet there would be the worse bug of the two: an
+        // analyst who set up an offline basemap precisely so they could work air-gapped
+        // would be silently served online tiles instead, and only find out in the field.
+        if (this.offlineBasemapProblem) {
+            this.setBasemapStatus(this.offlineBasemapProblem);
+            return;
+        }
+        if (this.activeBaseLayerName !== GRID_LAYER_NAME) {
+            this.setBasemapStatus('');
+            return;
+        }
+        if (this.basemapPending > 0) {
+            this.setBasemapStatus(LOADING_BASEMAP_HINT);
+            return;
+        }
+        // Nagging someone to pick a basemap they just deliberately picked away from is the
+        // same species of wrong message this whole change is about.
+        if (this.userPickedBaseLayer) {
+            this.setBasemapStatus('');
+            return;
+        }
+        this.setBasemapStatus(this.deferredBasemapProblem || NO_BASEMAP_HINT);
+    }
+
+    /**
+     * With no basemap there is nothing meaningful past z10.
+     *
+     * Not applied while a basemap is still resolving, though: capping at 10 during startup
+     * clamps the one fitAllMarkers() the view ever performs, and nothing re-fits once
+     * imagery arrives and the ceiling goes back up -- so a tight cluster of markers would
+     * open zoomed out and stay there.
+     */
     private applyZoomLimitsForActiveLayer(): void {
         if (!this.map) return;
-        const gridOnly = this.activeBaseLayerName === GRID_LAYER_NAME;
+        const gridOnly = this.activeBaseLayerName === GRID_LAYER_NAME && this.basemapPending === 0;
         this.map.setMaxZoom(gridOnly ? 10 : 19);
     }
 
@@ -554,14 +733,14 @@ export class MapView extends ItemView {
      * the same route OsintSettings.svelte uses. Every field is re-validated here because
      * this is a plain settings bag, not a typed channel.
      */
-    private mapSettings(): { provider: string; url: string; attribution: string; openFreeMapStyle: string } {
+    private mapSettings(): { provider: string; url: string; attribution: string; theme: string } {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- settings bag
         const s = (globalThis as any).osint?.plugin?.settings ?? {};
         return {
             provider: typeof s.mapOnlineTileProvider === 'string' ? s.mapOnlineTileProvider : 'none',
             url: typeof s.mapCustomTileUrl === 'string' ? s.mapCustomTileUrl : '',
             attribution: typeof s.mapCustomTileAttribution === 'string' ? s.mapCustomTileAttribution : '',
-            openFreeMapStyle: typeof s.mapOpenFreeMapStyle === 'string' ? s.mapOpenFreeMapStyle : 'positron',
+            theme: normalizeBasemapTheme(s.mapBasemapTheme),
         };
     }
 
@@ -569,7 +748,15 @@ export class MapView extends ItemView {
     private setBasemapStatus(message: string): void {
         if (!this.basemapStatusEl) return;
         this.basemapStatusEl.setText(message);
+        // The strip is narrow and the message is a full sentence, so the text was being
+        // clipped mid-word -- and the clipped half was the half telling the user what to
+        // do about it. The title makes the whole thing reachable on hover regardless.
+        this.basemapStatusEl.title = message;
         this.basemapStatusEl.style.display = message ? '' : 'none';
+        // Red is for something broken. A map with no basemap configured is a default, not
+        // a fault, and colouring it as one is what made a working map look broken.
+        const benign = message === NO_BASEMAP_HINT || message === LOADING_BASEMAP_HINT;
+        this.basemapStatusEl.classList.toggle('is-problem', !benign);
     }
 
     /**
@@ -684,44 +871,53 @@ export class MapView extends ItemView {
             zoomControl: true,
         });
 
-        // Basemaps.
+        // Basemaps, in precedence order: offline archive > online provider > grid.
         //
-        // No default online provider, deliberately. There is no key-free,
-        // commercially-permitted, global street-level raster basemap: OSM's tile policy
-        // forbids application use, CARTO requires an API key and an Enterprise licence
-        // for commercial use, and Esri's endpoint needs an ArcGIS entitlement.
+        // OpenFreeMap is the shipped default because it is MIT, key-free, unmetered and
+        // permitted commercially -- the constraint that ruled out OSM's own tiles (policy
+        // forbids application use), CARTO (API key, Enterprise licence for commercial
+        // use) and Esri (ArcGIS entitlement).
         //
-        // There is a second reason, specific to this product. Leaflet fetches tiles with
-        // <img src> straight out of the renderer, which bypasses osint:net.request and
-        // its SSRF allowlist entirely — so every tile is outbound HTTP carrying the exact
-        // z/x/y of what the analyst is looking at. That is a live feed of the case's
-        // bounding box to a third party. The offline archive is the primary basemap; an
-        // online provider is opt-in, with the user's own account and terms.
+        // The offline archive stays the basemap of record: it is the only one that leaks
+        // nothing, since tiles are fetched from the renderer and so sit outside
+        // osint:net.request and its allowlist. Analysts who must emit no tile traffic set
+        // the provider to "none" and get the grid.
         this.baseLayers = {};
 
+        // The grid is synchronous and cannot fail, so the map is never blank while the
+        // other sources resolve. Everything else outranks it and takes over on arrival.
         const grid = this.createGraticuleLayer();
         this.baseLayers[GRID_LAYER_NAME] = grid;
-
-        const custom = this.createCustomTileLayer();
-        if (custom) this.baseLayers[CUSTOM_LAYER_NAME] = custom;
-
-        // Added asynchronously; it is a vector source and its renderer is imported lazily.
-        void this.attachOpenFreeMapLayer();
-
-        // Starts on the grid so the map is never blank while the archive opens.
         grid.addTo(this.map);
         this.activeBaseLayerName = GRID_LAYER_NAME;
+        // Called here as well as on every layer change: the cap exists for exactly the
+        // grid-only user, and skipping it on the initial layer let that user zoom
+        // indefinitely into blank space.
+        this.applyZoomLimitsForActiveLayer();
+        this.markNoBasemapSurface();
 
         this.layerControl = L.control.layers(this.baseLayers, {}, { position: 'topright' });
         this.layerControl.addTo(this.map);
 
         this.map.on('baselayerchange', (e: { name: string }) => {
+            // Only a real click is a decision; our own claim is not.
+            if (!this.claimingBaseLayer) this.userPickedBaseLayer = true;
             this.activeBaseLayerName = e.name;
             this.applyZoomLimitsForActiveLayer();
+            this.markNoBasemapSurface();
+            this.refreshBasemapStatus();
         });
 
-        // The offline archive opens asynchronously; it is added and selected when ready.
+        // Synchronous, but claimed through the same path so precedence is decided in one
+        // place regardless of when each source becomes available.
+        const custom = this.createCustomTileLayer();
+        if (custom) this.claimBaseLayer(CUSTOM_LAYER_NAME, custom);
+
+        // Both resolve asynchronously -- one over the network, one over IPC. Whichever
+        // lands first no longer decides the outcome; BASE_LAYER_RANK does.
+        void this.attachOpenFreeMapLayer();
         void this.attachOfflineBasemap();
+        this.refreshBasemapStatus();
 
         L.control.scale({ imperial: false }).addTo(this.map);
 

@@ -1014,6 +1014,34 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
     if (typeof merged.extractionDebugRawCli !== 'boolean') {
       merged.extractionDebugRawCli = DEFAULT_SETTINGS.extractionDebugRawCli;
     }
+
+    // One-time basemap migration.
+    //
+    // "none" shipped as the default before there was any UI to change it, so every
+    // existing vault has it persisted -- and a persisted value beats a changed default,
+    // which would leave those users staring at the same empty map the new default exists
+    // to fix. The version marker means an analyst who later chooses "none" deliberately
+    // keeps it.
+    // Tested against `raw`, not `merged`: merged already carries the DEFAULT_SETTINGS
+    // value, so asking it whether the key was present always answers yes and the
+    // migration silently never runs.
+    if (!('mapSettingsVersion' in raw)) {
+      if (merged.mapOnlineTileProvider === 'none') {
+        merged.mapOnlineTileProvider = DEFAULT_SETTINGS.mapOnlineTileProvider;
+      }
+      merged.mapSettingsVersion = 1;
+      stripped = true;
+    }
+    // The four OpenFreeMap style names were never used by the renderer; the palette
+    // setting that replaced them normalizes anything it does not recognise.
+    if ('mapOpenFreeMapStyle' in merged) {
+      delete merged.mapOpenFreeMapStyle;
+      stripped = true;
+    }
+    if (merged.mapBasemapTheme !== 'auto' && merged.mapBasemapTheme !== 'light' && merged.mapBasemapTheme !== 'dark') {
+      merged.mapBasemapTheme = DEFAULT_SETTINGS.mapBasemapTheme;
+    }
+
     this.settings = merged as unknown as VaultAISettings;
     if (stripped) {
       await this.saveData(this.settings);

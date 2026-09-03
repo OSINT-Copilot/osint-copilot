@@ -2,11 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import {
     basemapProblemMessage,
     isUsableTileUrl,
-    openFreeMapStyleUrl,
+    normalizeBasemapTheme,
     tileUrlFromTileJson,
     rendererForTileType,
     OPEN_FREE_MAP_ATTRIBUTION,
-    OPEN_FREE_MAP_STYLES,
+    BASEMAP_THEMES,
 } from '../services/basemap/basemap-types';
 import {
     formatDegrees,
@@ -44,16 +44,23 @@ describe('basemap problem messages', () => {
 });
 
 describe('OpenFreeMap', () => {
-    it('builds a style URL for each published style', () => {
-        for (const style of OPEN_FREE_MAP_STYLES) {
-            expect(openFreeMapStyleUrl(style)).toBe(`https://tiles.openfreemap.org/styles/${style}`);
-        }
+    it('offers only the palettes this renderer can actually paint', () => {
+        // Deliberately not OpenFreeMap's published style names. We consume raw vector
+        // tiles and draw them with our own rules, so "positron"/"liberty" would be a
+        // promise the renderer cannot keep -- and they mean nothing for an offline
+        // archive, which the same palette has to cover.
+        expect([...BASEMAP_THEMES]).toEqual(['auto', 'light', 'dark']);
     });
 
-    it('falls back to positron rather than requesting a style that does not exist', () => {
-        // The value comes from a settings bag, so it can be anything.
-        expect(openFreeMapStyleUrl('nonsense')).toMatch(/\/positron$/);
-        expect(openFreeMapStyleUrl('')).toMatch(/\/positron$/);
+    it('falls back to following the app theme, including for the legacy style names', () => {
+        // The value comes from a settings bag, so it can be anything -- including a
+        // "positron" left behind by a build that offered the style dropdown.
+        expect(normalizeBasemapTheme('light')).toBe('light');
+        expect(normalizeBasemapTheme('dark')).toBe('dark');
+        expect(normalizeBasemapTheme('positron')).toBe('auto');
+        expect(normalizeBasemapTheme('liberty')).toBe('auto');
+        expect(normalizeBasemapTheme(undefined)).toBe('auto');
+        expect(normalizeBasemapTheme('')).toBe('auto');
     });
 
     it('carries the attribution OpenFreeMap requires', () => {

@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { createPopupContent, isAddressEntityType, isLocationEntityType, parseCoordinate } from '../views/map-view';
+import {
+    createPopupContent,
+    isAddressEntityType,
+    isLocationEntityType,
+    parseCoordinate,
+    shouldClaimBaseLayer,
+    GRID_LAYER_NAME,
+    ONLINE_LAYER_NAME,
+    CUSTOM_LAYER_NAME,
+    OFFLINE_LAYER_NAME,
+} from '../views/map-view';
 import { entityHasMapCoordinates } from '../ui/vault-op-previews';
 
 describe('isLocationEntityType', () => {
@@ -125,5 +135,41 @@ describe('entityHasMapCoordinates', () => {
         expect(entityHasMapCoordinates(at(undefined, -0.12))).toBe(false);
         expect(entityHasMapCoordinates(at('', ''))).toBe(false);
         expect(entityHasMapCoordinates(at(undefined, undefined))).toBe(false);
+    });
+});
+
+describe('shouldClaimBaseLayer', () => {
+    it('lets any imagery source take the map from the bare grid', () => {
+        // The grid is a placeholder while the real sources resolve, not a choice.
+        expect(shouldClaimBaseLayer(ONLINE_LAYER_NAME, GRID_LAYER_NAME, false)).toBe(true);
+        expect(shouldClaimBaseLayer(CUSTOM_LAYER_NAME, GRID_LAYER_NAME, false)).toBe(true);
+        expect(shouldClaimBaseLayer(OFFLINE_LAYER_NAME, GRID_LAYER_NAME, false)).toBe(true);
+    });
+
+    it('ranks the offline archive above every online provider', () => {
+        // It is the only basemap that emits no tile requests, so a configured archive
+        // wins regardless of which source happened to resolve first.
+        expect(shouldClaimBaseLayer(OFFLINE_LAYER_NAME, ONLINE_LAYER_NAME, false)).toBe(true);
+        expect(shouldClaimBaseLayer(OFFLINE_LAYER_NAME, CUSTOM_LAYER_NAME, false)).toBe(true);
+        expect(shouldClaimBaseLayer(ONLINE_LAYER_NAME, OFFLINE_LAYER_NAME, false)).toBe(false);
+        expect(shouldClaimBaseLayer(CUSTOM_LAYER_NAME, OFFLINE_LAYER_NAME, false)).toBe(false);
+    });
+
+    it('makes arrival order irrelevant between equally ranked online sources', () => {
+        // Whichever lands first keeps the map; the later one does not thrash it.
+        expect(shouldClaimBaseLayer(CUSTOM_LAYER_NAME, ONLINE_LAYER_NAME, false)).toBe(false);
+        expect(shouldClaimBaseLayer(ONLINE_LAYER_NAME, CUSTOM_LAYER_NAME, false)).toBe(false);
+    });
+
+    it('never overrides a layer the user picked by hand', () => {
+        // A slow archive resolving after the user chose the grid must not yank it back.
+        expect(shouldClaimBaseLayer(OFFLINE_LAYER_NAME, GRID_LAYER_NAME, true)).toBe(false);
+        expect(shouldClaimBaseLayer(ONLINE_LAYER_NAME, GRID_LAYER_NAME, true)).toBe(false);
+    });
+
+    it('claims onto an empty map and never re-claims the same layer', () => {
+        expect(shouldClaimBaseLayer(GRID_LAYER_NAME, '', false)).toBe(true);
+        expect(shouldClaimBaseLayer(OFFLINE_LAYER_NAME, OFFLINE_LAYER_NAME, false)).toBe(false);
+        expect(shouldClaimBaseLayer(GRID_LAYER_NAME, GRID_LAYER_NAME, false)).toBe(false);
     });
 });

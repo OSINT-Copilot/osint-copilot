@@ -58,15 +58,27 @@ export interface VaultAISettings {
 	activeGraphId: string;
 	graphWorkspaces: { id: string; name: string }[];
 	/**
-	 * Map basemap. Online tiles default to off: there is no key-free,
-	 * commercially-permitted global street-level raster provider, and a tile request is
-	 * outbound HTTP carrying the exact z/x/y of what the analyst is looking at — a live
-	 * feed of the case's bounding box to a third party, outside net-guard's allowlist
-	 * because Leaflet fetches tiles with <img src>.
+	 * Map basemap, defaulting to OpenFreeMap: MIT, no API key, no usage limits, and
+	 * commercial use permitted, so it can ship switched on.
+	 *
+	 * Precedence at runtime is offline archive > online provider > coordinate grid, so
+	 * configuring a PMTiles archive silently supersedes this without touching it, and an
+	 * air-gapped machine still gets the grid.
+	 *
+	 * "none" stays available for analysts who must emit no tile traffic at all. It is a
+	 * real consideration rather than a hypothetical: protomaps-leaflet fetches the vector
+	 * tiles from the renderer, outside net-guard's allowlist (only the TileJSON goes
+	 * through guarded IPC), so each tile is outbound HTTP carrying the z/x/y of what the
+	 * analyst is looking at.
 	 */
 	mapOnlineTileProvider: "none" | "openfreemap" | "custom";
-	/** One of OpenFreeMap's published styles. */
-	mapOpenFreeMapStyle: "positron" | "bright" | "liberty" | "dark";
+	/**
+	 * Palette for vector basemaps -- online and offline alike, since both are drawn by
+	 * our own rule set. "auto" follows the app theme.
+	 */
+	mapBasemapTheme: "auto" | "light" | "dark";
+	/** Bumped when a map default changes in a way that must reach existing vaults. */
+	mapSettingsVersion: number;
 	mapCustomTileUrl: string;
 	mapCustomTileAttribution: string;
 	/** Display copy of the archive main remembers in userData; main is authoritative. */
@@ -117,8 +129,9 @@ export const DEFAULT_SETTINGS: VaultAISettings = {
 	lockedVaultPaths: [],
 	activeGraphId: "default",
 	graphWorkspaces: [{ id: "default", name: "Default" }],
-	mapOnlineTileProvider: "none",
-	mapOpenFreeMapStyle: "positron",
+	mapOnlineTileProvider: "openfreemap",
+	mapBasemapTheme: "auto",
+	mapSettingsVersion: 1,
 	mapCustomTileUrl: "",
 	mapCustomTileAttribution: "",
 	mapOfflineBasemapPath: "",

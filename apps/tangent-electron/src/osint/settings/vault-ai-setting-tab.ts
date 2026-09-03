@@ -9,7 +9,7 @@ import {
 } from "../services/custom-vault-writer";
 import { runtimeSettingsVisibility } from "../chat/runtime-settings-visibility";
 import { host as osintHost } from "../host";
-import { basemapProblemMessage, OPEN_FREE_MAP_STYLES } from "../services/basemap/basemap-types";
+import { basemapProblemMessage } from "../services/basemap/basemap-types";
 import type { VaultAISettings } from "./vault-ai-settings";
 import type { BasemapOpenResult } from "../host/types";
 import { CLAUDE_RUNTIME_ID, CODEX_RUNTIME_ID, getConfiguredRuntimeOptions, normalizeCustomRuntimeId, type CustomAgentRuntime } from "../services/agent-runtime/runtime-registry";
@@ -907,8 +907,10 @@ export class VaultAISettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Online basemap")
 			.setDesc(
-				"Off by default. Leaflet fetches tiles directly from the renderer, outside this app's " +
-				"network guard, so every tile request tells the provider the exact area you are viewing.",
+				"On by default, using OpenFreeMap. Tiles are fetched directly from the renderer, " +
+				"outside this app's network guard, so every tile request tells the provider the exact " +
+				"area you are viewing. Set this to None to stop that; an offline basemap gives you " +
+				"imagery with no requests at all.",
 			)
 			.addDropdown((dd) => {
 				dd.addOption("none", "None — offline basemap or coordinate grid");
@@ -922,19 +924,24 @@ export class VaultAISettingTab extends PluginSettingTab {
 				});
 			});
 
-		if (this.plugin.settings.mapOnlineTileProvider === "openfreemap") {
-			new Setting(containerEl)
-				.setName("OpenFreeMap style")
-				.setDesc("MIT licensed, no API key, no usage limits, commercial use permitted. Attribution is added automatically.")
-				.addDropdown((dd) => {
-					for (const style of OPEN_FREE_MAP_STYLES) dd.addOption(style, style);
-					dd.setValue(this.plugin.settings.mapOpenFreeMapStyle);
-					dd.onChange(async (value) => {
-						this.plugin.settings.mapOpenFreeMapStyle = value as VaultAISettings["mapOpenFreeMapStyle"];
-						await this.plugin.saveSettings();
-					});
+		// Not inside the OpenFreeMap branch: both vector basemaps -- online and offline --
+		// are drawn by our own rule set, so the palette applies to either.
+		new Setting(containerEl)
+			.setName("Basemap colours")
+			.setDesc(
+				"Applies to the OpenFreeMap basemap and to offline vector archives. " +
+				"Reopen the map to see a change.",
+			)
+			.addDropdown((dd) => {
+				dd.addOption("auto", "Follow the app theme");
+				dd.addOption("light", "Light");
+				dd.addOption("dark", "Dark");
+				dd.setValue(this.plugin.settings.mapBasemapTheme);
+				dd.onChange(async (value) => {
+					this.plugin.settings.mapBasemapTheme = value as VaultAISettings["mapBasemapTheme"];
+					await this.plugin.saveSettings();
 				});
-		}
+			});
 
 		if (this.plugin.settings.mapOnlineTileProvider === "custom") {
 			new Setting(containerEl)

@@ -49,24 +49,30 @@ export function isUsableTileUrl(url: string): boolean {
  * commercial use explicitly permitted -- the only provider found that is all four and
  * still global and street-level. Data is OpenStreetMap via the OpenMapTiles schema.
  *
- * It serves vector tiles, so it is drawn by MapLibre GL behind Leaflet rather than as
- * plain raster. The whole stack is open source and self-hostable, so an organisation can
- * point `mapOpenFreeMapStyleUrl` at its own instance and keep the same code path.
+ * We consume its raw vector tiles and draw them with our own rule set in
+ * openmaptiles-theme.ts, NOT its published style JSON. So there is deliberately no
+ * "positron / bright / liberty / dark" setting: offering OpenFreeMap's style names would
+ * be a promise this renderer cannot keep.
+ *
+ * BASEMAP_THEMES is what the renderer can honour. It reaches the two vector basemaps by
+ * different routes -- OpenFreeMap through our OpenMapTiles palette, an offline archive
+ * through protomaps' own light/dark flavor, because the two use different tile schemas --
+ * but the user-visible choice is the same either way.
  */
-export const OPEN_FREE_MAP_STYLES = ['positron', 'bright', 'liberty', 'dark'] as const;
-export type OpenFreeMapStyle = typeof OPEN_FREE_MAP_STYLES[number];
+export const BASEMAP_THEMES = ['auto', 'light', 'dark'] as const;
+export type BasemapTheme = typeof BASEMAP_THEMES[number];
+
+/** Anything unrecognised, including the legacy style names, falls back to following the app. */
+export function normalizeBasemapTheme(value: unknown): BasemapTheme {
+    return (BASEMAP_THEMES as readonly string[]).includes(String(value))
+        ? (value as BasemapTheme)
+        : 'auto';
+}
 
 /** Required by OpenFreeMap's terms. The OpenFreeMap credit itself is optional but asked for. */
 export const OPEN_FREE_MAP_ATTRIBUTION =
     '<a href="https://openfreemap.org">OpenFreeMap</a> © <a href="https://www.openmaptiles.org/">OpenMapTiles</a> ' +
     'Data from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
-
-export function openFreeMapStyleUrl(style: string): string {
-    const chosen = (OPEN_FREE_MAP_STYLES as readonly string[]).includes(style)
-        ? style
-        : 'positron';
-    return `https://tiles.openfreemap.org/styles/${chosen}`;
-}
 
 /** OpenFreeMap's TileJSON. The tile URL inside it carries a build date that rotates. */
 export const OPEN_FREE_MAP_TILEJSON = 'https://tiles.openfreemap.org/planet';

@@ -3025,10 +3025,17 @@ svg.leaflet-image-layer.leaflet-interactive path {
    case, and the case where a tile provider is down. Markers on a blank canvas
    say nothing; markers against a labelled grid are positioned.
    ============================================================================ */
+/*
+ * A text token, not a chrome token. --background-modifier-border against a dark
+ * --background-primary canvas was very nearly invisible, so the grid that is supposed to
+ * say "this map works, it just has no imagery" read as an empty broken pane instead --
+ * which is exactly how it got reported.
+ */
 .osint-map-graticule {
-  stroke: var(--background-modifier-border);
+  stroke: var(--text-faint, var(--text-muted));
+  stroke-opacity: 0.5;
   stroke-width: 1;
-  stroke-dasharray: 2 4;
+  stroke-dasharray: 4 6;
   fill: none;
 }
 .osint-map-graticule-tooltip {
@@ -3041,14 +3048,37 @@ svg.leaflet-image-layer.leaflet-interactive path {
 }
 .osint-map-graticule-tooltip::before { display: none; }
 
+/*
+ * A full sentence in a flex toolbar. It used to be capped at 40ch with nowrap and an
+ * ellipsis, which cut the message in half -- and the half it cut was the one telling the
+ * user what to do. It wraps to two lines instead, and only turns warning-coloured when
+ * something is actually wrong (.is-problem); an unconfigured basemap is a default.
+ */
 .graph_copilot-map-basemap-status {
-  color: var(--text-warning, var(--text-muted));
+  color: var(--text-muted);
   font-size: 12px;
   align-self: center;
-  max-width: 40ch;
+  max-width: 46ch;
+  line-height: 1.3;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/*
+ * With no basemap the canvas was the same flat colour as the surrounding app chrome, so
+ * there was no visual edge where the map began. A slightly distinct surface makes the
+ * pane read as a map with nothing on it rather than as a failed panel.
+ */
+.leaflet-container.osint-map-no-basemap {
+  background:
+    linear-gradient(0deg, var(--background-modifier-hover, transparent), var(--background-modifier-hover, transparent)),
+    var(--background-primary);
+}
+
+.graph_copilot-map-basemap-status.is-problem {
+  color: var(--text-warning, var(--text-error, var(--text-muted)));
 }
 
 .graph_copilot-map-error {
