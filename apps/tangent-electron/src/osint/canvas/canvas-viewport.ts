@@ -42,12 +42,19 @@ export const MIN_SCALE = 0.02;
 export const MAX_SCALE = 4;
 
 /**
- * Below this scale a card renders as a cheap title-and-excerpt placeholder instead of a
- * live NodePreview. Each NodePreview builds a full MarkdownEditor with decorators and
+ * Below this scale a NOTE or PDF card renders as a cheap placeholder instead of a live
+ * NodePreview. Each NodePreview builds a full MarkdownEditor with decorators and
  * autocompleters, which is far too expensive to mount for every card on a large board —
  * Tangent virtualizes its own Cards lens for exactly this reason.
+ *
+ * Images are deliberately exempt: an <img> costs nothing like an editor, and a picture is
+ * most useful precisely when you have zoomed out to take in the whole board. Gating them
+ * with the same number turned every photo into a filename.
+ *
+ * 0.35 rather than 0.5 because a whole-board view lands around there, and at 0.5 the
+ * common "fit everything" zoom fell just below the line and blanked every note at once.
  */
-export const LIVE_PREVIEW_MIN_SCALE = 0.5;
+export const LIVE_PREVIEW_MIN_SCALE = 0.35;
 
 export function defaultViewport(): Viewport {
     return { x: 0, y: 0, scale: 1 };

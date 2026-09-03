@@ -105,6 +105,14 @@ $: cardNodes = mountedNodes.filter((n) => n.type !== 'group')
 $: livePreviews = viewport.scale >= LIVE_PREVIEW_MIN_SCALE
 
 onMount(() => {
+	// Tangent's DirectoryStore is a SelfStore, so it can be subscribed to. Every change
+	// re-resolves the file cards, which is what lets a just-imported image stop reading
+	// "missing from the vault" the moment the index catches up.
+	const directory = workspace?.directoryStore
+	if (typeof directory?.subscribe === 'function') {
+		unsubscribeDirectory = directory.subscribe(() => { directoryVersion += 1 })
+	}
+
 	void store.load().then(() => {
 		entityIndex = entitiesByNotePath()
 		// Frame the board on open. Without content this leaves the default viewport.
@@ -116,6 +124,7 @@ onMount(() => {
 })
 
 onDestroy(() => {
+	unsubscribeDirectory?.()
 	// Flushes a change still inside the save debounce, so closing the panel cannot lose
 	// the last edit.
 	void store.dispose()
@@ -434,30 +443,69 @@ function fitAll() {
 	viewport = fitToRects(nodes.map(nodeRect), width, height)
 }
 
+/** The extension of a card's file, lowercase and with the dot. */
+function extensionOf(path: string): string {
+	const dot = path.lastIndexOf('.')
+	return dot >= 0 ? path.slice(dot).toLowerCase() : ''
+}
+
+const IMAGE_EXTENSIONS = /^\.(png|jpe?g|gif|webp|bmp|avif|svg)$/
+const MEDIA_EXTENSIONS = /^\.(mp3|wav|ogg|flac|m4a|mp4|webm|mov|mkv|avi)$/
+
 /**
- * Whether NodePreview will actually draw something for this node.
+ * How a file card should draw itself.
  *
- * It handles notes, folders and embeds (image/audio/video/pdf) and silently renders
- * nothing for everything else, so a .csv or .docx card came out blank with no hint that
- * the file was perfectly fine.
+ * Images are deliberately NOT routed through NodePreview. Two reasons: NodePreview is
+ * gated behind the zoom threshold, which exists for the MarkdownEditor a note card builds
+ * and has nothing to do with an image; and an <img> is cheap enough to show at any zoom,
+ * which is exactly when you want a picture to be recognisable. Notes and PDFs keep the
+ * gate, because those really are expensive.
  */
-function isPreviewable(target: any): boolean {
-	if (!target) return false
-	if (Array.isArray(target.children)) return true
-	const name: string = target.name ?? ''
-	const dot = name.lastIndexOf('.')
-	const extension: string = (target.fileType ?? (dot >= 0 ? name.slice(dot) : '')).toLowerCase()
-	if (extension === '.md' || extension === '') return true
-	return /^\.(png|jpe?g|gif|webp|bmp|avif|svg|pdf|mp3|wav|ogg|m4a|mp4|webm|mov)$/.test(extension)
+function cardKind(path: string): 'image' | 'note' | 'pdf' | 'media' | 'other' {
+	const extension = extensionOf(path)
+	if (IMAGE_EXTENSIONS.test(extension)) return 'image'
+	if (extension === '.pdf') return 'pdf'
+	if (MEDIA_EXTENSIONS.test(extension)) return 'media'
+	if (extension === '.md' || extension === '.mdx' || extension === '') return 'note'
+	return 'other'
 }
 
 /**
- * Resolves a card's file to the Tangent tree node NodePreview renders.
+ * A URL the renderer can load a vault file from.
+ *
+ * The same technique Tangent uses for its own image embeds (EmbedFile.cacheBustPath): the
+ * absolute filesystem path, which resolves under the file:// origin this window is loaded
+ * from, plus the mtime so a replaced file is not served from cache. Notably NOT
+ * getResourcePath's osint-vault:// URL, which no protocol handler serves.
+ */
+function fileUrl(path: string, target: any): string {
+	const absolute = absoluteVaultPath(path).replace(/#/g, encodeURIComponent('#'))
+	const stamp = target?.modified ?? target?.stat?.mtime ?? ''
+	return stamp ? `${absolute}?t=${stamp}` : absolute
+}
+
+/**
+ * Bumped whenever Tangent's index changes, purely so the template re-resolves.
+ *
+ * A file imported into the vault is not in directoryStore the instant it is written --
+ * Tangent indexes it from its own filesystem watcher a moment later. treeNodeFor is a
+ * plain call from the template, so the first "not found" stuck forever and a just-dropped
+ * image read "missing from the vault" until the board was reopened.
+ */
+let directoryVersion = 0
+let unsubscribeDirectory: (() => void) | null = null
+
+/**
+ * Resolves a card's file to the Tangent tree node.
  *
  * JSON Canvas stores vault-relative paths; directoryStore is keyed by absolute path, so
  * this has to convert. Without it every note card rendered as "missing from the vault".
+ *
+ * `version` is unused, and is a parameter so that call sites in the template name it and
+ * Svelte re-runs them when the index changes.
  */
-function treeNodeFor(path: string) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function treeNodeFor(path: string, version = directoryVersion) {
 	return workspace?.directoryStore?.get?.(absoluteVaultPath(path)) ?? null
 }
 
@@ -490,7 +538,13 @@ function openNode(node: CanvasNode) {
 }
 
 /**
- * Screen-space rect for a world rect, so cards can be absolutely positioned.
+ * Where a card sits on screen, and how big it is in WORLD units.
+ *
+ * The card is positioned in screen pixels but sized in world pixels and then scaled with a
+ * CSS transform. Sizing it in screen pixels instead -- which is what this used to do --
+ * left the card's CONTENTS rendering at 1:1, so a note preview inside a half-size card
+ * showed full-size text: a giant title overflowing a small box. Scaling the whole card
+ * makes text, images and previews shrink together, which is what a canvas is supposed to do.
  *
  * Takes the viewport as an argument rather than closing over it so that every call site
  * names it, and Svelte therefore re-runs the expression when it changes.
@@ -499,7 +553,9 @@ function screenRect(rect: Rect, view: Viewport) {
 	const topLeft = worldToScreen(view, rect)
 	return {
 		left: topLeft.x, top: topLeft.y,
-		width: rect.width * view.scale, height: rect.height * view.scale,
+		// World units; the transform below turns them into screen size.
+		width: rect.width, height: rect.height,
+		scale: view.scale,
 	}
 }
 
@@ -638,6 +694,7 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 				class:selected={docState.selectedNodes.has(node.id)}
 				style:left="{box.left}px" style:top="{box.top}px"
 				style:width="{box.width}px" style:height="{box.height}px"
+				style:transform="scale({box.scale})"
 				on:pointerdown={(e) => onCardPointerDown(e, node)}
 			>
 				<span class="canvas-group-label">{(node as CanvasGroupNode).label ?? ''}</span>
@@ -694,6 +751,8 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 				class:is-entity={!!entity}
 				style:left="{box.left}px" style:top="{box.top}px"
 				style:width="{box.width}px" style:height="{box.height}px"
+				style:transform="scale({box.scale})"
+				style:--handle-scale={1 / box.scale}
 				style:--entity-color={entity?.color ?? 'transparent'}
 				on:pointerdown={(e) => onCardPointerDown(e, node)}
 				on:dblclick={() => openNode(node)}
@@ -712,19 +771,48 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 					</div>
 				{:else if node.type === 'file'}
 					{@const path = (node as CanvasFileNode).file}
-					{@const target = treeNodeFor(path)}
-					{#if target && livePreviews && isPreviewable(target)}
+					{@const target = treeNodeFor(path, directoryVersion)}
+					{@const kind = cardKind(path)}
+					{#if !target}
+						<div class="card-stub">
+							<span class="stub-name">{path.split('/').pop()}</span>
+							<span class="stub-missing">missing from the vault</span>
+						</div>
+					{:else if kind === 'image'}
+						<!--
+						  A plain <img>, not NodePreview. NodePreview is gated behind the zoom
+						  threshold that exists for the MarkdownEditor a note card builds, which
+						  has nothing to do with a picture -- and a picture is most useful
+						  precisely when you have zoomed out to see the whole board.
+						-->
+						<figure class="card-image">
+							<img src={fileUrl(path, target)} alt={path.split('/').pop()} loading="lazy" />
+							<figcaption>{path.split('/').pop()}</figcaption>
+						</figure>
+					{:else if kind === 'media'}
+						<div class="card-media">
+							{#if /\.(mp4|webm|mov|mkv|avi)$/i.test(path)}
+								<!-- svelte-ignore a11y-media-has-caption -->
+								<video src={fileUrl(path, target)} controls preload="metadata"></video>
+							{:else}
+								<audio src={fileUrl(path, target)} controls preload="metadata"></audio>
+							{/if}
+							<span class="stub-name">{path.split('/').pop()}</span>
+						</div>
+					{:else if (kind === 'note' || kind === 'pdf') && livePreviews}
 						<div class="card-preview"><NodePreview item={target} layout="fill" background="none" /></div>
 					{:else}
 						<div class="card-stub">
-							<span class="stub-name">{path.split('/').pop()}</span>
-							{#if !target}
-								<span class="stub-missing">missing from the vault</span>
-							{:else if !isPreviewable(target)}
-								<!-- NodePreview handles notes, folders and embeds and renders
-								     nothing at all for anything else -- a blank card with no
+							<span class="stub-name">{path.replace(/\.(md|mdx)$/i, '').split('/').pop()}</span>
+							{#if kind === 'note' || kind === 'pdf'}
+								<!-- Zoomed out past the point where mounting an editor is worth it. -->
+								<span class="stub-kind">{kind === 'pdf' ? 'PDF' : 'Note'}</span>
+								<span class="stub-hint">Zoom in to preview</span>
+							{:else}
+								<!-- NodePreview draws nothing at all for anything but notes,
+								     folders and embeds, so these came out blank with no
 								     explanation. Say what the file is instead. -->
-								<span class="stub-kind">{path.split('.').pop()?.toUpperCase()} file</span>
+								<span class="stub-kind">{(extensionOf(path).slice(1) || 'file').toUpperCase()} file</span>
 								<span class="stub-hint">Double-click to open</span>
 							{/if}
 						</div>
@@ -781,7 +869,8 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 			{@const box = screenRect(rectFromCorners(gesture.originWorld, gesture.currentWorld), viewport)}
 			<div class="canvas-marquee"
 				style:left="{box.left}px" style:top="{box.top}px"
-				style:width="{box.width}px" style:height="{box.height}px"></div>
+				style:width="{box.width}px" style:height="{box.height}px"
+				style:transform="scale({box.scale})"></div>
 		{/if}
 
 		{#if docState.loaded && nodes.length === 0}
@@ -914,6 +1003,9 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 
 .canvas-card {
 	position: absolute;
+	/* The box is in world units and scaled from its top-left, so its contents scale with
+	   it rather than rendering at 1:1 inside a shrunken frame. */
+	transform-origin: top left;
 	box-sizing: border-box;
 	background: var(--background-primary-alt, var(--background-primary));
 	border: 1px solid var(--background-modifier-border);
@@ -936,6 +1028,43 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 .entity-row span:first-child { opacity: .75; }
 
 .card-preview { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+
+.card-image {
+	margin: 0;
+	flex: 1 1 auto;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+}
+.card-image img {
+	flex: 1 1 auto;
+	min-height: 0;
+	width: 100%;
+	/* contain, not cover: an evidence photo must not be silently cropped by the shape of
+	   the card it happens to be in. */
+	object-fit: contain;
+	background: var(--background-primary);
+}
+.card-image figcaption {
+	flex: 0 0 auto;
+	padding: 4px 8px 6px;
+	font-size: 11px;
+	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.card-media {
+	flex: 1 1 auto;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 6px;
+	padding: 8px;
+}
+.card-media video { width: 100%; min-height: 0; flex: 1 1 auto; object-fit: contain; }
+.card-media audio { width: 100%; }
 .card-stub, .card-text { padding: 10px; overflow: hidden; }
 .card-text { white-space: pre-wrap; font-size: 13px; }
 
@@ -969,6 +1098,7 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 
 .canvas-group {
 	position: absolute;
+	transform-origin: top left;
 	box-sizing: border-box;
 	border: 2px dashed var(--background-modifier-border);
 	border-radius: 10px;
@@ -990,10 +1120,13 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 	background: var(--text-accent);
 	cursor: crosshair;
 }
-.connect-handle.top { top: -6px; left: calc(50% - 5px); }
-.connect-handle.bottom { bottom: -6px; left: calc(50% - 5px); }
-.connect-handle.left { left: -6px; top: calc(50% - 5px); }
-.connect-handle.right { right: -6px; top: calc(50% - 5px); }
+/* Counter-scaled: without this a handle on a zoomed-out board is a couple of pixels
+   across and effectively ungrabbable. */
+.connect-handle, .resize-handle { transform: scale(var(--handle-scale, 1)); }
+.connect-handle.top { transform-origin: center top; top: -6px; left: calc(50% - 5px); }
+.connect-handle.bottom { transform-origin: center bottom; bottom: -6px; left: calc(50% - 5px); }
+.connect-handle.left { transform-origin: left center; left: -6px; top: calc(50% - 5px); }
+.connect-handle.right { transform-origin: right center; right: -6px; top: calc(50% - 5px); }
 
 .resize-handle {
 	position: absolute;
@@ -1003,10 +1136,12 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 	border: none;
 	background: linear-gradient(135deg, transparent 50%, var(--text-accent) 50%);
 	cursor: nwse-resize;
+	transform-origin: right bottom;
 }
 
 .canvas-marquee {
 	position: absolute;
+	transform-origin: top left;
 	border: 1px solid var(--text-accent);
 	background: var(--text-accent);
 	opacity: .15;
