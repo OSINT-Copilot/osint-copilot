@@ -40,7 +40,19 @@ $: {
 		document.body.classList.remove('focusing')
 	}
 }
-$: topCommandHandler = createCommandHandler(Object.values(workspace.commands).filter(c => !c.group || c.group === 'Pane'))
+// Rebuilt when the registry grows, not snapshotted once at mount: OSINT Copilot
+// registers its plugin commands after its async startup, and a handler built at mount
+// never saw them, so a shortcut assigned to one of them could not fire.
+let topCommandHandler: (event: KeyboardEvent) => void
+let topCommandCount = -1
+function currentTopCommandHandler() {
+	const all = Object.values(workspace.commands)
+	if (all.length !== topCommandCount) {
+		topCommandCount = all.length
+		topCommandHandler = createCommandHandler(all.filter(c => !c.group || c.group === 'Pane'))
+	}
+	return topCommandHandler
+}
 
 // Top bar
 let hoveringForTopBar = false
@@ -176,7 +188,7 @@ function onWindowKeydown(event: KeyboardEvent) {
 	}
 
 	// Fallback to commands
-	topCommandHandler(event)
+	currentTopCommandHandler()(event)
 }
 
 function onWindowAuxClick(event: MouseEvent) {

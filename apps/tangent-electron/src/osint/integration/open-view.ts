@@ -124,8 +124,12 @@ export function show(node: TangentNodeLike): void {
         return;
     }
 
-    if (tangent.thread.value.includes(node)) {
-        tangent.updateThread({ currentNode: node, thread: 'retain' });
+    // By path, not identity: a session restored with the marker file missing carries a
+    // placeholder node for it, and nodeFor() then creates a fresh one. Identity said
+    // "not in the thread" and, in alongside mode, appended a second pane for the same view.
+    const already = tangent.thread.value.find((n) => n.path === node.path);
+    if (already) {
+        tangent.updateThread({ currentNode: already, thread: 'retain' });
         raiseFocusOutOfMap();
         return;
     }

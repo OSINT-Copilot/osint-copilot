@@ -40,6 +40,8 @@ const MANIFEST = {
 };
 
 let current: OsintRuntime | null = null;
+/** The start in progress, so two overlapping calls share one plugin instead of building two. */
+let starting: Promise<OsintRuntime> | null = null;
 
 /**
  * The live runtime, or null before startup / after teardown.
@@ -63,7 +65,22 @@ export async function startOsintCopilot(tangentWorkspace: {
     viewState: { tangent: { updateThread(options: unknown): void } };
 }): Promise<OsintRuntime> {
     if (current) return current;
+    if (starting) return starting;
+    starting = startOsintCopilotUncached(tangentWorkspace).catch((e) => {
+        // Published so the view host and the settings page can say "did not start" at
+        // once, rather than each waiting out a 60-second timeout and then blaming view
+        // registration. App.svelte's own catch only logs.
+        publishOsintPluginState({ ready: false, settings: null, failed: String(e?.message ?? e) });
+        throw e;
+    });
+    try {
+        return await starting;
+    } finally {
+        starting = null;
+    }
+}
 
+async function startOsintCopilotUncached(tangentWorkspace: Parameters<typeof startOsintCopilot>[0]): Promise<OsintRuntime> {
     // Obsidian patches createEl/createDiv/addClass/empty/setCssProps onto HTMLElement,
     // and the plugin calls them about 1,100 times — including from constructors, so
     // this has to happen before anything is built. Idempotent.
@@ -149,6 +166,6 @@ export async function startOsintCopilot(tangentWorkspace: {
     // the plugin without threading it through Tangent's own object graph.
     (globalThis as any).osint = current;
 
-    console.log(`[osint] started in ${vaultRoot}`);
+    console.debug(`[osint] started in ${vaultRoot}`);
     return current;
 }

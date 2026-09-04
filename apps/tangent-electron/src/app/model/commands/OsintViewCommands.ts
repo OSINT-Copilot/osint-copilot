@@ -13,7 +13,7 @@
 import type Workspace from '../Workspace'
 import WorkspaceCommand from './WorkspaceCommand'
 import type { CommandContext } from './Command'
-import { OSINT_VIEWS, type OsintViewDescriptor } from 'osint/integration/osint-view-types'
+import { OSINT_VIEWS, nodePathFor, type OsintViewDescriptor } from 'osint/integration/osint-view-types'
 import { osintPluginState, graphFeaturesEnabled } from 'osint/integration/osint-plugin-state'
 
 /**
@@ -22,11 +22,16 @@ import { osintPluginState, graphFeaturesEnabled } from 'osint/integration/osint-
  * The pill renders each of these through Tangent's `use:command` action -- the same one
  * the Map/Thread/Focus buttons use -- so the tooltip, the shortcut in it, and the
  * `checked` highlight all come from this class rather than from any toolbar code.
- * getChecked() says whether the view is the current node; canExecute() follows the
- * focus-level convention (SetFocusLevel.ts) that the current one is disabled as well as
- * checked. Both are re-evaluated when the thread moves or a setting changes, because the
- * constructor subscribes and calls alertDirty(), which is how SetFocusLevelCommand keeps
- * its buttons live.
+ * getChecked() says whether the view is the current node. canExecute() deliberately does
+ * NOT also disable the current one: use:command sets both `checked` and `disabled` on the
+ * same element, so the "you are here" button was the dimmest icon in the group.
+ * Re-opening the current view is a no-op in open-view.ts anyway. Both are re-evaluated
+ * when the thread moves or a setting changes, because the constructor subscribes and
+ * calls alertDirty(), which is how SetFocusLevelCommand keeps its buttons live.
+ *
+ * A view the graph-features setting has turned off stays executable: the pill hides its
+ * button, but the palette and the shortcut still reach it, and a silent no-op there told
+ * the user nothing. Executing it opens the settings page and says why.
  */
 export class OpenOsintViewCommand extends WorkspaceCommand {
 	readonly view: OsintViewDescriptor
@@ -42,19 +47,27 @@ export class OpenOsintViewCommand extends WorkspaceCommand {
 		osintPluginState.subscribe(() => this.alertDirty())
 	}
 
-	/** Whether the thread's current node is this view's marker file. */
+	/**
+	 * Whether the thread's current node is this view's marker file -- the marker, not any
+	 * file with the extension, so a stray .osintchat elsewhere in the vault does not light
+	 * the Chat button.
+	 */
 	get isCurrent(): boolean {
 		const node = this.workspace.viewState?.tangent?.currentNode?.value
-		return node?.fileType === this.view.fileType
+		if (!node) return false
+		const root = this.workspace.directoryStore?.files?.path
+		if (root) return node.path === `${root}/${nodePathFor(this.view)}`
+		return node.fileType === this.view.fileType
 	}
 
-	/** Refused while the graph-features setting hides it, so the palette agrees with the pill. */
+	/** Off while the graph-features setting hides it. */
 	get isEnabled(): boolean {
 		return !this.view.requiresGraphFeatures || graphFeaturesEnabled()
 	}
 
 	canExecute(_context?: CommandContext) {
-		return this.isEnabled && !this.isCurrent
+		// Not before the plugin is up: clicking earlier landed in a 60-second wait.
+		return osintPluginState.value.ready
 	}
 
 	getChecked(_context?: CommandContext) {
@@ -63,7 +76,13 @@ export class OpenOsintViewCommand extends WorkspaceCommand {
 
 	async execute(_context?: CommandContext) {
 		// Imported lazily so the view layer only loads once a view is actually opened.
-		const { openOsintView } = await import('osint/integration/open-view')
+		const { openOsintView, openOsintSettings } = await import('osint/integration/open-view')
+		if (!this.isEnabled) {
+			const { Notice } = await import('osint/obsidian-shim/ui/notice')
+			new Notice(`${this.view.label} is turned off. Enable graph features under OSINT Copilot → Graph view.`, 7000, 'warning')
+			openOsintSettings()
+			return
+		}
 		openOsintView(this.view.viewType)
 	}
 
@@ -96,8 +115,14 @@ export class NewOsintCanvasCommand extends WorkspaceCommand {
 	}
 
 	async execute(_context?: CommandContext) {
-		const plugin = (globalThis as any).osint?.plugin
-		await plugin?.createCanvasBoard?.()
+		const { osintRuntime } = await import('osint/integration/bootstrap')
+		const plugin = osintRuntime()?.plugin
+		if (!plugin) {
+			// canExecute gates on ready, so this is a real fault, not a race; say so.
+			console.error('[osint] New Canvas Board: the plugin is not available')
+			return
+		}
+		await plugin.createCanvasBoard()
 	}
 
 	getLabel(_context?: CommandContext) {
@@ -128,7 +153,7 @@ async function attachPluginCommandsWhenReady(workspace: Workspace, timeoutMs = 1
 		const plugin = (globalThis as any).osint?.plugin
 		if (plugin?.commands) {
 			const keys = registerPluginCommands(workspace, plugin.commands.values())
-			console.log(`[osint] registered ${keys.length} plugin commands with Tangent`)
+			console.debug(`[osint] registered ${keys.length} plugin commands with Tangent`)
 			return
 		}
 		await new Promise(resolve => setTimeout(resolve, 100))
@@ -187,10 +212,20 @@ export function registerPluginCommands(
 	commands: Iterable<ObsidianCommand>,
 ): string[] {
 	const registered: string[] = []
+	// The saved keymap was applied to the registry at construction (Workspace.ts), before
+	// these existed, so a shortcut the user assigned to one of them was never applied on
+	// the next launch. Read it here for the late arrivals.
+	const keymap = workspace.settings?.keymap?.value as { get?(key: string): string[] | undefined } | undefined
 	for (const command of commands) {
 		// camelCase the Obsidian id so it reads like the rest of the registry.
 		const key = 'osintCmd_' + command.id.replace(/[^a-zA-Z0-9]+(.)/g, (_, c) => c.toUpperCase())
-		;(workspace.commands as Record<string, WorkspaceCommand>)[key] = new PluginCommand(workspace, command)
+		const wrapped = new PluginCommand(workspace, command)
+		// Workspace.ts assigns ids in workspaceCommands(); a late registration has to do it
+		// itself, or menu-state updates for these commands collide on the key "undefined".
+		;(wrapped as unknown as { id: string }).id = key
+		const saved = keymap?.get?.(key)
+		if (saved) wrapped.shortcuts = saved
+		;(workspace.commands as Record<string, WorkspaceCommand>)[key] = wrapped
 		registered.push(key)
 	}
 	return registered

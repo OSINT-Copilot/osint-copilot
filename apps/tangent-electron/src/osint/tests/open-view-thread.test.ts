@@ -202,3 +202,20 @@ describe('openVaultLink', () => {
         expect(calls.updateThread).toEqual([]);
     });
 });
+
+describe('placeholder nodes from a restored session', () => {
+    it('retains by path, not identity, so a re-created marker node is "already open"', () => {
+        // Session.ts turns a missing marker file into a placeholder node; nodeFor() then
+        // returns a fresh object for the same path. Identity said "not in the thread".
+        setMode('alongside');
+        const placeholder = { path: '/vault/.tangent/osint/OSINT Chat.osintchat' };
+        const fresh = { path: '/vault/.tangent/osint/OSINT Chat.osintchat' };
+        const { workspace, nodes, calls } = fakeWorkspace([placeholder, { path: '/vault/A.md' }]);
+        nodes.set(fresh.path, fresh);
+        setTangentWorkspace(workspace as never);
+
+        expect(openIndexedVaultNode('.tangent/osint/OSINT Chat.osintchat')).toBe(true);
+        expect(calls.navigateTo).toEqual([]);
+        expect(calls.updateThread).toEqual([{ currentNode: placeholder, thread: 'retain' }]);
+    });
+});

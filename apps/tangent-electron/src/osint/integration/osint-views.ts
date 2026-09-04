@@ -5,6 +5,7 @@
  */
 import type { WorkspaceLeaf } from '../obsidian-shim/workspace/layout';
 import { osintRuntime } from './bootstrap';
+import { osintPluginState } from './osint-plugin-state';
 
 export * from './osint-view-types';
 
@@ -28,6 +29,8 @@ async function waitForRuntime(timeoutMs = 60_000) {
     for (;;) {
         const runtime = osintRuntime();
         if (runtime) return runtime;
+        // A failed start is final; waiting out the deadline just delays the message.
+        if (osintPluginState.value.failed) return null;
         if (Date.now() > deadline) {
             console.error('[osint] plugin did not start within', timeoutMs, 'ms');
             return null;

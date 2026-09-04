@@ -14,10 +14,14 @@ function nodeStore(initial: { fileType?: string } | null) {
     return store;
 }
 
-function fakeWorkspace(current: { fileType?: string } | null) {
+function fakeWorkspace(current: { fileType?: string; path?: string } | null) {
     const currentNode = nodeStore(current);
-    return { workspace: { viewState: { tangent: { currentNode } } } as never, currentNode };
+    return {
+        workspace: { viewState: { tangent: { currentNode } }, directoryStore: { files: { path: '/vault' } } } as never,
+        currentNode,
+    };
 }
+const markerOf = (view: { title: string; fileType: string }) => `/vault/.tangent/osint/${view.title}${view.fileType}`;
 
 /** alertDirty() notifies on the next animation frame. */
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -37,16 +41,30 @@ describe('OpenOsintViewCommand', () => {
         expect(command.defaultShortcuts).toEqual([chat.shortcut]);
     });
 
-    it('is checked, and therefore disabled, exactly when its view is the current node', () => {
-        // The focus-level convention: the active button is highlighted and not clickable.
-        const { workspace } = fakeWorkspace({ fileType: chat.fileType });
+    it('is checked exactly when the current node is its marker file -- and stays clickable', () => {
+        // checked AND disabled on the same element made the current view the dimmest icon
+        // in the group; re-opening the current view is a no-op in open-view.ts anyway.
+        const { workspace } = fakeWorkspace({ fileType: chat.fileType, path: markerOf(chat) });
         const command = new OpenOsintViewCommand(workspace, chat);
         expect(command.getChecked()).toBe(true);
-        expect(command.canExecute()).toBe(false);
+        expect(command.canExecute()).toBe(true);
 
         const other = new OpenOsintViewCommand(workspace, entities);
         expect(other.getChecked()).toBe(false);
-        expect(other.canExecute()).toBe(true);
+    });
+
+    it('does not light up for a stray file that merely shares the extension', () => {
+        const { workspace } = fakeWorkspace({ fileType: chat.fileType, path: '/vault/Notes/copy.osintchat' });
+        expect(new OpenOsintViewCommand(workspace, chat).getChecked()).toBe(false);
+    });
+
+    it('is not executable before the plugin is up', () => {
+        const { workspace } = fakeWorkspace(null);
+        const command = new OpenOsintViewCommand(workspace, chat);
+        publishOsintPluginState({ ready: false, settings: null });
+        expect(command.canExecute()).toBe(false);
+        publishOsintPluginState({ ready: true, settings: { enableGraphFeatures: true } as never });
+        expect(command.canExecute()).toBe(true);
     });
 
     it('re-notifies its buttons when the thread moves', async () => {
@@ -57,27 +75,29 @@ describe('OpenOsintViewCommand', () => {
         let notified = 0;
         command.subscribe(() => { notified += 1; });
 
-        currentNode.set({ fileType: chat.fileType });
+        currentNode.set({ fileType: chat.fileType, path: markerOf(chat) });
         await nextFrame();
         expect(notified).toBeGreaterThan(0);
         expect(command.getChecked()).toBe(true);
     });
 
-    it('refuses a graph-backed view while graph features are off, and recovers live', async () => {
+    it('knows when the graph-features setting has turned it off, and recovers live', async () => {
+        // Still executable (the palette and shortcut reach it, and executing explains and
+        // opens settings) but reported off, which is what the pill filters on.
         const { workspace } = fakeWorkspace(null);
         const gated = new OpenOsintViewCommand(workspace, entities);
         const open = new OpenOsintViewCommand(workspace, chat);
 
         publishOsintPluginState({ settings: { enableGraphFeatures: false } as never });
-        expect(gated.canExecute()).toBe(false);
-        // Chat is not gated and must be unaffected.
-        expect(open.canExecute()).toBe(true);
+        expect(gated.isEnabled).toBe(false);
+        expect(gated.canExecute()).toBe(true);
+        expect(open.isEnabled).toBe(true);
 
         let notified = 0;
         gated.subscribe(() => { notified += 1; });
         publishOsintPluginState({ settings: { enableGraphFeatures: true } as never });
         await nextFrame();
-        expect(gated.canExecute()).toBe(true);
+        expect(gated.isEnabled).toBe(true);
         expect(notified).toBeGreaterThan(0);
     });
 
