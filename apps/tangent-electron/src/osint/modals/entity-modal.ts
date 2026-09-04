@@ -6,7 +6,7 @@
 import { App, Modal, Notice, Setting } from 'obsidian';
 import { type Entity, type Connection, EntityType, ENTITY_CONFIGS, COMMON_PROPERTIES, getFTMEntityConfig, getAvailableFTMEntityTypes, getAvailableFTMIntervalTypes, type FTMEntityConfig, validateEntityName, getEntityIcon } from '../entities/types';
 import { EntityManager } from '../services/entity-manager';
-import { GeocodingService, GeocodingError, GeocodingErrorType } from '../services/geocoding-service';
+import { GeocodingService, GeocodingError, GeocodingErrorType, geocodingService } from '../services/geocoding-service';
 import { ftmSchemaService, type FTMPropertyDefinition } from '../services/ftm-schema-service';
 import { CustomTypeCreationModal } from './custom-type-modal';
 import type { CatalogEntityType, CatalogRelationshipType, EnabledSchemaFamilies, SchemaFamily } from '../services/schema-catalog-types';
@@ -101,7 +101,9 @@ export class EntityCreationModal extends Modal {
         this.entityManager = entityManager;
         this.entityType = entityType;
         this.onEntityCreated = onEntityCreated || null;
-        this.geocodingService = new GeocodingService();
+        // The exported singleton, as the map view uses: rate limiting is per-instance, so
+        // a private instance here sidestepped Nominatim's shared 1 req/s allowance.
+        this.geocodingService = geocodingService;
         this.properties = { ...initialProperties };
     }
 

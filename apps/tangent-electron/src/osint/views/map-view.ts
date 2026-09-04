@@ -3,11 +3,11 @@
  * Map View for visualizing Location entities using Leaflet.
  */
 
-import { App, ItemView, WorkspaceLeaf, Notice, Modal, Menu, TFile, normalizePath, requestUrl } from 'obsidian';
+import { App, ItemView, WorkspaceLeaf, Notice, Modal, Menu, TFile, normalizePath, requestUrl, setIcon } from 'obsidian';
 import { type Entity, EntityType, ENTITY_CONFIGS } from '../entities/types';
 import { EntityManager } from '../services/entity-manager';
 import { EntityCreationModal } from '../modals/entity-modal';
-import { GeocodingService, GeocodingError, geocodingService } from '../services/geocoding-service';
+import { GeocodingService, GeocodingError, geocodingService, type GeocodingResult } from '../services/geocoding-service';
 import { host } from '../host';
 import { entityHasMapCoordinates } from '../ui/vault-op-previews';
 import { IpcPMTilesSource } from '../services/basemap/ipc-pmtiles-source';
@@ -48,6 +48,77 @@ export function isLocationEntityType(entityType: string | undefined): boolean {
     if (typeof entityType !== 'string') return false;
     const normalized = entityType.trim().toLowerCase();
     return normalized === 'location' || normalized === 'address' || normalized === 'geolocation';
+}
+
+/** What one entity sends to the geocoder, and which schema its answer is written back with. */
+export interface GeocodeFields {
+    address?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    /** Address notes carry street/full/state/postalCode; every other location type has `address`. */
+    isAddress: boolean;
+}
+
+/**
+ * The address fields the geocoder is sent for one entity.
+ *
+ * One function for both paths of the geolocate dialog, which used to decide this
+ * separately: the batch matched the type with isAddressEntityType while the per-row
+ * button compared `=== EntityType.Location` and `=== 'Address'` exactly. A note typed
+ * `address` or `GeoLocation` -- which isLocationEntityType had just admitted into the
+ * list -- fell through both of the row's branches and went to Nominatim as an empty query.
+ */
+export function geocodeFieldsFor(entity: Entity): GeocodeFields {
+    const p = entity.properties;
+    // Present means truthy, as the `||` chains this replaces had it.
+    const str = (v: unknown): string | undefined => (v ? String(v) : undefined);
+    if (isAddressEntityType(entity.type)) {
+        return {
+            address: str(p.street) || str(p.full),
+            city: str(p.city),
+            state: str(p.state),
+            country: str(p.country),
+            isAddress: true,
+        };
+    }
+    return { address: str(p.address), city: str(p.city), country: str(p.country), isAddress: false };
+}
+
+/** The frontmatter written back after a hit: coordinates always, the rest only where the note was blank. */
+export function geocodeResultUpdates(
+    entity: Entity,
+    fields: GeocodeFields,
+    result: GeocodingResult,
+): Record<string, unknown> {
+    const updates: Record<string, unknown> = {
+        latitude: result.latitude,
+        longitude: result.longitude,
+    };
+    if (result.city && !fields.city) updates.city = result.city;
+    if (result.state && !fields.state && fields.isAddress) updates.state = result.state;
+    if (result.country && !fields.country) updates.country = result.country;
+    if (result.postalCode && fields.isAddress && !entity.properties.postalCode) {
+        updates.postalCode = result.postalCode;
+    }
+    return updates;
+}
+
+/**
+ * A toolbar button with a lucide glyph and a text label, in place of the emoji that used
+ * to stand in for icons. The label is a span of its own so a busy state can relabel the
+ * button without discarding the icon.
+ */
+function iconButton(parent: HTMLElement, icon: string, label: string): HTMLButtonElement {
+    const btn = parent.createEl('button');
+    setIcon(btn.createSpan({ cls: 'graph_copilot-map-btn-icon' }), icon);
+    btn.createSpan({ cls: 'graph_copilot-map-btn-label', text: label });
+    return btn;
+}
+
+function setButtonLabel(btn: HTMLButtonElement, label: string): void {
+    const labelEl = btn.querySelector('.graph_copilot-map-btn-label');
+    if (labelEl) labelEl.textContent = label;
 }
 
 // Leaflet CSS inlined to avoid CSP issues with external stylesheets
@@ -223,6 +294,9 @@ export class MapView extends ItemView {
     private offlineBasemapProblem = '';
     private basemapStatusEl: HTMLElement | null = null;
     private offlineHandleId: string | null = null;
+    private refreshBtn: HTMLButtonElement | null = null;
+    /** The "nothing has coordinates yet" overlay, present only while that is true. */
+    private emptyStateEl: HTMLElement | null = null;
 
     constructor(
         leaf: WorkspaceLeaf,
@@ -257,6 +331,13 @@ export class MapView extends ItemView {
         // Create toolbar
         const toolbar = container.createDiv({ cls: 'graph_copilot-map-toolbar' });
         this.createToolbar(toolbar);
+
+        // A line of its own under the toolbar, not a flex item inside it: as a toolbar
+        // item the sentence could not wrap and was the first thing squeezed.
+        container.createDiv({
+            cls: 'graph_copilot-map-hint',
+            text: 'Shows Location and Address entities that have latitude / longitude.',
+        });
 
         // Create map container
         // No id, and no inline height. The id was the old way of finding this element
@@ -392,6 +473,7 @@ export class MapView extends ItemView {
             this.map = null;
         }
         this.markers.clear();
+        this.emptyStateEl = null;
     }
 
     // ------------------------------------------------------------------ basemaps
@@ -769,51 +851,53 @@ export class MapView extends ItemView {
 
     /**
      * Create the toolbar.
+     *
+     * Layout lives in styles.css (.graph_copilot-map-toolbar). The inline copy that used
+     * to sit here beat the stylesheet, so nothing there -- flex-wrap included -- could
+     * take effect, and any pane under ~700px grew a horizontal scrollbar.
      */
     private createToolbar(toolbar: HTMLElement): void {
-        toolbar.setCssProps({
-            display: 'flex',
-            gap: '10px',
-            padding: '10px',
-            background: 'var(--background-secondary)',
-            'border-bottom': '1px solid var(--background-modifier-border)'
-        });
-
-        // Add Location button
-        const addBtn = toolbar.createEl('button', { text: '+ add location' });
+        const addBtn = iconButton(toolbar, 'plus', 'Add location');
         addBtn.addClass('graph_copilot-add-entity-btn');
         addBtn.onclick = () => this.openLocationCreator();
 
-        // Separator
         toolbar.createDiv({ cls: 'graph_copilot-toolbar-separator' });
 
-        // Refresh button
-        const refreshBtn = toolbar.createEl('button', { text: '↻ refresh' });
-        refreshBtn.onclick = () => { this.refresh(); };
-
-        // Fit all button
-        const fitBtn = toolbar.createEl('button', { text: '⊡ fit all' });
-        fitBtn.onclick = () => this.fitAllMarkers();
-
-        // Geolocate button
-        const geolocateBtn = toolbar.createEl('button', { text: '📍 geolocate missing' });
+        const geolocateBtn = iconButton(toolbar, 'map-pin', 'Geolocate missing');
         geolocateBtn.onclick = () => this.showGeolocateMissingDialog();
 
-        // Info label
-        const infoSpan = toolbar.createEl('span', {
-            text: 'Map: Location and Address entities with latitude / longitude',
-            cls: 'graph_copilot-map-info'
-        });
-        infoSpan.setCssProps({
-            'margin-left': 'auto',
-            color: 'var(--text-muted)',
-            'font-size': '12px'
-        });
-
         // A persistent strip, not a toast: a missing basemap is a state the analyst needs
-        // to keep seeing, not an event that scrolls away.
+        // to keep seeing, not an event that scrolls away. It sits between the actions and
+        // the trailing group and takes the slack (flex: 1 1 auto in styles.css); it used
+        // to follow the info span's margin-left:auto, which made it the first thing
+        // squeezed to nothing.
         this.basemapStatusEl = toolbar.createEl('span', { cls: 'graph_copilot-map-basemap-status' });
         this.basemapStatusEl.style.display = 'none';
+
+        const trailing = toolbar.createDiv({ cls: 'graph_copilot-map-toolbar-trailing' });
+        this.refreshBtn = iconButton(trailing, 'refresh-cw', 'Refresh');
+        this.refreshBtn.onclick = () => { void this.refreshFromToolbar(); };
+
+        const fitBtn = iconButton(trailing, 'maximize', 'Fit all');
+        fitBtn.onclick = () => this.fitAllMarkers();
+    }
+
+    /**
+     * The toolbar's refresh, with a busy state. refresh() itself is single-flight and
+     * silent, so the click did nothing visible for the whole reload -- which is exactly
+     * what invites a second click.
+     */
+    private async refreshFromToolbar(): Promise<void> {
+        const btn = this.refreshBtn;
+        if (!btn || btn.disabled) return;
+        btn.disabled = true;
+        setButtonLabel(btn, 'Refreshing\u2026');
+        try {
+            await this.refresh();
+        } finally {
+            btn.disabled = false;
+            setButtonLabel(btn, 'Refresh');
+        }
     }
 
     /**
@@ -984,6 +1068,9 @@ export class MapView extends ItemView {
             // loadEntitiesFromNotes() clears the shared entity store first, into a
             // truncated store for the graph and timeline views too.
             console.error('[MapView] failed to reload entities; keeping the current markers:', error);
+            // Say so. A console line is invisible from the map, and a pane that quietly
+            // keeps yesterday's pins looks exactly like one that is up to date.
+            new Notice('Could not reload locations; showing the last known markers.');
             return;
         }
 
@@ -1003,6 +1090,36 @@ export class MapView extends ItemView {
             this.hasFitOnce = true;
             this.fitAllMarkers();
         }
+
+        this.updateEmptyState();
+    }
+
+    /**
+     * A hint over the canvas while no entity has coordinates. A map with no pins looked
+     * exactly like a map that had failed to load them, and the one action that fixes it
+     * -- geolocating the notes that only carry an address -- was a toolbar button with
+     * nothing pointing at it. Only reached after a successful reload, so a failed one
+     * (which keeps the old markers) never claims the vault is empty.
+     */
+    private updateEmptyState(): void {
+        if (!this.container) return;
+        if (this.markers.size > 0) {
+            this.emptyStateEl?.remove();
+            this.emptyStateEl = null;
+            return;
+        }
+        if (this.emptyStateEl?.isConnected) return;
+        // Inside the Leaflet element, which positions itself `relative`, so the overlay
+        // covers the canvas exactly. Pointer events are off in styles.css, so the map
+        // underneath still pans and the layer control still clicks.
+        const el = this.container.createDiv({ cls: 'graph_copilot-map-empty' });
+        el.createEl('p', { text: 'No locations with coordinates yet.' });
+        el.createEl('p', {
+            cls: 'graph_copilot-map-empty-hint',
+            text: 'Add a Location or Address entity with latitude / longitude, '
+                + 'or use "Geolocate missing" to look up the ones that only have an address.',
+        });
+        this.emptyStateEl = el;
     }
 
     /**
@@ -1060,7 +1177,7 @@ export class MapView extends ItemView {
                 height: 24px;
                 border-radius: 50% 50% 50% 0;
                 transform: rotate(-45deg);
-                border: 2px solid white;
+                border: 2px solid var(--background-primary);
                 box-shadow: 0 2px 5px rgba(0,0,0,0.3);
             "></div>`,
             iconSize: [24, 24],
@@ -1282,6 +1399,9 @@ export class MapView extends ItemView {
     }
 }
 
+/** One row's button, shared by the single-row click and the batch. */
+type GeolocateRowState = 'idle' | 'busy' | 'done' | 'failed';
+
 /**
  * Modal to show and geolocate locations without coordinates.
  */
@@ -1290,6 +1410,11 @@ class GeolocateMissingModal extends Modal {
     private geocodingService: GeocodingService;
     private entityManager: EntityManager;
     private onComplete: () => Promise<void>;
+    /** One entry per listed entity, so the batch can mark rows the way a single click does. */
+    private rows = new Map<string, { btn: HTMLButtonElement; item: HTMLElement }>();
+    /** Set when the user cancels or closes; checked between entities. */
+    private cancelled = false;
+    private batchProgressEl: HTMLElement | null = null;
 
     constructor(
         app: App,
@@ -1308,6 +1433,7 @@ class GeolocateMissingModal extends Modal {
     onOpen(): void {
         const { contentEl } = this;
         contentEl.empty();
+        this.rows.clear();
 
         contentEl.createEl('h2', { text: 'Geolocate locations' });
         contentEl.createEl('p', {
@@ -1345,13 +1471,16 @@ class GeolocateMissingModal extends Modal {
                 cls: 'text-muted'
             });
 
-            const btn = item.createEl('button', { text: '📍 geolocate' });
-            btn.onclick = async () => {
-                btn.disabled = true;
-                btn.textContent = 'Geocoding...';
-                await this.geolocateEntity(entity, btn, item);
-            };
+            const btn = item.createEl('button', { text: 'Geolocate' });
+            this.rows.set(entity.id, { btn, item });
+            btn.onclick = () => { void this.geolocateEntity(entity); };
         });
+
+        // Above the buttons, not below them. It was created after the button container,
+        // so the one line saying what the batch was doing rendered underneath the buttons
+        // it was describing.
+        this.batchProgressEl = contentEl.createEl('p', { cls: 'setting-item-description' });
+        this.batchProgressEl.style.display = 'none';
 
         // Buttons
         const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
@@ -1361,10 +1490,6 @@ class GeolocateMissingModal extends Modal {
             gap: '10px',
             'margin-top': '20px'
         });
-
-        // Progress goes here rather than into a stream of Notices.
-        this.batchProgressEl = contentEl.createEl('p', { cls: 'setting-item-description' });
-        this.batchProgressEl.style.display = 'none';
 
         const geolocateAllBtn = buttonContainer.createEl('button', { text: 'Geolocate all' });
         const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
@@ -1386,77 +1511,58 @@ class GeolocateMissingModal extends Modal {
         // batch has to be stoppable without closing the modal.
         cancelBtn.onclick = () => {
             this.cancelled = true;
-            this.setBatchProgress('Finishing the current location, then stopping…');
+            this.setBatchProgress('Finishing the current location, then stopping\u2026');
         };
 
         const closeBtn = buttonContainer.createEl('button', { text: 'Close' });
         closeBtn.onclick = () => this.close();
     }
 
-    private async geolocateEntity(entity: Entity, btn: HTMLButtonElement, item: HTMLElement): Promise<void> {
+    /**
+     * The same treatment for a row whichever path geocoded it. The batch used to leave
+     * every row's button untouched, so "Geolocate all" finished with a list that still
+     * invited the user to geolocate each entry again, one by one.
+     */
+    private setRowState(entityId: string, state: GeolocateRowState): void {
+        const row = this.rows.get(entityId);
+        if (!row) return;
+        const labels: Record<GeolocateRowState, string> = {
+            idle: 'Geolocate', busy: 'Geocoding\u2026', done: 'Done', failed: 'Failed',
+        };
+        row.btn.textContent = labels[state];
+        // Done stays disabled: there is nothing left to do for that row. Failed re-enables
+        // so a transient error can be retried without reopening the dialog.
+        row.btn.disabled = state === 'busy' || state === 'done';
+        row.btn.style.color = state === 'done' ? 'var(--text-success)'
+            : state === 'failed' ? 'var(--text-error)' : '';
+        row.item.style.borderColor = state === 'done' ? 'var(--text-success)' : '';
+    }
+
+    private async geolocateEntity(entity: Entity): Promise<void> {
+        this.setRowState(entity.id, 'busy');
         try {
-            // Extract address components
-            let address: string | undefined;
-            let city: string | undefined;
-            let state: string | undefined;
-            let country: string | undefined;
-
-            if (entity.type === EntityType.Location) {
-                address = entity.properties.address as string;
-                city = entity.properties.city as string;
-                country = entity.properties.country as string;
-            } else if (entity.type === 'Address') {
-                address = entity.properties.street as string || entity.properties.full as string;
-                city = entity.properties.city as string;
-                state = entity.properties.state as string;
-                country = entity.properties.country as string;
-            }
-
+            const fields = geocodeFieldsFor(entity);
             const result = await this.geocodingService.geocodeAddressWithRetry(
-                address,
-                city,
-                state,
-                country,
+                fields.address,
+                fields.city,
+                fields.state,
+                fields.country,
                 (attempt, maxAttempts, delaySeconds) => {
                     new Notice(`Network error, retrying in ${delaySeconds}s... (attempt ${attempt}/${maxAttempts})`);
                 }
             );
 
-            // Update entity
-            const updates: Record<string, unknown> = {
-                latitude: result.latitude,
-                longitude: result.longitude
-            };
-
-            if (result.city && !city) updates.city = result.city;
-            if (result.state && !state && entity.type === 'Address') updates.state = result.state;
-            if (result.country && !country) updates.country = result.country;
-            if (result.postalCode && entity.type === 'Address' && !entity.properties.postalCode) {
-                updates.postalCode = result.postalCode;
-            }
-
-            await this.entityManager.updateEntity(entity.id, updates);
-
-            // Update UI
-            btn.textContent = '✓ done';
-            btn.setCssProps({ color: 'var(--text-success)' });
-            item.setCssProps({ 'border-color': 'var(--text-success)' });
-
+            await this.entityManager.updateEntity(entity.id, geocodeResultUpdates(entity, fields, result));
+            this.setRowState(entity.id, 'done');
         } catch (error) {
-            btn.textContent = '✗ failed';
-            btn.setCssProps({ color: 'var(--text-error)' });
+            this.setRowState(entity.id, 'failed');
             if (error instanceof GeocodingError) {
                 new Notice(`Failed to geocode ${entity.label}: ${error.message}`);
             } else {
                 new Notice(`Failed to geocode ${entity.label}`);
             }
-            btn.disabled = false;
         }
     }
-
-    /** Set when the user cancels or closes; checked between entities. */
-    private cancelled = false;
-    private batchProgressEl: HTMLElement | null = null;
 
     private async geolocateAll(): Promise<void> {
         let success = 0;
@@ -1471,58 +1577,37 @@ class GeolocateMissingModal extends Modal {
             // over twenty minutes of work nobody can stop.
             if (this.cancelled) break;
             processed++;
-            this.setBatchProgress(`Geocoding ${processed} of ${total}: ${entity.label}…`);
+            this.setBatchProgress(`Geocoding ${processed} of ${total}: ${entity.label}\u2026`);
+            this.setRowState(entity.id, 'busy');
 
             try {
-                let address: string | undefined;
-                let city: string | undefined;
-                let state: string | undefined;
-                let country: string | undefined;
-
-                const isAddress = isAddressEntityType(entity.type);
-                if (isAddress) {
-                    address = entity.properties.street as string || entity.properties.full as string;
-                    city = entity.properties.city as string;
-                    state = entity.properties.state as string;
-                    country = entity.properties.country as string;
-                } else {
-                    address = entity.properties.address as string;
-                    city = entity.properties.city as string;
-                    country = entity.properties.country as string;
-                }
-
+                const fields = geocodeFieldsFor(entity);
                 const result = await this.geocodingService.geocodeAddressWithRetry(
-                    address,
-                    city,
-                    state,
-                    country,
+                    fields.address,
+                    fields.city,
+                    fields.state,
+                    fields.country,
                     // Progress in the modal, not a Notice per retry per entity: offline
                     // that was four toasts times every row.
                     (attempt, maxAttempts, delaySeconds) => {
                         this.setBatchProgress(
-                            `Geocoding ${processed} of ${total}: ${entity.label} — retry ${attempt}/${maxAttempts} in ${delaySeconds}s`,
+                            `Geocoding ${processed} of ${total}: ${entity.label} \u2014 retry ${attempt}/${maxAttempts} in ${delaySeconds}s`,
                         );
                     },
                 );
 
-                if (this.cancelled) break;
-
-                const updates: Record<string, unknown> = {
-                    latitude: result.latitude,
-                    longitude: result.longitude,
-                };
-
-                if (result.city && !city) updates.city = result.city;
-                if (result.state && !state && isAddress) updates.state = result.state;
-                if (result.country && !country) updates.country = result.country;
-                if (result.postalCode && isAddress && !entity.properties.postalCode) {
-                    updates.postalCode = result.postalCode;
+                if (this.cancelled) {
+                    // Nothing was written, so the row is exactly as it started.
+                    this.setRowState(entity.id, 'idle');
+                    break;
                 }
 
-                await this.entityManager.updateEntity(entity.id, updates);
+                await this.entityManager.updateEntity(entity.id, geocodeResultUpdates(entity, fields, result));
+                this.setRowState(entity.id, 'done');
                 success++;
             } catch (error) {
                 console.error(`Failed to geocode ${entity.label}:`, error);
+                this.setRowState(entity.id, 'failed');
                 failed++;
             }
         }
@@ -1551,8 +1636,8 @@ class GeolocateMissingModal extends Modal {
         // Closing the modal cancels the batch. It used to keep running invisibly,
         // writing notes and calling back into a view that might be gone.
         this.cancelled = true;
+        this.rows.clear();
         const { contentEl } = this;
         contentEl.empty();
     }
 }
-
