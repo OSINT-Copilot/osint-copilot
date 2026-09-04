@@ -19,9 +19,20 @@ import {
 	DEFAULT_TASK_AGENT_OUTPUT_ALLOWLIST,
 } from "../constants/vault-layout";
 
+/**
+ * Where the toolbar's view buttons put a view in the thread.
+ *
+ * 'switch': the thread holds at most one OSINT view, so clicking a second one takes the
+ * first one's place and the pill behaves like a set of view modes. Notes stay open.
+ * 'alongside': every view opens as an extra pane beside the current one, which stacks a
+ * new column per click.
+ */
+export type OsintViewOpenMode = 'switch' | 'alongside';
+
 export interface VaultAISettings {
 	systemPrompt: string;
 	maxNotes: number;
+	viewOpenMode: OsintViewOpenMode;
 	enableGraphFeatures: boolean;
 	autoRefreshGraph: boolean;
 	autoOpenGraphOnEntityCreation: boolean;
@@ -93,6 +104,7 @@ export const DEFAULT_SETTINGS: VaultAISettings = {
 	systemPrompt:
 		"You are a vault assistant. Answer questions clearly and concisely based on the provided notes. Cite note paths in-line where useful.",
 	maxNotes: 15,
+	viewOpenMode: 'switch',
 	enableGraphFeatures: true,
 	autoRefreshGraph: true,
 	autoOpenGraphOnEntityCreation: false,

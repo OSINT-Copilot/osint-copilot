@@ -88,6 +88,23 @@ export class VaultAISettingTab extends PluginSettingTab {
 			.setName("Version " + this.plugin.manifest.version)
 			.setDesc("OSINT Copilot checks for updates automatically and installs them on restart.");
 
+		new Setting(containerEl).setName("Views").setHeading();
+		new Setting(containerEl)
+			.setName("Opening a view")
+			.setDesc(
+				"What the Chat / Entities / Timeline / Locations / Tools buttons do. Switching keeps one view open at a time; opening alongside adds a pane per click, which is how a note opens.",
+			)
+			.addDropdown((dd) =>
+				dd
+					.addOption("switch", "Switch to it")
+					.addOption("alongside", "Open beside the current pane")
+					.setValue(this.plugin.settings.viewOpenMode === "alongside" ? "alongside" : "switch")
+					.onChange(async (value) => {
+						this.plugin.settings.viewOpenMode = value === "alongside" ? "alongside" : "switch";
+						await this.plugin.saveSettings();
+					}),
+			);
+
 		new Setting(containerEl).setName("Graph note lock").setHeading();
 		new Setting(containerEl)
 			.setName(`Locked notes (${this.plugin.vaultLockService.getLockedCount()})`)

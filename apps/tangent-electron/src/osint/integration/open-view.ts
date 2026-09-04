@@ -9,7 +9,8 @@
  * Typed structurally on purpose: importing Tangent's classes here would pull its common/
  * tree into our strict typecheck.
  */
-import { nodePathFor, viewForViewType } from './osint-view-types';
+import { nodePathFor, viewForFileType, viewForViewType } from './osint-view-types';
+import { osintPluginState } from './osint-plugin-state';
 
 interface TangentNodeLike { path: string }
 
@@ -62,33 +63,80 @@ function nodeFor(relativePath: string): TangentNodeLike | null {
     return (created as TangentNodeLike) ?? null;
 }
 
+/** True when this node is one of the five OSINT views, judged by its file extension. */
+function isOsintViewNode(node: TangentNodeLike): boolean {
+    const dot = node.path.lastIndexOf('.');
+    return dot >= 0 && viewForFileType(node.path.slice(dot)) !== undefined;
+}
+
+/**
+ * In Map focus no thread panel is rendered at all, so opening a view while the map is up
+ * would silently appear to do nothing. navigateTo raises the focus itself; the branches
+ * that drive the thread directly have to.
+ */
+function raiseFocusOutOfMap(): void {
+    const tangent = workspace!.viewState.tangent;
+    if (tangent.focusLevel.value < FOCUS_LEVEL_THREAD) {
+        tangent.focusLevel.set(FOCUS_LEVEL_THREAD);
+    }
+}
+
+/** Defaults to 'switch' -- the setting is absent until the plugin has published it. */
+function viewOpenMode(): 'switch' | 'alongside' {
+    return osintPluginState.value.settings?.viewOpenMode === 'alongside' ? 'alongside' : 'switch';
+}
+
 /**
  * Puts the node in the thread the way Tangent itself opens things.
  *
- * This used to call `updateThread({ currentNode })` with nothing else, which Session
- * resolves to a thread of exactly one node -- so every click on a view wiped whatever the
- * analyst had open. Two branches now, both borrowed from Tangent:
+ * Three branches, in order:
  *
  * - already in the thread: `thread: 'retain'` just moves the current marker, the way
  *   CreateNewFile does for an existing note. Without this, re-clicking an open view would
  *   truncate everything to its right.
+ * - a VIEW arriving while another view is open, in 'switch' mode: the newcomer takes the
+ *   old view's place in the thread, so the pill reads as a set of view modes instead of
+ *   stacking one more column per click. Notes are left exactly where they are -- the
+ *   alternative, a one-node thread, is what used to wipe the analyst's open work.
  * - otherwise: `navigateTo({ origin: 'current', direction: 'out' })`, which is the file
  *   tree's "Open to the Right" -- appends beside the current pane, and leaves Map focus
- *   on its own.
+ *   on its own. This is how notes always open, and how views open in 'alongside' mode or
+ *   when no view is on screen yet.
  */
 export function show(node: TangentNodeLike): void {
     const ws = workspace!;
     const tangent = ws.viewState.tangent;
-    if (tangent.thread.value.includes(node)) {
+    const thread = tangent.thread.value;
+
+    if (thread.includes(node)) {
         tangent.updateThread({ currentNode: node, thread: 'retain' });
-        // In Map focus the thread panels are not rendered at all, so opening a view while
-        // the map is up would silently appear to do nothing. navigateTo does this itself;
-        // the retain branch has to.
-        if (tangent.focusLevel.value < FOCUS_LEVEL_THREAD) {
-            tangent.focusLevel.set(FOCUS_LEVEL_THREAD);
-        }
+        raiseFocusOutOfMap();
         return;
     }
+
+    if (isOsintViewNode(node) && viewOpenMode() === 'switch') {
+        // Collapses to ONE view rather than swapping the first: a thread built in
+        // 'alongside' mode (or before this setting existed) can hold several, and leaving
+        // the rest behind would mean the setting never actually tidied anything up.
+        const next: TangentNodeLike[] = [];
+        let placed = false;
+        for (const existing of thread) {
+            if (isOsintViewNode(existing)) {
+                if (!placed) {
+                    next.push(node);
+                    placed = true;
+                }
+                continue;
+            }
+            next.push(existing);
+        }
+        if (placed) {
+            tangent.updateThread({ thread: next, currentNode: node });
+            raiseFocusOutOfMap();
+            return;
+        }
+    }
+
     ws.navigateTo({ target: node, origin: 'current', direction: 'out' });
 }
 

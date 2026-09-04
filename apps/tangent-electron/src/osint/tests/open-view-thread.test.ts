@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { setTangentWorkspace, openIndexedVaultNode } from '../integration/open-view';
+import { publishOsintPluginState } from '../integration/osint-plugin-state';
+import { DEFAULT_SETTINGS, type OsintViewOpenMode } from '../settings/vault-ai-settings';
 
 /**
  * A recording stand-in for the slice of Tangent's Workspace that open-view.ts uses.
@@ -29,7 +31,14 @@ function fakeWorkspace(thread: { path: string }[], focusLevel = 0) {
     return { workspace, nodes, calls };
 }
 
+/** Publishes just the one setting these tests care about. */
+function setMode(mode: OsintViewOpenMode) {
+    publishOsintPluginState({ ready: true, settings: { ...DEFAULT_SETTINGS, viewOpenMode: mode } });
+}
+
 describe('opening an OSINT view', () => {
+    beforeEach(() => setMode('switch'));
+
     const noteA = { path: '/vault/A.md' };
     const noteB = { path: '/vault/B.md' };
     const chat = { path: '/vault/.tangent/osint/OSINT Chat.osintchat' };
@@ -82,5 +91,94 @@ describe('opening an OSINT view', () => {
         expect(openIndexedVaultNode('.tangent/osint/Missing.osintchat')).toBe(false);
         expect(calls.navigateTo).toEqual([]);
         expect(calls.updateThread).toEqual([]);
+    });
+});
+
+describe('switch vs alongside', () => {
+    const noteA = { path: '/vault/A.md' };
+    const chat = { path: '/vault/.tangent/osint/OSINT Chat.osintchat' };
+    const entities = { path: '/vault/.tangent/osint/Entity Graph.osintgraph' };
+    const timeline = { path: '/vault/.tangent/osint/Timeline.osinttimeline' };
+    const openEntities = () => openIndexedVaultNode('.tangent/osint/Entity Graph.osintgraph');
+
+    it('puts the new view in the open view\'s place, keeping notes', () => {
+        // The whole point of the setting: the pill reads as view modes, not as a stack of
+        // panes. noteA must survive -- replacing the entire thread is what used to wipe it.
+        setMode('switch');
+        const { workspace, nodes, calls } = fakeWorkspace([noteA, chat]);
+        nodes.set(entities.path, entities);
+        setTangentWorkspace(workspace as never);
+
+        expect(openEntities()).toBe(true);
+        expect(calls.updateThread).toEqual([{ thread: [noteA, entities], currentNode: entities }]);
+        expect(calls.navigateTo).toEqual([]);
+    });
+
+    it('collapses a thread that already holds several views down to one', () => {
+        // Threads built in 'alongside' mode (or before the setting existed) can hold
+        // several; swapping only the first would leave the clutter the user turned this on
+        // to get rid of.
+        setMode('switch');
+        const { workspace, nodes, calls } = fakeWorkspace([chat, noteA, timeline]);
+        nodes.set(entities.path, entities);
+        setTangentWorkspace(workspace as never);
+
+        expect(openEntities()).toBe(true);
+        expect(calls.updateThread).toEqual([{ thread: [entities, noteA], currentNode: entities }]);
+    });
+
+    it('appends when no view is open yet, so a view never displaces a note', () => {
+        setMode('switch');
+        const { workspace, nodes, calls } = fakeWorkspace([noteA]);
+        nodes.set(entities.path, entities);
+        setTangentWorkspace(workspace as never);
+
+        expect(openEntities()).toBe(true);
+        expect(calls.navigateTo).toEqual([{ target: entities, origin: 'current', direction: 'out' }]);
+        expect(calls.updateThread).toEqual([]);
+    });
+
+    it('appends in alongside mode even when a view is open', () => {
+        setMode('alongside');
+        const { workspace, nodes, calls } = fakeWorkspace([noteA, chat]);
+        nodes.set(entities.path, entities);
+        setTangentWorkspace(workspace as never);
+
+        expect(openEntities()).toBe(true);
+        expect(calls.navigateTo).toEqual([{ target: entities, origin: 'current', direction: 'out' }]);
+        expect(calls.updateThread).toEqual([]);
+    });
+
+    it('never switches a NOTE into a view\'s place', () => {
+        // Only views take part; opening a note from chat must keep normal navigation.
+        setMode('switch');
+        const noteB = { path: '/vault/B.md' };
+        const { workspace, nodes, calls } = fakeWorkspace([chat]);
+        nodes.set(noteB.path, noteB);
+        setTangentWorkspace(workspace as never);
+
+        expect(openIndexedVaultNode('B.md')).toBe(true);
+        expect(calls.navigateTo).toEqual([{ target: noteB, origin: 'current', direction: 'out' }]);
+        expect(calls.updateThread).toEqual([]);
+    });
+
+    it('raises Map focus when the switch drives the thread directly', () => {
+        // navigateTo is not involved on this branch, so nothing else would.
+        setMode('switch');
+        const { workspace, nodes, calls } = fakeWorkspace([noteA, chat], -1);
+        nodes.set(entities.path, entities);
+        setTangentWorkspace(workspace as never);
+        openEntities();
+        expect(calls.focus).toEqual([0]);
+    });
+
+    it('defaults to switching when the plugin has published no settings yet', () => {
+        publishOsintPluginState({ ready: false, settings: null });
+        const { workspace, nodes, calls } = fakeWorkspace([noteA, chat]);
+        nodes.set(entities.path, entities);
+        setTangentWorkspace(workspace as never);
+
+        expect(openEntities()).toBe(true);
+        expect(calls.updateThread).toEqual([{ thread: [noteA, entities], currentNode: entities }]);
     });
 });
