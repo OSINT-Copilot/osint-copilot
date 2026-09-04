@@ -362,6 +362,7 @@ export default class VaultAIPlugin extends Plugin {
       // Initialize local entity storage (non-blocking on errors)
       try {
         await this.entityManager.initialize();
+        this.graphFeaturesInitialised = true;
         console.debug('OSINTCopilot: Local entity storage initialized');
       } catch (error) {
         // Log but don't block - entity manager can still work for basic operations
@@ -899,7 +900,9 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
       CLAUDE_RUNTIME_ID,
       CODEX_RUNTIME_ID,
       HERMES_RUNTIME_ID,
-      ...((merged.customAgentRuntimes as CustomAgentRuntime[]).map((rt) => rt.id)),
+      // A disabled runtime is not a valid selection: the dropdown hides it, so leaving
+      // the setting pointed at it ran the disabled CLI while the UI said Claude.
+      ...((merged.customAgentRuntimes as CustomAgentRuntime[]).filter((rt) => rt.enabled !== false).map((rt) => rt.id)),
     ]);
     const arp = typeof merged.agentRuntimeProvider === 'string' ? merged.agentRuntimeProvider : '';
     if (!validRuntimeIds.has(arp)) {
@@ -1005,6 +1008,8 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
     'customAgentRuntimes', 'taskAgentsEnabled', 'preferredTaskAgentId',
   ] as const;
   private lastRuntimeSettingsSnapshot: string | undefined;
+  /** Set once the entity store has been loaded; the setting can turn graph features on later. */
+  private graphFeaturesInitialised = false;
 
   async saveSettings() {
     // Only a runtime-affecting change invalidates the availability cache and re-renders
@@ -1019,6 +1024,17 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
     if (runtimeChanged) invalidateChatRuntimeAvailabilityCache();
     // Settings are edited in place, so nothing else can notice a change; say so.
     publishOsintPluginState({ settings: this.settings });
+    // Turning graph features on used to need a restart: the entity store was loaded only
+    // in onload, so the toolbar buttons appeared at once but Entities opened empty.
+    if (this.settings.enableGraphFeatures && !this.graphFeaturesInitialised) {
+      this.graphFeaturesInitialised = true;
+      try {
+        await this.entityManager.initialize();
+      } catch (e) {
+        this.graphFeaturesInitialised = false;
+        console.warn('OSINTCopilot: Entity storage initialization had issues:', e);
+      }
+    }
     await this.saveData(this.settings);
     if (this.graphApiService) {
       this.graphApiService.setSettings({
