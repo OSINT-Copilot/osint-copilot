@@ -106,10 +106,18 @@
 
 	"linux": {
 		"category": "Office",
-		"target": {
-			"target": "AppImage",
-			"arch": ["x64", "arm64"]
-		},
+		"maintainer": "Probe Point Analytics LLC",
+		"synopsis": "OSINT investigation workspace",
+		"target": [
+			{
+				"target": "AppImage",
+				"arch": ["x64", "arm64"]
+			},
+			{
+				"target": "deb",
+				"arch": ["x64"]
+			}
+		],
 		"fileAssociations": [
 			{
 				"ext": "md",

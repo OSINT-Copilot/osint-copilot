@@ -1,5 +1,5 @@
 {
-  "name": "tangent_electron",
+  "name": "osint-copilot",
   "productName": "OSINT Copilot",
   "version": "0.12.10",
   "description": "An OSINT investigation workspace built on local markdown notes.",

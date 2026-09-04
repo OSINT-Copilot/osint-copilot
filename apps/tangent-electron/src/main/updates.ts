@@ -79,7 +79,12 @@ export function checkForUpdates() {
 	if (mode === 'production') {
 		log.info('Checking for updates by user request...')
 		lastUpdateChecked = new Date()
-		autoUpdater.checkForUpdates()
+		// The rejection is caught, not just reported. electron-updater rejects this promise
+		// AND emits 'error' (handled above), so without a catch every failed check is an
+		// unhandled rejection -- which a packaged build hits on each window focus whenever
+		// the feed is unreachable (private repo, no releases yet, or simply offline), and
+		// which becomes a hard crash under --unhandled-rejections=strict.
+		autoUpdater.checkForUpdates().catch(e => log.info('Update check failed:', e?.message ?? e))
 	}
 	else if (!process.env.INTEGRATION_TEST) {
 		console.trace('Checking for Updates!')
