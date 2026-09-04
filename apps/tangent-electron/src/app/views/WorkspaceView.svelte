@@ -366,51 +366,12 @@ function onViewContextMenu(event: MouseEvent) {
 				use:command={{
 					command: workspace.commands.setMapFocusLevel,
 					context: {
-						toggle: false
+						toggle: true
 					},
 					labelAsTooltip: true
 				}}
 			><FocusLevelIcon focusLevel={FocusLevel.Map}/></button>
 
-			<button class="subtle"
-				use:command={{
-					command: workspace.commands.setThreadFocusLevel,
-					labelAsTooltip: true
-				}}
-			><FocusLevelIcon focusLevel={FocusLevel.Thread}/></button>
-
-			<PopUpButton name='Focus'
-				buttonClass="subtle"
-				command={workspace.commands.toggleFocusMode}
-				commandContext = {{ toggle: false }}
-				placement={'bottom-start'}
-				menuMode="low-profile"
-				bind:showMenu={focusMenuIsOpen}
-				closeMenuOnClick
-			>
-				<svelte:fragment slot="button">
-					<FocusLevelIcon focusLevel={$targetFocusModeLevel}/>
-				</svelte:fragment>
-				<div class="popUpButtonList">
-					<h1>Focus Mode</h1>
-					<div class="buttonGroup vertical"> 
-						{#each FocusLevel.focusModeFocusLevels as level}
-							
-							<button
-								class="no-callout"
-								use:command={{
-									command: workspace.commands.setFocusLevel,
-									context: { targetFocusLevel: level },
-									tooltip: FocusLevel.describeFocusLevel(level),
-								}}
-							>
-								<FocusLevelIcon focusLevel={level}/>
-								<div>{FocusLevel.getShortName(level)}</div>
-							</button>
-						{/each}
-					</div>
-				</div>
-			</PopUpButton>
 		</span>
 
 		<OsintViewsPill />

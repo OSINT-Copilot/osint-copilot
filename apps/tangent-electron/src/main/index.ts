@@ -149,6 +149,18 @@ Tangent ${app.getVersion()} Launched With Arguments:`, process.argv)
 	// This method will be called when Electron has finished
 	// initialization and is ready to create browser windows.
 	// Some APIs can only be used after this event occurs.
+	// Wayland: launched from the desktop entry, the packaged app initialised fully and
+	// then crashed a second later under Mutter -- the same crash scripts/launch.mjs works
+	// around in development with --ozone-platform=x11. X11 through XWayland is stable
+	// everywhere, so prefer it on a Wayland session unless the user asked for native
+	// Wayland (OSINT_COPILOT_NATIVE_WAYLAND=1) or passed an ozone flag themselves.
+	if (process.platform === 'linux'
+		&& process.env.XDG_SESSION_TYPE === 'wayland'
+		&& !process.env.OSINT_COPILOT_NATIVE_WAYLAND
+		&& !process.argv.some(a => a.startsWith('--ozone-platform'))) {
+		app.commandLine.appendSwitch('ozone-platform', 'x11')
+	}
+
 	app.on('ready', onReady);
 
 	// This is a mac-only event that is called when a folder or file is dragged to the app
