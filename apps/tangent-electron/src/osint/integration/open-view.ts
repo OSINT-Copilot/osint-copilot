@@ -94,47 +94,35 @@ function viewOpenMode(): 'switch' | 'alongside' {
  * - already in the thread: `thread: 'retain'` just moves the current marker, the way
  *   CreateNewFile does for an existing note. Without this, re-clicking an open view would
  *   truncate everything to its right.
- * - a VIEW arriving while another view is open, in 'switch' mode: the newcomer takes the
- *   old view's place in the thread, so the pill reads as a set of view modes instead of
- *   stacking one more column per click. Notes are left exactly where they are -- the
- *   alternative, a one-node thread, is what used to wipe the analyst's open work.
+ * - a VIEW, in 'switch' mode (the default): it becomes the whole thread, so the window
+ *   shows one thing at a time -- a note, or a view, never a note beside a view. The pill
+ *   then reads as a set of view modes rather than a way of building a split.
  * - otherwise: `navigateTo({ origin: 'current', direction: 'out' })`, which is the file
  *   tree's "Open to the Right" -- appends beside the current pane, and leaves Map focus
- *   on its own. This is how notes always open, and how views open in 'alongside' mode or
- *   when no view is on screen yet.
+ *   on its own. This is how NOTES always open, whatever the mode, and how views open in
+ *   'alongside' mode.
  */
 export function show(node: TangentNodeLike): void {
     const ws = workspace!;
     const tangent = ws.viewState.tangent;
-    const thread = tangent.thread.value;
 
-    if (thread.includes(node)) {
-        tangent.updateThread({ currentNode: node, thread: 'retain' });
+    if (isOsintViewNode(node) && viewOpenMode() === 'switch') {
+        // The view is the ONLY thing on screen: you are reading a note or you are in a
+        // view, never both. Unconditional on purpose -- checking "already open" first
+        // would take the retain path for a thread like [note, chat], leaving the note
+        // beside the view, which is the split this setting exists to remove. Re-clicking
+        // the view a second time costs nothing: Tangent drops an update that would not
+        // change the session state (Tangent.updateThread -> willItemChangeState). The
+        // previous thread is not lost either -- the back arrow restores it.
+        tangent.updateThread({ thread: [node], currentNode: node });
         raiseFocusOutOfMap();
         return;
     }
 
-    if (isOsintViewNode(node) && viewOpenMode() === 'switch') {
-        // Collapses to ONE view rather than swapping the first: a thread built in
-        // 'alongside' mode (or before this setting existed) can hold several, and leaving
-        // the rest behind would mean the setting never actually tidied anything up.
-        const next: TangentNodeLike[] = [];
-        let placed = false;
-        for (const existing of thread) {
-            if (isOsintViewNode(existing)) {
-                if (!placed) {
-                    next.push(node);
-                    placed = true;
-                }
-                continue;
-            }
-            next.push(existing);
-        }
-        if (placed) {
-            tangent.updateThread({ thread: next, currentNode: node });
-            raiseFocusOutOfMap();
-            return;
-        }
+    if (tangent.thread.value.includes(node)) {
+        tangent.updateThread({ currentNode: node, thread: 'retain' });
+        raiseFocusOutOfMap();
+        return;
     }
 
     ws.navigateTo({ target: node, origin: 'current', direction: 'out' });

@@ -22,8 +22,8 @@ import {
 /**
  * Where the toolbar's view buttons put a view in the thread.
  *
- * 'switch': the thread holds at most one OSINT view, so clicking a second one takes the
- * first one's place and the pill behaves like a set of view modes. Notes stay open.
+ * 'switch': a view takes over the whole thread, so the window shows one thing at a time --
+ * a note, or a view, never both side by side.
  * 'alongside': every view opens as an extra pane beside the current one, which stacks a
  * new column per click.
  */

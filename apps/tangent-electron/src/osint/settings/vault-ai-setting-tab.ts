@@ -92,11 +92,11 @@ export class VaultAISettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Opening a view")
 			.setDesc(
-				"What the Chat / Entities / Timeline / Locations / Tools buttons do. Switching keeps one view open at a time; opening alongside adds a pane per click, which is how a note opens.",
+				"What the Chat / Entities / Timeline / Locations / Tools buttons do. Switching shows one thing at a time \u2014 a note or a view, never both; opening alongside adds a pane per click, the way a note opens to the right.",
 			)
 			.addDropdown((dd) =>
 				dd
-					.addOption("switch", "Switch to it")
+					.addOption("switch", "Switch to it (one at a time)")
 					.addOption("alongside", "Open beside the current pane")
 					.setValue(this.plugin.settings.viewOpenMode === "alongside" ? "alongside" : "switch")
 					.onChange(async (value) => {
