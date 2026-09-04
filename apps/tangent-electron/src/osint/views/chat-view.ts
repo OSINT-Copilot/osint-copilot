@@ -35,7 +35,6 @@ import {
   ORCHESTRATION_TOOL_DISPLAY_NAMES,
   type OrchestrationProgressMeta,
 } from '../services/orchestration-service';
-import type { OrchestrationPlan } from '../services/orchestration-plan';
 import {
   getChatRuntimeAvailability,
   type ChatRuntimeAvailability,
@@ -78,9 +77,6 @@ export class ChatView extends ItemView {
   /** Legacy: persisted on conversations; task agents are configured in settings only. */
   selectedTaskAgentId: string = "";
   graphGenerationMode: boolean = false;
-  graphGenerationToggle!: HTMLInputElement;
-  entityGenContainer!: HTMLElement;
-  pollingIntervals: Map<string, number> = new Map();
   currentConversation: Conversation | null = null;
   sidebarVisible: boolean = true;
   uploadButtonEl!: HTMLElement;
@@ -358,7 +354,6 @@ export class ChatView extends ItemView {
         Array.isArray(m.proposedCustomVaultOps) && m.proposedCustomVaultOps.length > 0
           ? normalizeCustomVaultOperations(m.proposedCustomVaultOps)
           : undefined,
-      proposedPlan: m.proposedPlan as OrchestrationPlan,
       savedQuery: m.savedQuery,
     }));
   }
@@ -381,7 +376,6 @@ export class ChatView extends ItemView {
         usedEntities: h.usedEntities,
         proposedModifications: h.proposedModifications,
         proposedCustomVaultOps: h.proposedCustomVaultOps as unknown as Record<string, unknown>[] | undefined,
-        proposedPlan: h.proposedPlan,
         // Without this, Apply after a reload fell back to a placeholder provenance query.
         savedQuery: h.savedQuery,
       };
@@ -534,34 +528,6 @@ export class ChatView extends ItemView {
       // @ts-ignore
       this.app.setting.openTabById(this.plugin.manifest.id);
     });
-
-    // Legacy graph toggle hidden (unified agent handles extraction intent from the prompt)
-    this.entityGenContainer = buttonGroup.createDiv("vault-ai-entity-gen-toggle");
-    this.entityGenContainer.addClass("vault-ai-toggle-container");
-    this.entityGenContainer.style.display = "none";
-
-    this.graphGenerationToggle = this.entityGenContainer.createEl("input", {
-      type: "checkbox",
-      cls: "vault-ai-entity-gen-checkbox",
-    });
-    this.graphGenerationToggle.id = "graph-gen-mode-toggle";
-    this.graphGenerationToggle.checked = this.graphGenerationMode;
-    this.graphGenerationToggle.addEventListener("change", () => {
-      this.graphGenerationMode = this.graphGenerationToggle.checked;
-      this.updateGraphGenerationLabel();
-      this.updateInputPlaceholder();
-      this.updateModeDisclaimer();
-      this.updateUploadButtonVisibility();
-      this.updateUrlButtonVisibility();
-    });
-
-    const entityGenLabel = this.entityGenContainer.createEl("label", {
-      text: this.getGraphGenLabelText(),
-      cls: this.graphGenerationMode ? "vault-ai-entity-gen-label active" : "vault-ai-entity-gen-label",
-    });
-    entityGenLabel.htmlFor = "graph-gen-mode-toggle";
-
-    this.updateGraphToggleVisibility();
 
     // Messages container
     this.messagesContainer = chatArea.createDiv("vault-ai-chat-messages");
@@ -794,7 +760,6 @@ export class ChatView extends ItemView {
       }
     });
 
-    this.updateAllModeLabels();
 
     // Hosted OSINT options panel removed
   }
@@ -1150,11 +1115,6 @@ export class ChatView extends ItemView {
     });
   }
 
-  updateGraphToggleVisibility() {
-    if (this.entityGenContainer) {
-      this.entityGenContainer.style.display = "none";
-    }
-  }
 
   async handleFileUpload(event: Event) {
     const target = event.target as HTMLInputElement;
@@ -1358,16 +1318,7 @@ export class ChatView extends ItemView {
     }
   }
 
-  isGraphOnlyMode(): boolean {
-    return false;
-  }
 
-  // Show notice when entering Graph only Mode
-  checkGraphOnlyMode() {
-    if (this.isGraphOnlyMode()) {
-      new Notice("Graph only mode - enter text to extract entities");
-    }
-  }
 
   // Get the appropriate input placeholder based on current mode
   getInputPlaceholder(): string {
@@ -1381,86 +1332,9 @@ export class ChatView extends ItemView {
     }
   }
 
-  // Update the mode disclaimer banner dynamically
-  updateModeDisclaimer() {
-    const inputContainer = this.containerEl.querySelector(".vault-ai-chat-input");
-    if (!inputContainer) return;
 
-    // Find existing disclaimer element
-    let disclaimerEl = inputContainer.querySelector(".vault-ai-mode-disclaimer") as HTMLElement | null;
-    const newDisclaimer = this.getModeDisclaimer();
 
-    if (newDisclaimer) {
-      if (disclaimerEl) {
-        // Update existing disclaimer
-        disclaimerEl.empty();
-        disclaimerEl.createSpan({ text: newDisclaimer.icon + " " });
-        disclaimerEl.createEl("strong", { text: newDisclaimer.title + " " });
-        disclaimerEl.createSpan({ text: newDisclaimer.text });
-      } else {
-        // Create new disclaimer element (insert at the beginning of input container)
-        disclaimerEl = document.createElement("div");
-        disclaimerEl.className = "vault-ai-mode-disclaimer";
 
-        const disclaimerSpan = document.createElement("span");
-        disclaimerSpan.textContent = newDisclaimer.icon + " ";
-        disclaimerEl.appendChild(disclaimerSpan);
-
-        const disclaimerStrong = document.createElement("strong");
-        disclaimerStrong.textContent = newDisclaimer.title + " ";
-        disclaimerEl.appendChild(disclaimerStrong);
-
-        const disclaimerText = document.createElement("span");
-        disclaimerText.textContent = newDisclaimer.text;
-        disclaimerEl.appendChild(disclaimerText);
-
-        inputContainer.insertBefore(disclaimerEl, inputContainer.firstChild);
-      }
-    } else {
-      // Remove disclaimer if no longer needed
-      if (disclaimerEl) {
-        disclaimerEl.remove();
-      }
-    }
-
-    // Also update the send button text based on mode
-    const sendBtn = inputContainer.querySelector(".vault-ai-send-btn");
-    if (sendBtn) {
-      sendBtn.textContent = "Send";
-    }
-  }
-
-  // Get the graph generation label text (shows Graph only when applicable)
-  getGraphGenLabelText(): string {
-    if (this.isGraphOnlyMode()) {
-      return "🏷️ Graph only (ON)";
-    } else if (this.graphGenerationMode) {
-      return "🏷️ Graph Generation (ON)";
-    } else {
-      return "🏷️ Graph Generation";
-    }
-  }
-
-  updateGraphGenerationLabel() {
-    const container = this.containerEl.querySelector(".vault-ai-entity-gen-toggle");
-    if (container) {
-      const label = container.querySelector("label");
-      if (label) {
-        label.textContent = this.getGraphGenLabelText();
-        label.className = this.graphGenerationMode ? "vault-ai-entity-gen-label active" : "vault-ai-entity-gen-label";
-        // Add special styling for Graph only Mode
-        if (this.isGraphOnlyMode()) {
-          container.addClass("graph-only-mode");
-        } else {
-          container.removeClass("graph-only-mode");
-        }
-      }
-    }
-  }
-
-  updateAllModeLabels() {
-    this.updateGraphGenerationLabel();
-  }
 
   renderSidebar() {
     this.sidebarContainer.empty();
@@ -1727,95 +1601,6 @@ export class ChatView extends ItemView {
         }
       }
 
-      // NEW: Show multiple progress bars for concurrent investigation tools
-      if (item.role === "assistant" && item.multiProgress && Object.keys(item.multiProgress).length > 0) {
-        const multiProgressContainer = messageDiv.createDiv("vault-ai-multi-progress-container");
-        multiProgressContainer.style.cssText = `
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          margin: 12px 0;
-          padding: 12px;
-          background: var(--background-secondary);
-          border-radius: 8px;
-          border: 1px solid var(--background-modifier-border);
-        `;
-
-        if (this.activeAbortControllers.has(i)) {
-          const cancelAllRow = multiProgressContainer.createDiv("vault-ai-multi-cancel-all-row");
-          cancelAllRow.style.cssText =
-            "display: flex; justify-content: flex-end; margin-bottom: 4px;";
-          const cancelAllBtn = cancelAllRow.createEl("button", {
-            text: "Cancel all",
-            cls: "vault-ai-cancel-all-btn",
-          });
-          cancelAllBtn.style.cssText =
-            "font-size: 11px; padding: 4px 10px; cursor: pointer; color: var(--text-muted); background: transparent; border: 1px solid var(--background-modifier-border); border-radius: 4px;";
-          cancelAllBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            void this.handleCancel(i);
-          });
-        }
-
-        for (const [tool, progress] of Object.entries(item.multiProgress)) {
-          const toolRow = multiProgressContainer.createDiv("vault-ai-tool-progress-row");
-          toolRow.setAttribute("data-tool", tool);
-          toolRow.style.cssText =
-            "margin-bottom: 12px; padding: 8px; background: var(--background-secondary-alt); border-radius: 6px; border: 1px solid var(--background-modifier-border); display: flex; flex-direction: column; gap: 4px;";
-
-          const header = toolRow.createDiv("vault-ai-tool-header");
-          header.style.cssText =
-            "display: flex; align-items: center; gap: 10px; justify-content: space-between; margin-bottom: 6px;";
-
-          const label = header.createDiv("vault-ai-tool-label");
-          label.textContent = tool;
-          label.style.cssText =
-            "font-size: 12px; font-weight: 600; color: var(--text-normal); flex: 1; min-width: 0;";
-
-          const headerRight = header.createDiv("vault-ai-tool-header-right");
-          headerRight.style.cssText = "display: flex; align-items: center; gap: 8px; flex-shrink: 0;";
-
-          const pctEl = headerRight.createDiv("vault-ai-tool-percent");
-          pctEl.textContent = `${progress.percent}%`;
-          pctEl.style.cssText = "font-size: 11px; color: var(--interactive-accent);";
-
-          const toolId = item.orchestrationDisplayToToolId?.[tool];
-          const ctrl = toolId ? item.orchestrationAbortByToolId?.[toolId] : undefined;
-          if (ctrl && !ctrl.signal.aborted) {
-            const cancelWrap = headerRight.createDiv("vault-ai-tool-cancel-wrap");
-            const cancelBtn = cancelWrap.createEl("button", { text: "Cancel", cls: "vault-ai-tool-cancel-btn" });
-            cancelBtn.style.cssText =
-              "font-size: 11px; padding: 2px 8px; cursor: pointer; color: var(--text-muted); background: transparent; border: 1px solid var(--background-modifier-border); border-radius: 4px;";
-            cancelBtn.addEventListener("click", (e) => {
-              e.stopPropagation();
-              if (toolId) void this.handleOrchestrationToolCancel(i, toolId);
-            });
-          }
-
-          const progressTrack = toolRow.createDiv("vault-ai-tool-bar-container");
-          progressTrack.style.cssText = `
-            height: 6px;
-            background: var(--background-modifier-border);
-            border-radius: 3px;
-            overflow: hidden;
-            position: relative;
-          `;
-
-          const progressFill = progressTrack.createDiv("vault-ai-tool-bar-fill");
-          progressFill.style.cssText = `
-            height: 100%;
-            width: ${progress.percent}%;
-            background: var(--interactive-accent);
-            transition: width 0.3s ease-in-out;
-          `;
-
-          const statusText = toolRow.createDiv("vault-ai-tool-status");
-          statusText.textContent = progress.message;
-          statusText.style.cssText =
-            "font-size: 11px; color: var(--text-muted); margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;";
-        }
-      }
-
       // Show intermediate results for report generation
       if (item.role === "assistant" && item.intermediateResults && item.intermediateResults.length > 0) {
         const resultsContainer = messageDiv.createDiv("vault-ai-intermediate-results-container");
@@ -2012,11 +1797,6 @@ export class ChatView extends ItemView {
           color: var(--text-muted);
           font-style: italic;
         `;
-      }
-
-      // Step-by-step: Show tool results for review with continue button
-      if (item.role === "assistant" && item.toolResults && Object.keys(item.toolResults).length > 0) {
-        this.renderToolResults(item, i, messageDiv);
       }
 
       // Round 4: Show proposed graph modifications (persistent box)
@@ -2390,198 +2170,8 @@ export class ChatView extends ItemView {
     // Don't remove results container if no new results - keep the last known results
   }
 
-  updateMultiProgressBar(messageIndex: number, toolName: string, progress: { message: string, percent: number }) {
-    const messageDiv = this.messagesContainer.querySelector(
-      `.vault-ai-chat-message[data-message-index="${messageIndex}"]`
-    ) as HTMLElement;
-    if (!messageDiv) return;
 
-    let multiContainer = messageDiv.querySelector(".vault-ai-multi-progress-container") as HTMLElement;
-    if (!multiContainer) {
-      // Create it if it doesn't exist (fallback)
-      const contentDiv = messageDiv.querySelector(".vault-ai-chat-content") as HTMLElement;
-      multiContainer = document.createElement("div");
-      multiContainer.className = "vault-ai-multi-progress-container";
-      if (contentDiv) {
-        contentDiv.insertAdjacentElement("afterend", multiContainer);
-      } else {
-        messageDiv.appendChild(multiContainer);
-      }
-    }
 
-    if (this.activeAbortControllers.has(messageIndex) && !multiContainer.querySelector(".vault-ai-multi-cancel-all-row")) {
-      const cancelAllRow = multiContainer.createDiv("vault-ai-multi-cancel-all-row");
-      cancelAllRow.style.cssText =
-        "display: flex; justify-content: flex-end; margin-bottom: 4px;";
-      multiContainer.prepend(cancelAllRow);
-      const cancelAllBtn = cancelAllRow.createEl("button", {
-        text: "Cancel all",
-        cls: "vault-ai-cancel-all-btn",
-      });
-      cancelAllBtn.style.cssText =
-        "font-size: 11px; padding: 4px 10px; cursor: pointer; color: var(--text-muted); background: transparent; border: 1px solid var(--background-modifier-border); border-radius: 4px;";
-      cancelAllBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        void this.handleCancel(messageIndex);
-      });
-    }
-
-    let toolRow = multiContainer.querySelector(`.vault-ai-tool-progress-row[data-tool="${toolName}"]`) as HTMLElement;
-    if (!toolRow) {
-      toolRow = multiContainer.createDiv('vault-ai-tool-progress-row');
-      toolRow.setAttribute('data-tool', toolName);
-      toolRow.style.marginBottom = '12px';
-      toolRow.style.padding = '8px';
-      toolRow.style.background = 'var(--background-secondary-alt)';
-      toolRow.style.borderRadius = '6px';
-      toolRow.style.border = '1px solid var(--background-modifier-border)';
-
-      const header = toolRow.createDiv('vault-ai-tool-header');
-      header.style.display = 'flex';
-      header.style.alignItems = 'center';
-      header.style.gap = '10px';
-      header.style.justifyContent = 'space-between';
-      header.style.marginBottom = '6px';
-
-      const label = header.createDiv('vault-ai-tool-label');
-      label.textContent = toolName;
-      label.style.fontSize = '12px';
-      label.style.fontWeight = '600';
-      label.style.color = 'var(--text-normal)';
-      label.style.flex = '1';
-      label.style.minWidth = '0';
-
-      const headerRight = header.createDiv('vault-ai-tool-header-right');
-      headerRight.style.display = 'flex';
-      headerRight.style.alignItems = 'center';
-      headerRight.style.gap = '8px';
-      headerRight.style.flexShrink = '0';
-
-      const percentText = headerRight.createDiv('vault-ai-tool-percent');
-      percentText.style.fontSize = '11px';
-      percentText.style.color = 'var(--interactive-accent)';
-
-      const barContainer = toolRow.createDiv('vault-ai-tool-bar-container');
-      barContainer.style.height = '6px';
-      barContainer.style.background = 'var(--background-modifier-border)';
-      barContainer.style.borderRadius = '3px';
-      barContainer.style.overflow = 'hidden';
-      barContainer.style.position = 'relative';
-
-      const bar = barContainer.createDiv('vault-ai-tool-bar-fill');
-      bar.style.height = '100%';
-      bar.style.background = 'var(--interactive-accent)';
-      bar.style.width = '0%';
-      bar.style.transition = 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
-
-      const status = toolRow.createDiv('vault-ai-tool-status');
-      status.style.fontSize = '11px';
-      status.style.color = 'var(--text-muted)';
-      status.style.marginTop = '6px';
-      status.style.whiteSpace = 'nowrap';
-      status.style.overflow = 'hidden';
-      status.style.textOverflow = 'ellipsis';
-    }
-
-    const bar = toolRow.querySelector('.vault-ai-tool-bar-fill') as HTMLElement;
-    const status = toolRow.querySelector('.vault-ai-tool-status') as HTMLElement;
-    const percentText = toolRow.querySelector('.vault-ai-tool-percent') as HTMLElement;
-
-    if (bar) bar.style.width = `${progress.percent}%`;
-    if (status) status.textContent = progress.message;
-    if (percentText) percentText.textContent = `${progress.percent}%`;
-
-    // Smooth pulse animation if it's 100%
-    if (progress.percent === 100 && bar) {
-      bar.style.background = 'var(--text-success)';
-    }
-
-    // Per-tool cancel (parallel Main Copilot)
-    if (messageIndex < this.chatHistory.length) {
-      const item = this.chatHistory[messageIndex];
-      const toolId = item.orchestrationDisplayToToolId?.[toolName];
-      const ctrl = toolId ? item.orchestrationAbortByToolId?.[toolId] : undefined;
-      let cancelRow = toolRow.querySelector(".vault-ai-tool-cancel-wrap") as HTMLElement | null;
-      if (ctrl && !ctrl.signal.aborted) {
-        if (!cancelRow) {
-          const headerRight = toolRow.querySelector(".vault-ai-tool-header-right") as HTMLElement;
-          if (headerRight) {
-            cancelRow = headerRight.createDiv("vault-ai-tool-cancel-wrap");
-            cancelRow.style.flexShrink = "0";
-            const cancelBtn = cancelRow.createEl("button", {
-              text: "Cancel",
-              cls: "vault-ai-tool-cancel-btn",
-            });
-            cancelBtn.style.fontSize = "11px";
-            cancelBtn.style.padding = "2px 8px";
-            cancelBtn.style.cursor = "pointer";
-            cancelBtn.style.color = "var(--text-muted)";
-            cancelBtn.style.background = "transparent";
-            cancelBtn.style.border = "1px solid var(--background-modifier-border)";
-            cancelBtn.style.borderRadius = "4px";
-            cancelBtn.addEventListener("click", (e) => {
-              e.stopPropagation();
-              if (toolId) void this.handleOrchestrationToolCancel(messageIndex, toolId);
-            });
-          }
-        }
-      } else if (cancelRow) {
-        cancelRow.remove();
-      }
-    }
-  }
-
-  /**
-   * Creates per-tool AbortControllers and multi-progress rows for parallel orchestration.
-   * Returns signals passed to {@link OrchestrationService.executeToolsInParallel}.
-   */
-  private setupOrchestrationParallelToolsUI(
-    assistantIndex: number,
-    tools: string[]
-  ): Record<string, AbortSignal> {
-    const item = this.chatHistory[assistantIndex];
-    item.progress = undefined;
-    item.multiProgress = {};
-    item.orchestrationAbortByToolId = {};
-    item.orchestrationDisplayToToolId = {};
-    const signals: Record<string, AbortSignal> = {};
-    for (const t of tools) {
-      const d = ORCHESTRATION_TOOL_DISPLAY_NAMES[t] || t;
-      item.orchestrationDisplayToToolId![d] = t;
-      const c = new AbortController();
-      item.orchestrationAbortByToolId![t] = c;
-      signals[t] = c.signal;
-      item.multiProgress![d] = { message: "Initializing…", percent: 5 };
-    }
-    void this.renderMessages();
-    return signals;
-  }
-
-  /** Cancels one parallel orchestration tool without stopping the others. */
-  async handleOrchestrationToolCancel(messageIndex: number, toolId: string) {
-    const item = this.chatHistory[messageIndex];
-    const ctrl = item.orchestrationAbortByToolId?.[toolId];
-    if (!ctrl || ctrl.signal.aborted) return;
-
-    new ConfirmModal(
-      this.app,
-      "Cancel this task",
-      "Stop only this investigation module? Other modules will keep running.",
-      () => {
-        ctrl.abort();
-        const display =
-          Object.entries(item.orchestrationDisplayToToolId || {}).find(([, id]) => id === toolId)?.[0] ||
-          toolId;
-        if (item.multiProgress?.[display]) {
-          item.multiProgress[display] = { message: "Cancelled by user", percent: 100 };
-        }
-        this.updateMultiProgressBar(messageIndex, display, { message: "Cancelled by user", percent: 100 });
-        new Notice("Task cancelled");
-      },
-      () => {},
-      true
-    ).open();
-  }
 
 
   async handleCancel(index: number) {
@@ -2600,15 +2190,9 @@ export class ChatView extends ItemView {
         // Update UI to show cancelled state
         if (this.chatHistory[index]) {
           const hist = this.chatHistory[index];
-          if (hist.orchestrationAbortByToolId) {
-            Object.values(hist.orchestrationAbortByToolId).forEach((c) => c.abort());
-            hist.orchestrationAbortByToolId = undefined;
-            hist.orchestrationDisplayToToolId = undefined;
-          }
           const currentContent = hist.content || "";
           hist.content = currentContent + "\n\n❌ **Cancelled by user**";
           hist.progress = undefined;
-          hist.multiProgress = undefined;
           void this.renderMessages();
         }
 
@@ -2645,7 +2229,7 @@ export class ChatView extends ItemView {
     // left the user bubble on screen and nothing else, not even a console line.
     if (this.sending) return;
     const value = this.inputEl.value.trim();
-    if (!value && this.attachedFiles.length === 0 && !this.vaultGraphIngestMode) return;
+    if (!value && this.attachedFiles.length === 0) return;
     this.sending = true;
     this.syncSendControls();
     try {
@@ -2886,8 +2470,6 @@ export class ChatView extends ItemView {
 
     if (this.selectedTaskAgentId.trim()) {
       await this.handleVaultTaskAgent(processingValue);
-    } else if (this.vaultGraphIngestMode) {
-      await this.handleVaultGraphIngestOnly(processingValue, "");
     } else {
       const orchestrationQuery = value || "Extract entities and relationships from the attached content.";
       await this.handleOrchestrationAgent(orchestrationQuery, attachmentsContext);
@@ -2974,21 +2556,9 @@ export class ChatView extends ItemView {
       }
     };
 
-    const updateProgress = (message: string, percent: number, meta?: OrchestrationProgressMeta) => {
+    const updateProgress = (message: string, percent: number, _meta?: OrchestrationProgressMeta) => {
       if (!isLive()) return;
       const item = this.chatHistory[assistantIndex];
-      if (
-        meta?.orchestrationTool &&
-        item.multiProgress &&
-        item.multiProgress[meta.orchestrationTool] !== undefined
-      ) {
-        item.multiProgress[meta.orchestrationTool] = { message, percent };
-        this.updateMultiProgressBar(assistantIndex, meta.orchestrationTool, { message, percent });
-        return;
-      }
-      if (item.multiProgress && Object.keys(item.multiProgress).length > 0 && !meta?.orchestrationTool) {
-        return;
-      }
       item.progress = { message, percent };
       this.updateProgressBar(assistantIndex, { message, percent });
     };
@@ -3024,10 +2594,6 @@ export class ChatView extends ItemView {
         updateProgress,
         {
           abortSignal: controller.signal,
-          onToolsStarting: (tools) => {
-            if (!isLive() || tools.length <= 1) return;
-            return this.setupOrchestrationParallelToolsUI(assistantIndex, tools);
-          },
           onLog: appendAgentLog,
         }
       );
@@ -3039,28 +2605,12 @@ export class ChatView extends ItemView {
       // "Cancelled by user"; the late result must not overwrite it with an answer and
       // a set of proposals for a run the user threw away.
       if (controller.signal.aborted) return;
-      item.orchestrationAbortByToolId = undefined;
-      item.orchestrationDisplayToToolId = undefined;
-
-      // Handle TOOLS_COMPLETE phase: show tool results for review
-      if (result.phase === "TOOLS_COMPLETE" && result.toolResults) {
-        item.content = result.finalResponse || "Tools complete. Review results below.";
-        item.toolResults = result.toolResults;
-        item.savedPlan = result.plan;
-        item.savedQuery = query;
-        item.progress = undefined;
-        item.multiProgress = undefined;
-        this._awaitingToolReview = true;
-        await this.renderMessages();
-        return;
-      }
 
       item.content = result.finalResponse || "Done.";
       item.proposedModifications = result.proposedCommands;
       item.proposedCustomVaultOps = result.proposedCustomVaultOps;
       item.savedQuery = query; // Save query for tool execution
       item.progress = undefined;
-      item.multiProgress = undefined;
       await this.renderMessages();
 
     } catch (e) {
@@ -3072,328 +2622,22 @@ export class ChatView extends ItemView {
       releaseController();
       const item = this.chatHistory[assistantIndex];
       if (item !== pendingItem) return;
-      item.orchestrationAbortByToolId = undefined;
-      item.orchestrationDisplayToToolId = undefined;
       const errorMsg = e instanceof Error ? e.message : String(e);
       if (wasUserCancelled || errorMsg === 'Cancelled by user') return;
 
       item.content = `Orchestration Error: ${errorMsg}`;
       item.progress = undefined;
-      item.multiProgress = undefined;
       await this.renderMessages();
     }
   }
 
-  /**
-   * Direct vault graph ingest: runs VAULT_GRAPH_INGEST without the LLM planner (dropdown mode).
-   */
-  async handleVaultGraphIngestOnly(query: string, attachmentsContext: string = "") {
-    const assistantIndex = this.chatHistory.length;
-    this.chatHistory.push({
-      role: "assistant",
-      content: "",
-      progress: { message: "Running vault graph ingest...", percent: 5 },
-    });
-    await this.renderMessages();
-
-    const controller = new AbortController();
-    try {
-      this.activeAbortControllers.set(assistantIndex, controller);
-
-      const q = (query || "").trim() || "Ingest vault documents for knowledge graph";
-      const toolResults = await this.plugin.orchestrationService.executeToolsInParallel(
-        ["VAULT_GRAPH_INGEST"],
-        q,
-        attachmentsContext,
-        this.currentConversation,
-        (_displayName, msg, pct, detail) => {
-          if (this.activeAbortControllers.has(assistantIndex)) {
-            this.chatHistory[assistantIndex].progress = { message: msg, percent: pct };
-            if (detail?.vaultIngestAppliedLine) {
-              if (!this.chatHistory[assistantIndex].vaultIngestLiveLog) {
-                this.chatHistory[assistantIndex].vaultIngestLiveLog = [];
-              }
-              this.chatHistory[assistantIndex].vaultIngestLiveLog!.push(detail.vaultIngestAppliedLine);
-            }
-            this.updateProgressBar(assistantIndex, { message: msg, percent: pct });
-          }
-        },
-        { globalAbort: controller.signal }
-      );
-
-      this.activeAbortControllers.delete(assistantIndex);
-
-      const plan: OrchestrationPlan = {
-        reasoning: "Direct vault graph ingest",
-        toolsToCall: ["VAULT_GRAPH_INGEST"],
-        graphCommands: [],
-        isProposal: false,
-      };
-
-      this.chatHistory[assistantIndex].content =
-        "Vault ingestion finished. Review results below, then click **📊 Generate Analysis & Graph** to proceed.";
-      this.chatHistory[assistantIndex].toolResults = toolResults;
-      this.chatHistory[assistantIndex].savedPlan = plan;
-      this.chatHistory[assistantIndex].savedQuery = q;
-      this.chatHistory[assistantIndex].progress = undefined;
-      this.chatHistory[assistantIndex].vaultIngestPreviewCommands = undefined;
-      this._awaitingToolReview = true;
-      await this.renderMessages();
-    } catch (e) {
-      // handleCancel() already finalizes content/progress for a genuine user cancel — it
-      // aborts this exact controller synchronously before this catch runs. Checking the
-      // controller's own signal (rather than map membership, which the success path also
-      // mutates) avoids misclassifying an unrelated later error as a cancel.
-      const wasUserCancelled = controller.signal.aborted;
-      this.activeAbortControllers.delete(assistantIndex);
-      const errorMsg = e instanceof Error ? e.message : String(e);
-      if (wasUserCancelled || errorMsg === "Cancelled by user") return;
-      this.chatHistory[assistantIndex].content = `Vault ingest error: ${errorMsg}`;
-      this.chatHistory[assistantIndex].progress = undefined;
-      this.chatHistory[assistantIndex].vaultIngestPreviewCommands = undefined;
-      this.chatHistory[assistantIndex].vaultIngestLiveLog = undefined;
-      await this.renderMessages();
-    }
-  }
 
   /**
    * Phase 2: Continue after the user has reviewed tool results.
    * Calls continueAfterToolReview on the OrchestrationService to synthesize + generate graph.
    */
-  private _awaitingToolReview = false; // Guard flag: only true after tools complete, before user clicks Generate
 
-  private async continueFromToolResults(sourceIndex: number) {
-    console.log("[continueFromToolResults] CALLED for sourceIndex:", sourceIndex, "_awaitingToolReview:", this._awaitingToolReview);
-    console.trace("[continueFromToolResults] Stack trace:");
 
-    // Guard: only proceed if we are genuinely awaiting tool review (user clicked the button)
-    if (!this._awaitingToolReview) {
-      console.warn("[continueFromToolResults] BLOCKED - not awaiting tool review. Ignoring ghost trigger.");
-      return;
-    }
-    this._awaitingToolReview = false;
-
-    const item = this.chatHistory[sourceIndex];
-    if (!item.toolResults || !item.savedPlan) return;
-
-    // Clear the tool results UI from the source message
-    const toolResults = item.toolResults;
-    const plan = item.savedPlan;
-    const originalQuery = item.savedQuery || "";
-    item.toolResults = undefined;
-    item.savedPlan = undefined;
-    item.savedQuery = undefined;
-
-    // Add a new assistant message for the synthesis phase
-    const synthesisIndex = this.chatHistory.length;
-    this.chatHistory.push({
-      role: "assistant",
-      content: "📊 Synthesizing analysis from all tool results...",
-      progress: { message: "Generating graph and analysis...", percent: 10 },
-      savedQuery: originalQuery,
-    });
-    await this.renderMessages();
-
-    const updateProgress = (message: string, percent: number) => {
-      if (this.activeAbortControllers.has(synthesisIndex)) {
-        this.chatHistory[synthesisIndex].progress = { message, percent };
-        this.updateProgressBar(synthesisIndex, { message, percent });
-      }
-    };
-
-    const controller = new AbortController();
-    try {
-      this.activeAbortControllers.set(synthesisIndex, controller);
-
-      const currentGraphState = {
-        entities: this.plugin.entityManager.getAllEntities(),
-        connections: this.plugin.entityManager.getAllConnections()
-      };
-
-      const conversationMemory = this.chatHistory
-        .slice(0, synthesisIndex)
-        .map(msg => ({ role: msg.role, content: msg.content }));
-
-      const result = await this.plugin.orchestrationService.continueAfterToolReview(
-        toolResults,
-        plan,
-        originalQuery,
-        currentGraphState,
-        conversationMemory,
-        updateProgress
-      );
-
-      this.activeAbortControllers.delete(synthesisIndex);
-
-      this.chatHistory[synthesisIndex].content = result.finalResponse || "Analysis complete.";
-      this.chatHistory[synthesisIndex].proposedModifications = result.proposedCommands;
-      this.chatHistory[synthesisIndex].progress = undefined;
-      await this.renderMessages();
-      await this.saveCurrentConversation();
-
-    } catch (e) {
-      // handleCancel() already finalizes content/progress for a genuine user cancel — it
-      // aborts this exact controller synchronously before this catch runs. Checking the
-      // controller's own signal (rather than map membership, which the success path also
-      // mutates) avoids misclassifying an unrelated later error as a cancel.
-      const wasUserCancelled = controller.signal.aborted;
-      this.activeAbortControllers.delete(synthesisIndex);
-      const errorMsg = e instanceof Error ? e.message : String(e);
-      if (wasUserCancelled || errorMsg === 'Cancelled by user') return;
-
-      this.chatHistory[synthesisIndex].content = `Synthesis Error: ${errorMsg}`;
-      this.chatHistory[synthesisIndex].progress = undefined;
-      await this.renderMessages();
-    }
-  }
-
-  /**
-   * Renders collapsible tool result sections and a "Generate Analysis & Graph" button.
-   */
-  private renderToolResults(item: ChatHistoryItem, index: number, messageDiv: HTMLElement) {
-    console.log("[renderToolResults] Called for index:", index, "toolResults:", item.toolResults ? Object.keys(item.toolResults) : "null");
-    if (!item.toolResults || Object.keys(item.toolResults).length === 0) {
-      console.log("[renderToolResults] No tool results to render, skipping.");
-      return;
-    }
-
-    const toolResultsDiv = messageDiv.createDiv("vault-ai-tool-results");
-    toolResultsDiv.style.cssText = `
-      margin-top: 15px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    `;
-
-    const toolIcons: Record<string, string> = {
-      "LOCAL_VAULT": "📁 Local Search",
-      "EXTRACT_TO_GRAPH": "🏷️ Graph Extraction",
-      "VAULT_GRAPH_INGEST": "🗂️ Vault graph ingest"
-    };
-
-    for (const [tool, result] of Object.entries(item.toolResults)) {
-      const details = document.createElement("details");
-      details.style.cssText = `
-        border: 1px solid var(--background-modifier-border);
-        border-radius: 8px;
-        overflow: hidden;
-      `;
-
-      const summary = document.createElement("summary");
-      summary.style.cssText = `
-        padding: 10px 14px;
-        cursor: pointer;
-        font-weight: 600;
-        background: var(--background-secondary);
-        user-select: none;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      `;
-      summary.textContent = toolIcons[tool] || `🔧 ${tool}`;
-
-      // Add a badge showing result size
-      const badge = document.createElement("span");
-      const resultText = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-      const wordCount = resultText.split(/\s+/).length;
-      badge.textContent = `${wordCount} words`;
-      badge.style.cssText = `
-        font-size: 11px;
-        font-weight: normal;
-        color: var(--text-muted);
-        margin-left: auto;
-      `;
-      summary.appendChild(badge);
-
-      const content = document.createElement("div");
-      content.style.cssText = `
-        padding: 12px 14px;
-        font-size: 13px;
-        max-height: 400px;
-        overflow-y: auto;
-        white-space: pre-wrap;
-        word-break: break-word;
-        background: var(--background-primary);
-      `;
-
-      // Format the result for display
-      let displayText = '';
-      if (typeof result === 'string') {
-        displayText = result;
-      } else if (result && typeof result === 'object') {
-        // Vault ingest: entities applied during run; optional count from appliedOperationsCount
-        if (result.__vaultIngest && result.summary) {
-          const n =
-            typeof result.appliedOperationsCount === "number"
-              ? result.appliedOperationsCount
-              : Array.isArray(result.graphCommands)
-                ? result.graphCommands.length
-                : 0;
-          if (result.__vaultIngestAutoApplied) {
-            displayText = `${result.summary}\n\n**${n}** operation(s) were applied to the graph automatically. Use **📊 Generate Analysis & Graph** for the written summary (no second confirmation list).`;
-          } else {
-            displayText = `${result.summary}\n\n**${n}** proposed graph command(s) — confirm with **📊 Generate Analysis & Graph**, then review the full list in the next step.`;
-          }
-        } else if (result.summary) {
-          displayText = result.summary;
-        } else if (result.results && Array.isArray(result.results)) {
-          displayText = result.results.map((r: any) => {
-            if (typeof r === 'string') return r;
-            return r.title ? `**${r.title}**\n${r.snippet || r.content || ''}` : JSON.stringify(r, null, 2);
-          }).join('\n\n---\n\n');
-        } else if (result.text) {
-          displayText = result.text;
-        } else if (result.report) {
-          displayText = result.report;
-        } else {
-          displayText = JSON.stringify(result, null, 2);
-        }
-      } else {
-        displayText = String(result);
-      }
-      // Render as markdown for rich formatting
-      MarkdownRenderer.render(this.app, displayText, content, "", this);
-
-      if (
-        tool === "VAULT_GRAPH_INGEST" &&
-        item.vaultIngestLiveLog &&
-        item.vaultIngestLiveLog.length > 0
-      ) {
-        content.createEl("hr");
-        content.createEl("strong", { text: "Applied to graph (during ingest):" });
-        const logDiv = content.createDiv();
-        logDiv.style.marginTop = "8px";
-        void MarkdownRenderer.render(this.app, item.vaultIngestLiveLog.join("\n\n"), logDiv, "", this);
-      }
-
-      details.appendChild(summary);
-      details.appendChild(content);
-      toolResultsDiv.appendChild(details);
-    }
-
-    // "Generate Analysis & Graph" button
-    const actionRow = toolResultsDiv.createDiv();
-    actionRow.style.cssText = `
-      display: flex;
-      gap: 12px;
-      margin-top: 10px;
-      justify-content: center;
-    `;
-
-    const continueBtn = actionRow.createEl("button", {
-      text: "📊 Generate Analysis & Graph",
-      cls: "mod-cta"
-    });
-    continueBtn.style.cssText = `
-      padding: 8px 20px;
-      font-size: 14px;
-    `;
-    continueBtn.addEventListener("click", () => {
-      continueBtn.disabled = true;
-      continueBtn.textContent = "⏳ Generating...";
-      void this.continueFromToolResults(index);
-    });
-  }
 
   private buildGraphWriteContextFromSavedQuery(savedQuery: string | undefined): GraphWriteContext {
     const q = (savedQuery ?? "").trim() || "Graph modification apply";
@@ -3635,435 +2879,9 @@ export class ChatView extends ItemView {
     return match ?? null;
   }
 
-  /**
-   * Generate/update the knowledge graph from retrieved vault notes in local search mode.
-   * Uses Ollama (qwen3:14b) on the production server — no OpenAI cost.
-   * If the query contained specific entities, focuses extraction on them.
-   * Otherwise extracts all entities from the notes as-is.
-   */
-  async processGraphFromNotes(
-    assistantIndex: number,
-    notes: IndexedNote[],
-    extractedEntities: Array<{ name: string | null; type: string }>,
-    query: string
-  ) {
-    if (notes.length === 0) return;
 
-    const updateProgress = (message: string, percent: number) => {
-      if (this.chatHistory[assistantIndex]) {
-        this.chatHistory[assistantIndex].progress = { message, percent };
-        this.updateProgressBar(assistantIndex, { message, percent });
-      }
-    };
-
-    updateProgress("Extracting entities from vault notes...", 70);
-
-    // Build extraction text from retrieved notes (cap at 6000 chars total)
-    const MAX_CHARS = 6000;
-    let notesText = "";
-    for (const note of notes) {
-      const noteBlock = `--- ${note.path} ---\n${note.content}\n\n`;
-      if (notesText.length + noteBlock.length > MAX_CHARS) break;
-      notesText += noteBlock;
-    }
-
-    // If query had specific entities, add a focus instruction
-    const namedEntities = extractedEntities.filter(e => e.name);
-    let extractionText = notesText;
-    if (namedEntities.length > 0) {
-      const entityList = namedEntities.map(e => `${e.name} (${e.type})`).join(", ");
-      extractionText = `Focus on entities related to: ${entityList}.\n\n${notesText}`;
-    }
-
-    const existingEntities = this.plugin.entityManager.getAllEntities();
-
-    const onRetry = (attempt: number, maxAttempts: number, reason: string, nextDelayMs: number) => {
-      const delaySec = Math.round(nextDelayMs / 1000);
-      updateProgress(`⚠️ Retrying graph extraction... (${attempt + 1}/${maxAttempts}, ${delaySec}s)`, 72);
-    };
-
-    const controller = new AbortController();
-    this.activeAbortControllers.set(assistantIndex, controller);
-
-    const result: ProcessTextResponse = await this.plugin.graphApiService.processTextInChunks(
-      extractionText,
-      existingEntities,
-      undefined,
-      undefined,
-      onRetry,
-      controller.signal,
-      true  // useLocal: use Ollama
-    );
-
-    this.activeAbortControllers.delete(assistantIndex);
-
-    if (!result.success || !result.operations || result.operations.length === 0) {
-      if (this.chatHistory[assistantIndex]) {
-        this.chatHistory[assistantIndex].progress = undefined;
-      }
-      return;
-    }
-
-    updateProgress("Saving graph nodes...", 88);
-
-    let entitiesCreated = 0;
-    let connectionsCreated = 0;
-    let droppedEntityCount = 0;
-    const globalEntitiesMap = new Map<number, Entity>();
-    const entityLabelMap = new Map<string, Entity>();
-    let globalIndexOffset = 0;
-
-    for (const operation of result.operations) {
-      const operationEntities: Array<Entity | null> = [];
-
-      if (operation.action === "create" && operation.entities) {
-        for (let i = 0; i < operation.entities.length; i++) {
-          const entityData = operation.entities[i];
-          try {
-            const entityType = ChatView.canonicalEntityType(entityData.type);
-            if (!entityType) {
-              droppedEntityCount++;
-              operationEntities.push(null);
-              continue;
-            }
-            const finalLabel = getEntityLabel(entityType, entityData.properties);
-            const nameValidation = validateEntityName(finalLabel, entityType);
-            if (!nameValidation.isValid) {
-              operationEntities.push(null);
-              continue;
-            }
-            const entity = await this.plugin.entityManager.createEntity(entityType, entityData.properties);
-            operationEntities.push(entity);
-            const globalIdx = globalIndexOffset + i;
-            globalEntitiesMap.set(globalIdx, entity);
-            entityLabelMap.set(`${entity.type}:${entity.label.toLowerCase()}`, entity);
-            entitiesCreated++;
-          } catch {
-            operationEntities.push(null);
-          }
-        }
-        globalIndexOffset += operation.entities.length;
-      }
-
-      if (operation.connections) {
-        for (const conn of operation.connections) {
-          try {
-            let fromEntity = (operationEntities[conn.from]) ?? globalEntitiesMap.get(conn.from);
-            let toEntity = (operationEntities[conn.to]) ?? globalEntitiesMap.get(conn.to);
-            if (!fromEntity && conn.from_label) fromEntity = entityLabelMap.get(`${conn.from_type}:${conn.from_label.toLowerCase()}`) || this.plugin.entityManager.findEntityByLabel(conn.from_label);
-            if (!toEntity && conn.to_label) toEntity = entityLabelMap.get(`${conn.to_type}:${conn.to_label.toLowerCase()}`) || this.plugin.entityManager.findEntityByLabel(conn.to_label);
-            if (fromEntity && toEntity) {
-              await this.plugin.entityManager.createConnection(fromEntity.id, toEntity.id, conn.relationship);
-              connectionsCreated++;
-            }
-          } catch { /* skip failed connections */ }
-        }
-      }
-    }
-
-    if (this.chatHistory[assistantIndex]) {
-      this.chatHistory[assistantIndex].progress = undefined;
-      if (entitiesCreated > 0 || droppedEntityCount > 0) {
-        const currentContent = this.chatHistory[assistantIndex].content || "";
-        let statusSuffix = "";
-        if (entitiesCreated > 0) {
-          statusSuffix += `\n\n🏷️ **Graph updated from vault:** ${entitiesCreated} entities, ${connectionsCreated} relationships added.`;
-        }
-        if (droppedEntityCount > 0) {
-          const entityWord = droppedEntityCount === 1 ? "entity" : "entities";
-          statusSuffix += `\n\n⚠️ ${droppedEntityCount} ${entityWord} could not be added (unrecognized type).`;
-        }
-        this.chatHistory[assistantIndex].content = currentContent + statusSuffix;
-        if (entitiesCreated > 0) {
-          await this.plugin.refreshOrOpenGraphView();
-          await this.plugin.refreshOpenInsightViews({ skipGraph: this.plugin.settings.autoRefreshGraph });
-        }
-      }
-    }
-    await this.renderMessages();
-  }
-
-  /**
-   * Process graph generation from AI response text.
-   * Calls the /api/process-text endpoint to extract entities and creates them via EntityManager.
-   */
-  async processGraphGeneration(
-    assistantIndex: number,
-    aiResponse: string,
-    originalQuery: string,
-    currentContent: string
-  ) {
-    // Helper to update progress
-    const updateProgress = (message: string, percent: number) => {
-      this.chatHistory[assistantIndex].progress = { message, percent };
-      this.updateProgressBar(assistantIndex, { message, percent });
-    };
-
-    try {
-      // Fetch latest content dynamically to avoid overwriting updates from report generation
-      // This fixes the race condition where "Report Generated Successfully" gets overwritten
-      // by stale "Processing..." content passed as an argument.
-      const latestContent = this.chatHistory[assistantIndex].content || currentContent;
-
-      updateProgress("Extracting entities from response...", 10);
-      let statusText = latestContent + "\n\n🏷️ Extracting entities...";
-      this.chatHistory[assistantIndex].content = statusText;
-      await this.renderMessages();
-
-      // Use explicit entity extraction instruction to ensure AI returns operations, not analysis
-      const textToProcess = `Extract all entities (people, companies, locations, events) and their relationships from the following content. Create entities for each person, company, location, and event mentioned. Return JSON operations to create entities, do NOT provide analysis or summary.\n\nOriginal Query: ${originalQuery}\n\nContent to extract entities from:\n${aiResponse}`;
-
-      // Get existing entities to avoid duplicates
-      const existingEntities = this.plugin.entityManager.getAllEntities();
-
-      // Retry callback to show status to user during entity extraction
-      const onRetry = (attempt: number, maxAttempts: number, reason: string, nextDelayMs: number) => {
-        const delaySeconds = Math.round(nextDelayMs / 1000);
-        let reasonText = 'Network interrupted';
-        if (reason === 'timeout') {
-          reasonText = 'Request takes longer than usual, please wait';
-        } else if (reason === 'network') {
-          reasonText = 'Network connection lost';
-        } else if (reason.startsWith('server-error')) {
-          reasonText = 'Server temporarily unavailable';
-        } else if (reason === 'rate-limited') {
-          reasonText = 'Rate limited';
-        }
-        const retryMsg = `\n\n⚠️ ${reasonText}. Retrying in ${delaySeconds}s... (attempt ${attempt + 1}/${maxAttempts})`;
-        // Append to existing content, don't overwrite with stale currentContent
-        const existingContent = this.chatHistory[assistantIndex].content || "";
-        this.chatHistory[assistantIndex].content = existingContent + retryMsg;
-        void this.renderMessages();
-      };
-
-      // Chunk progress callback to show user which chunk is being processed
-      const onChunkProgress = (chunkIndex: number, totalChunks: number, message: string) => {
-        const chunkPercent = 10 + Math.round((chunkIndex / totalChunks) * 30);
-        updateProgress(`📦 ${message}`, chunkPercent);
-      };
-
-      updateProgress("Sending to AI for entity extraction...", 15);
-
-      // Call the API to extract entities with retry and chunking support
-      // Create new abort controller for this operation
-      const controller = new AbortController();
-      this.activeAbortControllers.set(assistantIndex, controller);
-
-      const result: ProcessTextResponse = await this.plugin.graphApiService.processTextInChunks(
-        textToProcess,
-        existingEntities,
-        undefined,
-        onChunkProgress,
-        onRetry,
-        controller.signal
-      );
-
-      // Clear controller on completion
-      this.activeAbortControllers.delete(assistantIndex);
-
-      updateProgress("Processing extraction results...", 40);
-
-      if (!result.success) {
-        this.chatHistory[assistantIndex].progress = undefined; // Clear progress bar
-        const errorContent = this.chatHistory[assistantIndex].content || "";
-        this.chatHistory[assistantIndex].content = errorContent +
-          `\n\n⚠️ Entity extraction failed: ${result.error || 'Unknown error'}`;
-        await this.renderMessages();
-        return;
-      }
-
-      if (!result.operations || result.operations.length === 0) {
-        this.chatHistory[assistantIndex].progress = undefined; // Clear progress bar
-        const warningContent = this.chatHistory[assistantIndex].content || "";
-        this.chatHistory[assistantIndex].content = warningContent +
-          "\n\n🏷️ No new entities detected in the response.";
-        await this.renderMessages();
-        return;
-      }
-
-      updateProgress("Creating entities...", 50);
-
-      // Process the operations and create entities
-      // Store entity info with file paths and IDs for clickable links
-      const createdEntities: Array<{ id: string; type: string; label: string; filePath: string }> = [];
-      let connectionsCreated = 0;
-
-      // Persist entities across all operations and chunks for connection processing
-      const globalEntitiesMap: Map<number, Entity> = new Map();
-      const entityLabelMap: Map<string, Entity> = new Map();
-      let globalIndexOffset = 0;
-
-      // Count total entities for progress tracking
-      let totalEntities = 0;
-      for (const op of result.operations) {
-        if (op.action === "create" && op.entities) {
-          totalEntities += op.entities.length;
-        }
-      }
-      let processedEntities = 0;
-
-      // Debug: Log the full operations array
-      console.debug('[GraphGeneration] Processing operations:', JSON.stringify(result.operations, null, 2));
-
-      for (const operation of result.operations) {
-        // Debug: Log each operation
-        console.debug('[GraphGeneration] Processing operation:', {
-          action: operation.action,
-          hasEntities: !!operation.entities,
-          entitiesCount: operation.entities?.length || 0,
-          hasConnections: !!operation.connections,
-          connectionsCount: operation.connections?.length || 0
-        });
-
-        // Track entities by their index in THIS specific operation for AI relative indexing
-        const operationEntities: Array<Entity | null> = [];
-
-        if (operation.action === "create" && operation.entities) {
-          for (let i = 0; i < operation.entities.length; i++) {
-            const entityData = operation.entities[i];
-            processedEntities++;
-            // Update progress (50% to 85% range for entity creation)
-            const entityProgress = 50 + Math.round((processedEntities / Math.max(totalEntities, 1)) * 35);
-            updateProgress(`Creating entity ${processedEntities}/${totalEntities}...`, entityProgress);
-
-            // Debug: Log entity data
-            console.debug('[GraphGeneration] Processing entity:', {
-              type: entityData.type,
-              properties: entityData.properties
-            });
-
-            try {
-              const entityType = entityData.type as EntityType;
-              // Validate entity type
-              if (!Object.values(EntityType).includes(entityType)) {
-                console.warn(`[GraphGeneration] Unknown entity type: ${entityData.type}. Valid types:`, Object.values(EntityType));
-                operationEntities.push(null);
-                continue;
-              }
-
-              // Validate entity name is not generic
-              // Use the same logic as EntityManager to determine the label that will be used
-              const finalLabel = getEntityLabel(entityType, entityData.properties);
-              const nameValidation = validateEntityName(finalLabel, entityType);
-
-              if (!nameValidation.isValid) {
-                console.warn(`[GraphGeneration] Skipping entity with generic name: "${finalLabel}" - ${nameValidation.error}`);
-                operationEntities.push(null);
-                continue;
-              }
-
-              console.debug('[GraphGeneration] Creating entity with type:', entityType);
-              const entity = await this.plugin.entityManager.createEntity(
-                entityType,
-                entityData.properties
-              );
-
-              operationEntities.push(entity);
-              const globalIdx = globalIndexOffset + i;
-              globalEntitiesMap.set(globalIdx, entity);
-              entityLabelMap.set(`${entity.type}:${entity.label.toLowerCase()}`, entity);
-
-              createdEntities.push({
-                id: entity.id,
-                type: entity.type,
-                label: entity.label,
-                filePath: entity.filePath || ''
-              });
-            } catch (entityError) {
-              console.error('[GraphGeneration] Failed to create entity:', entityError);
-              operationEntities.push(null);
-            }
-          }
-          globalIndexOffset += operation.entities.length;
-        }
-
-        // Process connections using both global indices and label fallback
-        if (operation.connections && operation.connections.length > 0) {
-          updateProgress("Creating relationships...", 88);
-          for (const conn of operation.connections) {
-            try {
-              let fromEntity: Entity | undefined;
-              let toEntity: Entity | undefined;
-
-              // 1. Try local operation index (original AI behavior)
-              fromEntity = (operationEntities[conn.from]) ?? undefined;
-              toEntity = (operationEntities[conn.to]) ?? undefined;
-
-              // 2. Try global index if provided (backend multi-step behavior)
-              if (!fromEntity && conn.from >= 0) fromEntity = globalEntitiesMap.get(conn.from);
-              if (!toEntity && conn.to >= 0) toEntity = globalEntitiesMap.get(conn.to);
-
-              // 3. Try label fallback (best for cross-chunk and existing entities)
-              if (!fromEntity && conn.from_label) {
-                fromEntity = entityLabelMap.get(`${conn.from_type}:${conn.from_label.toLowerCase()}`) ||
-                  this.plugin.entityManager.findEntityByLabel(conn.from_label);
-              }
-              if (!toEntity && conn.to_label) {
-                toEntity = entityLabelMap.get(`${conn.to_type}:${conn.to_label.toLowerCase()}`) ||
-                  this.plugin.entityManager.findEntityByLabel(conn.to_label);
-              }
-
-              if (fromEntity && toEntity) {
-                // Use createConnection to ensure it's recorded in the plugin's state and graph
-                await this.plugin.entityManager.createConnection(
-                  fromEntity.id,
-                  toEntity.id,
-                  conn.relationship
-                );
-                connectionsCreated++;
-              }
-            } catch (connError) {
-              console.error('[GraphGeneration] Failed to create connection:', connError);
-            }
-          }
-        }
-      }
-      updateProgress("Finalizing...", 95);
-
-      // Update the message with entity creation results including clickable links
-      if (createdEntities.length > 0) {
-        // Store entities in chat history for rendering clickable graph view links
-        this.chatHistory[assistantIndex].createdEntities = createdEntities;
-        this.chatHistory[assistantIndex].connectionsCreated = connectionsCreated;
-
-        // Build a simple summary message - the actual clickable links will be rendered by renderMessages
-        let resultMsg = `\n\n🏷️ **Entities Created (${createdEntities.length}):**`;
-        if (connectionsCreated > 0) {
-          resultMsg += `\n**Relationships Created:** ${connectionsCreated}`;
-        }
-
-        this.chatHistory[assistantIndex].progress = undefined; // Clear progress bar
-
-        // Fetch latest content dynamically to avoid overwriting updates from report generation
-        const successContent = this.chatHistory[assistantIndex].content || "";
-        this.chatHistory[assistantIndex].content = successContent + resultMsg;
-
-        // Refresh or open graph view after entity creation
-        await this.plugin.refreshOrOpenGraphView();
-        await this.plugin.refreshOpenInsightViews({ skipGraph: this.plugin.settings.autoRefreshGraph });
-      } else {
-        this.chatHistory[assistantIndex].progress = undefined; // Clear progress bar
-        const noEntitiesContent = this.chatHistory[assistantIndex].content || "";
-        this.chatHistory[assistantIndex].content = noEntitiesContent + "\n\n🏷️ No new entities were created.";
-      }
-      await this.renderMessages();
-
-    } catch (error) {
-      console.error('[GraphGeneration] Error during graph generation:', error);
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      this.chatHistory[assistantIndex].progress = undefined; // Clear progress bar on error
-      this.chatHistory[assistantIndex].content = currentContent +
-        `\n\n⚠️ Graph generation error: ${errorMsg}`;
-      await this.renderMessages();
-    }
-  }
 
   async onClose() {
     this.abortAllActiveOperations();
-    // Cleanup polling timeouts (using setTimeout for adaptive polling)
-    for (const timeoutId of this.pollingIntervals.values()) {
-      window.clearTimeout(timeoutId);
-    }
-    this.pollingIntervals.clear();
   }
 }

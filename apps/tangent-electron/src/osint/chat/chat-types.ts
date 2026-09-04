@@ -19,9 +19,6 @@ export interface ChatHistoryItem {
 	jobId?: string;
 	status?: string;
 	progress?: { message: string; percent: number };
-	multiProgress?: Record<string, { message: string; percent: number }>;
-	orchestrationAbortByToolId?: Record<string, AbortController>;
-	orchestrationDisplayToToolId?: Record<string, string>;
 	query?: string;
 	intermediateResults?: string[];
 	createdEntities?: CreatedEntityInfo[];
@@ -30,9 +27,6 @@ export interface ChatHistoryItem {
 	usedEntities?: { id: string; label: string; type: string }[];
 	proposedModifications?: string[];
 	proposedCustomVaultOps?: CustomVaultOperation[];
-	proposedPlan?: OrchestrationPlan;
-	toolResults?: Record<string, any>;
-	savedPlan?: OrchestrationPlan;
 	savedQuery?: string;
 	vaultIngestPreviewCommands?: string[];
 	vaultIngestLiveLog?: string[];

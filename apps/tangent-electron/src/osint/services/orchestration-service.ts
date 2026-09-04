@@ -58,8 +58,6 @@ export interface ExecuteToolsParallelOptions {
 
 export interface ProcessRequestOptions {
     abortSignal?: AbortSignal;
-    /** Called when multiple tools run; return per-tool signals for cooperative cancel. */
-    onToolsStarting?: (tools: string[]) => Record<string, AbortSignal> | void;
     /** Live CLI log events for the "agent is thinking" panel under the chat progress bar. */
     onLog?: (event: ExtractionLogEvent) => void;
 }

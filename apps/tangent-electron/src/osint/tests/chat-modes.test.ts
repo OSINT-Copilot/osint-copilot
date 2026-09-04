@@ -278,7 +278,6 @@ describe('ChatView send routing', () => {
 
   it('routes graph mode to orchestration (legacy graph-only path removed)', async () => {
     applyModeToView(view, 'graph');
-    expect(view.isGraphOnlyMode()).toBe(false);
 
     const text = 'Apple Inc. CEO Tim Cook announced new iPhone.';
     view.inputEl.value = text;
