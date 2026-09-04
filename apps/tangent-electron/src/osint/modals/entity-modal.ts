@@ -791,7 +791,8 @@ export class FTMEntityCreationModal extends Modal {
         this.schemaName = schemaName;
         this.onEntityCreated = onEntityCreated || null;
         this.catalogType = catalogType;
-        this.geocodingService = new GeocodingService();
+        // The shared singleton: rate limiting is per instance, and a second one doubled Nominatim's allowance.
+		this.geocodingService = geocodingService;
     }
 
     onOpen() {
@@ -1946,7 +1947,8 @@ export class FTMEntityEditModal extends Modal {
         this.schemaName = entity.ftmSchema || String(entity.type);
         this.properties = { ...entity.properties };
         this.onEntityUpdated = onEntityUpdated || null;
-        this.geocodingService = new GeocodingService();
+        // The shared singleton: rate limiting is per instance, and a second one doubled Nominatim's allowance.
+		this.geocodingService = geocodingService;
     }
 
     onOpen() {
