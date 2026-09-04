@@ -5,6 +5,8 @@ import { App, Modal, Notice, Setting, TextComponent } from 'obsidian';
  */
 export class GraphWorkspaceNameModal extends Modal {
 	private textInput: TextComponent | undefined;
+	/** Enter and the button share handleCreate; this keeps a second press from creating twice. */
+	private creating = false;
 
 	constructor(
 		app: App,
@@ -25,6 +27,14 @@ export class GraphWorkspaceNameModal extends Modal {
 		new Setting(contentEl).setName('Name').addText((text) => {
 			this.textInput = text;
 			text.setPlaceholder('My investigation graph');
+			// Enter in a bare <input> does nothing outside a <form>, so the only way to
+			// confirm the name was to reach for the mouse. Key repeat and IME composition
+			// commits both arrive as Enter and are not a submit.
+			text.inputEl.addEventListener('keydown', (event) => {
+				if (event.key !== 'Enter' || event.repeat || event.isComposing) return;
+				event.preventDefault();
+				void this.handleCreate();
+			});
 		});
 
 		new Setting(contentEl)
@@ -40,13 +50,19 @@ export class GraphWorkspaceNameModal extends Modal {
 	}
 
 	private async handleCreate(): Promise<void> {
+		if (this.creating) return;
 		const name = this.textInput?.getValue().trim() ?? '';
 		if (!name) {
 			new Notice('Enter a name for the graph workspace.');
 			return;
 		}
-		await Promise.resolve(this.onCreate(name));
-		this.close();
+		this.creating = true;
+		try {
+			await Promise.resolve(this.onCreate(name));
+			this.close();
+		} finally {
+			this.creating = false;
+		}
 	}
 
 	onClose(): void {

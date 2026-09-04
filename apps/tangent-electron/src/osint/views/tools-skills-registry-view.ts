@@ -57,10 +57,28 @@ function yamlDoubleQuoted(s: string): string {
 	return `"${oneLine.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
+/**
+ * Submit a dialog from one of its text fields on Enter.
+ *
+ * Enter in a bare <input> does nothing outside a <form>, and these dialogs are not in
+ * one, so the only way to confirm was to reach for the mouse. Key repeat is ignored --
+ * holding the key must not create the file three times -- and so is a composition
+ * commit, which an IME delivers as Enter too.
+ */
+export function submitOnEnter(input: HTMLInputElement, submit: () => void): void {
+	input.addEventListener("keydown", (event: KeyboardEvent) => {
+		if (event.key !== "Enter" || event.repeat || event.isComposing) return;
+		event.preventDefault();
+		submit();
+	});
+}
+
 class AddSkillModal extends Modal {
 	private idInput = "";
 	private nameInput = "";
 	private descInput = "";
+	/** Enter and the button share one submit; this keeps a second press from creating twice. */
+	private submitting = false;
 
 	constructor(
 		app: App,
@@ -83,12 +101,14 @@ class AddSkillModal extends Modal {
 			t.onChange((v) => {
 				this.idInput = v;
 			});
+			submitOnEnter(t.inputEl, () => this.submit());
 		});
 		new Setting(contentEl).setName("Display name").addText((t) => {
 			t.setPlaceholder("My skill");
 			t.onChange((v) => {
 				this.nameInput = v;
 			});
+			submitOnEnter(t.inputEl, () => this.submit());
 		});
 		new Setting(contentEl).setName("Description").addTextArea((t) => {
 			t.setPlaceholder("Short line for the planner tool list");
@@ -98,26 +118,32 @@ class AddSkillModal extends Modal {
 			});
 		});
 
-		new Setting(contentEl).addButton((b) => {
-			b.setButtonText("Create").setCta();
-			b.onClick(() => {
-				void (async () => {
-					const id = parseSkillIdForVault(this.idInput);
-					if (!id || id === "readme") {
-						new Notice("Enter a valid skill id (letters, numbers, _ and -).");
-						return;
-					}
-					const name = this.nameInput.trim() || id;
-					const description = this.descInput.trim() || "New vault skill";
-					await this.onSubmit(id, name, description);
-					this.close();
-				})();
-			});
-		});
-		new Setting(contentEl).addButton((b) => {
-			b.setButtonText("Cancel");
-			b.onClick(() => this.close());
-		});
+		// One row, two buttons, as GraphWorkspaceNameModal has it. Two Setting rows put
+		// Create and Cancel on separate lines, each beside the empty label column of a
+		// settings entry.
+		new Setting(contentEl)
+			.addButton((b) => b.setButtonText("Create").setCta().onClick(() => this.submit()))
+			.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()));
+	}
+
+	private submit(): void {
+		if (this.submitting) return;
+		const id = parseSkillIdForVault(this.idInput);
+		if (!id || id === "readme") {
+			new Notice("Enter a valid skill id (letters, numbers, _ and -).");
+			return;
+		}
+		const name = this.nameInput.trim() || id;
+		const description = this.descInput.trim() || "New vault skill";
+		this.submitting = true;
+		void (async () => {
+			try {
+				await this.onSubmit(id, name, description);
+				this.close();
+			} finally {
+				this.submitting = false;
+			}
+		})();
 	}
 
 	onClose(): void {
@@ -128,6 +154,7 @@ class AddSkillModal extends Modal {
 class AddEnricherDraftModal extends Modal {
 	private idInput = "";
 	private nameInput = "";
+	private submitting = false;
 
 	constructor(
 		app: App,
@@ -149,32 +176,37 @@ class AddEnricherDraftModal extends Modal {
 			t.onChange((v) => {
 				this.idInput = v;
 			});
+			submitOnEnter(t.inputEl, () => this.submit());
 		});
 		new Setting(contentEl).setName("Display name").addText((t) => {
 			t.setPlaceholder("My enricher");
 			t.onChange((v) => {
 				this.nameInput = v;
 			});
+			submitOnEnter(t.inputEl, () => this.submit());
 		});
-		new Setting(contentEl).addButton((b) => {
-			b.setButtonText("Create draft").setCta();
-			b.onClick(() => {
-				void (async () => {
-					const id = parseSkillIdForVault(this.idInput);
-					if (!id) {
-						new Notice("Enter a valid enricher id.");
-						return;
-					}
-					const name = this.nameInput.trim() || id;
-					await this.onSubmit(id, name);
-					this.close();
-				})();
-			});
-		});
-		new Setting(contentEl).addButton((b) => {
-			b.setButtonText("Cancel");
-			b.onClick(() => this.close());
-		});
+		new Setting(contentEl)
+			.addButton((b) => b.setButtonText("Create draft").setCta().onClick(() => this.submit()))
+			.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()));
+	}
+
+	private submit(): void {
+		if (this.submitting) return;
+		const id = parseSkillIdForVault(this.idInput);
+		if (!id) {
+			new Notice("Enter a valid enricher id.");
+			return;
+		}
+		const name = this.nameInput.trim() || id;
+		this.submitting = true;
+		void (async () => {
+			try {
+				await this.onSubmit(id, name);
+				this.close();
+			} finally {
+				this.submitting = false;
+			}
+		})();
 	}
 
 	onClose(): void {
@@ -208,17 +240,22 @@ export class ToolsSkillsRegistryView extends ItemView {
 		root.addClass("osint-copilot-registry-root");
 
 		const toolbar = root.createDiv({ cls: "osint-copilot-registry-toolbar" });
-		const refreshBtn = toolbar.createEl("button", { text: "Refresh", cls: "mod-cta" });
-		refreshBtn.addEventListener("click", () => {
-			void this.reload();
-		});
-		const addSkillBtn = toolbar.createEl("button", { text: "Add skill" });
+		// The accent goes on the action that creates something, not on Refresh: a
+		// highlighted Refresh beside a plain "Add skill" said the opposite of what the
+		// view is for.
+		const addSkillBtn = toolbar.createEl("button", { text: "Add skill", cls: "mod-cta" });
 		addSkillBtn.addEventListener("click", () => {
 			new AddSkillModal(this.app, (id, name, description) => this.createSkillFile(id, name, description)).open();
 		});
 		const addEnrichBtn = toolbar.createEl("button", { text: "Add enricher draft" });
 		addEnrichBtn.addEventListener("click", () => {
 			new AddEnricherDraftModal(this.app, (id, name) => this.createEnricherDraft(id, name)).open();
+		});
+		// Trailing, where the map's and the timeline's refresh sit.
+		const trailing = toolbar.createDiv({ cls: "osint-copilot-registry-toolbar-trailing" });
+		this.refreshBtn = trailing.createEl("button", { text: "Refresh" });
+		this.refreshBtn.addEventListener("click", () => {
+			void this.reload();
 		});
 
 		const grid = root.createDiv({ cls: "osint-copilot-registry-grid" });
@@ -232,6 +269,9 @@ export class ToolsSkillsRegistryView extends ItemView {
 	private toolsCol!: HTMLElement;
 	private skillsCol!: HTMLElement;
 	private enrichCol!: HTMLElement;
+	private refreshBtn: HTMLButtonElement | null = null;
+	/** reload() is reachable from five places and every caller discards the promise. */
+	private reloadInFlight: Promise<void> | null = null;
 
 	/** Built-in tools list starts collapsed to give vault skills/enrichers more space. */
 	private builtInToolsCollapsed = true;
@@ -239,14 +279,57 @@ export class ToolsSkillsRegistryView extends ItemView {
 	private readonly builtInToolsBodyDomId =
 		"osint-copilot-built-in-tools-" + Math.random().toString(36).slice(2, 11);
 
-	private async reload(): Promise<void> {
-		this.host.skillRegistry.invalidate();
-		this.host.enricherRegistry.invalidate();
-		const skills = await this.host.skillRegistry.listVaultSkills();
-		const enrichers = await this.host.enricherRegistry.listAll();
-		this.renderTools();
-		this.renderSkills(skills);
-		this.renderEnrichers(enrichers);
+	/**
+	 * Single-flight, and it never rejects. Every caller discards the promise, so a
+	 * registry that threw -- an unreadable skills folder, an enricher JSON that does not
+	 * parse -- used to surface as an unhandled rejection and a view frozen on whatever it
+	 * showed last, under a Refresh button that looked as if it had not been pressed.
+	 */
+	private reload(): Promise<void> {
+		if (this.reloadInFlight) return this.reloadInFlight;
+		this.reloadInFlight = this.doReload().finally(() => {
+			this.reloadInFlight = null;
+		});
+		return this.reloadInFlight;
+	}
+
+	private async doReload(): Promise<void> {
+		this.setRefreshBusy(true);
+		try {
+			this.host.skillRegistry.invalidate();
+			this.host.enricherRegistry.invalidate();
+			this.renderTools();
+			// Settled independently: one registry failing must not hide the other's list.
+			const [skills, enrichers] = await Promise.allSettled([
+				this.host.skillRegistry.listVaultSkills(),
+				this.host.enricherRegistry.listAll(),
+			]);
+			if (skills.status === "fulfilled") this.renderSkills(skills.value);
+			else this.renderColumnError(this.skillsCol, "Vault skills", "Could not read the skills folder", skills.reason);
+			if (enrichers.status === "fulfilled") this.renderEnrichers(enrichers.value);
+			else this.renderColumnError(this.enrichCol, "HTTP enrichers", "Could not read the enrichers folder", enrichers.reason);
+		} catch (err) {
+			console.error("[ToolsSkillsRegistryView] reload failed:", err);
+			new Notice("Could not refresh the registry.");
+		} finally {
+			this.setRefreshBusy(false);
+		}
+	}
+
+	private setRefreshBusy(busy: boolean): void {
+		const btn = this.refreshBtn;
+		if (!btn) return;
+		btn.disabled = busy;
+		btn.setText(busy ? "Refreshing\u2026" : "Refresh");
+	}
+
+	/** The column's heading and one line saying what went wrong, in place of a stale list. */
+	private renderColumnError(col: HTMLElement, heading: string, what: string, reason: unknown): void {
+		console.error(`[ToolsSkillsRegistryView] ${what}:`, reason);
+		col.empty();
+		col.createEl("h3", { text: heading });
+		const message = reason instanceof Error ? reason.message : String(reason);
+		col.createDiv({ text: `${what}: ${message}`, cls: "osint-copilot-registry-error" });
 	}
 
 	private renderTools(): void {

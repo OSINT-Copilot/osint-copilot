@@ -3,7 +3,7 @@
  * Timeline View for visualizing Event entities with dates.
  */
 
-import { App, ItemView, TFile, WorkspaceLeaf, Menu, Notice, normalizePath } from 'obsidian';
+import { App, ItemView, TFile, WorkspaceLeaf, Menu, Notice, normalizePath, setIcon } from 'obsidian';
 import { type Entity, EntityType, ENTITY_CONFIGS } from '../entities/types';
 import { EntityManager } from '../services/entity-manager';
 import { EntityCreationModal } from '../modals/entity-modal';
@@ -56,6 +56,23 @@ export function sortTimelineEventsForDisplay(events: TimelineEvent[]): TimelineE
     return [...undated, ...dated];
 }
 
+/**
+ * A toolbar button with a lucide glyph and a text label, in place of the emoji that used
+ * to stand in for icons. The label is a span of its own so a busy state can relabel the
+ * button without discarding the icon.
+ */
+function iconButton(parent: HTMLElement, icon: string, label: string): HTMLButtonElement {
+    const btn = parent.createEl('button');
+    setIcon(btn.createSpan({ cls: 'graph_copilot-timeline-btn-icon' }), icon);
+    btn.createSpan({ cls: 'graph_copilot-timeline-btn-label', text: label });
+    return btn;
+}
+
+function setButtonLabel(btn: HTMLButtonElement, label: string): void {
+    const labelEl = btn.querySelector('.graph_copilot-timeline-btn-label');
+    if (labelEl) labelEl.textContent = label;
+}
+
 export class TimelineView extends ItemView {
     private entityManager: EntityManager;
     private container: HTMLElement | null = null;
@@ -84,7 +101,9 @@ export class TimelineView extends ItemView {
     }
 
     getIcon(): string {
-        return 'calendar-clock';
+        // The name OSINT_VIEWS gives this view (integration/osint-view-types.ts), so the
+        // pane header and the toolbar pill show one glyph rather than two.
+        return 'calendar';
     }
 
     async onOpen(): Promise<void> {
@@ -96,9 +115,18 @@ export class TimelineView extends ItemView {
         const toolbar = container.createDiv({ cls: 'graph_copilot-timeline-toolbar' });
         this.createToolbar(toolbar);
 
-        // Create timeline container
+        // A line of its own under the toolbar, not a flex item inside it: a 200-character
+        // sentence in a toolbar that could not wrap was the first thing squeezed, and in a
+        // narrow pane it pushed the buttons off the edge.
+        container.createDiv({
+            cls: 'graph_copilot-timeline-hint',
+            text: 'Event entities, dated or not; set add_to_timeline: false on a note to hide it. Updates as notes change.',
+        });
+
+        // The canvas. No inline height: styles.css gives it `flex: 1` inside the column
+        // container, and the `calc(100% - 50px)` that used to be set here was a hardcoded
+        // guess at the toolbar height that fought it -- the same one map-view.ts removed.
         this.timelineContainer = container.createDiv({ cls: 'graph_copilot-timeline-canvas' });
-        this.applyStyles();
 
         // Load entities from disk and refresh the timeline
         await this.refresh();
@@ -148,63 +176,34 @@ export class TimelineView extends ItemView {
     }
 
     /**
-     * Apply CSS styles for the timeline.
-     */
-    private applyStyles(): void {
-        if (!this.timelineContainer) return;
-
-        this.timelineContainer.setCssProps({
-            width: '100%',
-            height: 'calc(100% - 50px)',
-            'overflow-x': 'auto',
-            'overflow-y': 'auto',
-            padding: '20px',
-            'box-sizing': 'border-box'
-        });
-    }
-
-    /**
      * Create the toolbar.
+     *
+     * Layout lives in styles.css (.graph_copilot-timeline-toolbar). The inline copy that
+     * used to sit here beat the stylesheet, so nothing there -- flex-wrap included --
+     * could take effect.
      */
     private createToolbar(toolbar: HTMLElement): void {
-        toolbar.setCssProps({
-            display: 'flex',
-            gap: '10px',
-            padding: '10px',
-            background: 'var(--background-secondary)',
-            'border-bottom': '1px solid var(--background-modifier-border)'
-        });
-
-        // Add Event button
-        const addBtn = toolbar.createEl('button', { text: '+ add event' });
+        const addBtn = iconButton(toolbar, 'plus', 'Add event');
         addBtn.addClass('graph_copilot-add-entity-btn');
         addBtn.onclick = () => this.openEventCreator();
 
-        // Separator
         toolbar.createDiv({ cls: 'graph_copilot-toolbar-separator' });
 
-        // Refresh button
-        const refreshBtn = toolbar.createEl('button', { text: '↻ refresh' });
+        const trailing = toolbar.createDiv({ cls: 'graph_copilot-timeline-toolbar-trailing' });
+        const refreshBtn = iconButton(trailing, 'refresh-cw', 'Refresh');
         refreshBtn.onclick = () => {
-            (async () => {
+            void (async () => {
+                if (refreshBtn.disabled) return;
                 refreshBtn.disabled = true;
-                refreshBtn.textContent = '↻ loading...';
-                await this.refresh();
-                refreshBtn.disabled = false;
-                refreshBtn.textContent = '↻ refresh';
+                setButtonLabel(refreshBtn, 'Refreshing\u2026');
+                try {
+                    await this.refresh();
+                } finally {
+                    refreshBtn.disabled = false;
+                    setButtonLabel(refreshBtn, 'Refresh');
+                }
             })();
         };
-
-        // Filter label
-        const filterSpan = toolbar.createEl('span', {
-            text: 'All Event entities (dated or not — undated ones appear under "Undated" at the top); hidden if «add_to_timeline» is explicitly off. Auto-syncs when notes change.',
-            cls: 'graph_copilot-timeline-info'
-        });
-        filterSpan.setCssProps({
-            'margin-left': 'auto',
-            color: 'var(--text-muted)',
-            'font-size': '12px'
-        });
     }
 
     /**
@@ -234,7 +233,13 @@ export class TimelineView extends ItemView {
         try {
             await this.entityManager.loadEntitiesFromNotes();
         } catch (error) {
+            // Stop here, as the map does. This used to fall through into the render with
+            // whatever the failed load left in the store -- usually nothing, since
+            // loadEntitiesFromNotes() clears it first -- so a transient read failure
+            // showed the "no events yet" empty state over a vault full of them.
             console.error('[TimelineView] Failed to reload entities from notes:', error);
+            new Notice('Could not reload events; showing the last known timeline.');
+            return;
         }
 
         // All Event-* entities (case-insensitive YAML type); graph may index "event"
@@ -327,43 +332,22 @@ export class TimelineView extends ItemView {
 
         if (this.events.length === 0) {
             const emptyEl = this.timelineContainer.createDiv({ cls: 'graph_copilot-timeline-empty' });
-            emptyEl.setCssProps({
-                'text-align': 'center',
-                padding: '40px',
-                color: 'var(--text-muted)'
+            emptyEl.createEl('p', { text: 'No events added to the timeline yet.' });
+            emptyEl.createEl('p', {
+                cls: 'graph_copilot-timeline-empty-hint',
+                text: 'Create an entity with type Event and a start_date (or first_seen / date). '
+                    + 'Use Refresh if you just edited notes. '
+                    + 'Set add_to_timeline: false to hide a note from this view.',
             });
-
-            const p1 = emptyEl.createEl('p', {
-                text: 'No events added to the timeline yet.'
-            });
-            p1.setCssProps({ 'margin-bottom': '10px' });
-
-            const p2 = emptyEl.createEl('p', {
-                text: 'Create an Entity with type Event and a start_date (or first_seen / date). Use ↻ refresh if you just edited notes. Set add_to_timeline: false to hide a note from this view.',
-            });
-            p2.setCssProps({ 'font-size': '12px' });
             return;
         }
 
-        // Create timeline wrapper
+        // Layout -- the 200px date gutter and the line -- is in styles.css, where a
+        // container query can collapse it in a narrow pane. Set inline it could not be
+        // overridden, so the gutter stayed 200px wide in a 300px pane and the cards had
+        // no room left.
         const wrapper = this.timelineContainer.createDiv({ cls: 'graph_copilot-timeline-wrapper' });
-        wrapper.setCssProps({
-            position: 'relative',
-            'min-height': '100%',
-            'padding-left': '200px'
-        });
-
-        // Create the timeline line
-        const line = wrapper.createDiv({ cls: 'graph_copilot-timeline-line' });
-        line.setCssProps({
-            position: 'absolute',
-            left: '180px',
-            top: '0',
-            bottom: '0',
-            width: '4px',
-            background: 'var(--interactive-accent)',
-            'border-radius': '2px'
-        });
+        wrapper.createDiv({ cls: 'graph_copilot-timeline-line' });
 
         // sortTimelineEventsForDisplay() guarantees all undated events occupy indices
         // [0, undatedCount) at the front of this.events, followed by the dated, sorted group.
@@ -410,50 +394,25 @@ export class TimelineView extends ItemView {
      * Render a single event on the timeline.
      */
     private renderEvent(container: HTMLElement, event: TimelineEvent, index: number): void {
+        // Only the per-event colour is set inline; the geometry is in styles.css so the
+        // container query there can restack the date above the card in a narrow pane.
         const eventEl = container.createDiv({ cls: 'graph_copilot-timeline-event' });
-        eventEl.setCssProps({
-            position: 'relative',
-            'margin-bottom': '30px',
-            'padding-left': '40px'
-        });
 
         // Event dot
         const dot = eventEl.createDiv({ cls: 'graph_copilot-timeline-dot' });
         dot.setCssProps({
-            position: 'absolute',
-            left: '-12px',
-            top: '5px',
-            width: '20px',
-            height: '20px',
             background: event.color,
-            'border-radius': '50%',
-            border: '3px solid var(--background-primary)',
             'box-shadow': `0 0 0 2px ${event.color}`
         });
 
-        // Date label
+        // Date label. Before the card in the DOM, so that when the gutter collapses the
+        // date reads as a heading above the card rather than a footer beneath it.
         const dateLabel = eventEl.createDiv({ cls: 'graph_copilot-timeline-date' });
-        dateLabel.setCssProps({
-            position: 'absolute',
-            left: '-180px',
-            top: '0',
-            width: '150px',
-            'text-align': 'right',
-            'font-size': '12px',
-            color: 'var(--text-muted)'
-        });
         dateLabel.textContent = event.start ? this.formatDate(event.start) : 'No date';
 
         // Event card
         const card = eventEl.createDiv({ cls: 'graph_copilot-timeline-card' });
-        card.setCssProps({
-            background: 'var(--background-secondary)',
-            'border-left': `4px solid ${event.color}`,
-            padding: '15px',
-            'border-radius': '0 8px 8px 0',
-            transition: 'transform 0.2s, box-shadow 0.2s',
-            cursor: 'pointer'
-        });
+        card.setCssProps({ 'border-left': `4px solid ${event.color}` });
 
         // Card header with title and remove button
         const cardHeader = card.createDiv({ cls: 'graph_copilot-timeline-card-header' });
@@ -472,39 +431,15 @@ export class TimelineView extends ItemView {
             flex: '1'
         });
 
-        // Remove from Timeline button
+        // Remove from Timeline button. Styled, hover included, in styles.css: the
+        // mouseenter handler that used to live here painted white text over
+        // --background-modifier-error, which is a tint rather than a fill, so the label
+        // disappeared on hover in the light theme.
         const removeBtn = cardHeader.createEl('button', {
-            text: '✕ remove',
+            text: 'Remove',
             cls: 'graph_copilot-timeline-remove-btn'
         });
-        removeBtn.setCssProps({
-            background: 'transparent',
-            border: '1px solid var(--text-muted)',
-            color: 'var(--text-muted)',
-            padding: '2px 8px',
-            'border-radius': '4px',
-            'font-size': '11px',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            'white-space': 'nowrap'
-        });
         removeBtn.title = 'Remove from timeline';
-
-        // Remove button hover effects
-        removeBtn.onmouseenter = () => {
-            removeBtn.setCssProps({
-                background: 'var(--background-modifier-error)',
-                'border-color': 'var(--background-modifier-error)',
-                color: 'white'
-            });
-        };
-        removeBtn.onmouseleave = () => {
-            removeBtn.setCssProps({
-                background: 'transparent',
-                'border-color': 'var(--text-muted)',
-                color: 'var(--text-muted)'
-            });
-        };
 
         // Remove button click handler
         removeBtn.onclick = async (e) => {
@@ -526,20 +461,6 @@ export class TimelineView extends ItemView {
         }
         timeRange.textContent = timeText;
 
-        // Hover effects for card
-        card.onmouseenter = () => {
-            card.setCssProps({
-                transform: 'translateX(5px)',
-                'box-shadow': '0 4px 12px rgba(0,0,0,0.2)'
-            });
-        };
-        card.onmouseleave = () => {
-            card.setCssProps({
-                transform: 'translateX(0)',
-                'box-shadow': 'none'
-            });
-        };
-
         // Click handler for card (opens entity note)
         card.onclick = (e) => {
             // Don't trigger if clicking the remove button
@@ -554,6 +475,11 @@ export class TimelineView extends ItemView {
 
         // Context menu handler
         card.addEventListener('contextmenu', (e: MouseEvent) => {
+            // First, before anything else: Tangent's own context menu listens at the
+            // window and opens for any right-click nobody has claimed, so without this
+            // both menus appeared, one on top of the other.
+            e.preventDefault();
+            e.stopPropagation();
             const menu = new Menu();
 
             menu.addItem((item) => {
@@ -592,6 +518,11 @@ export class TimelineView extends ItemView {
             await this.refresh();
         } catch (error) {
             console.error('[TimelineView] Failed to toggle event timeline status:', error);
+            // The card is still there, and the analyst needs to hear why the click they
+            // just made had no effect.
+            new Notice(addToTimeline
+                ? 'Could not add the event to the timeline.'
+                : 'Could not remove the event from the timeline.');
         }
     }
 

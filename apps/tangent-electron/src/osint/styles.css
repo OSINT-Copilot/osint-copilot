@@ -1039,12 +1039,17 @@
   background: var(--background-primary);
   display: flex;
   flex-direction: column;
+  /* The query container for the date gutter (@container, end of file). */
+  container-type: inline-size;
 }
 
 .graph_copilot-timeline-toolbar {
   display: flex;
-  gap: 10px;
-  padding: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  flex-shrink: 0;
   background: var(--background-secondary);
   border-bottom: 1px solid var(--background-modifier-border);
 }
@@ -1137,8 +1142,11 @@
 
 .graph_copilot-map-toolbar {
   display: flex;
-  gap: 10px;
-  padding: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  flex-shrink: 0;
   background: var(--background-secondary);
   border-bottom: 1px solid var(--background-modifier-border);
 }
@@ -2864,6 +2872,15 @@ svg.leaflet-image-layer.leaflet-interactive path {
   overflow: hidden;
 }
 
+/*
+ * theme-bridge's `.workspace-leaf-content > .view-content { overflow: auto }` outranks
+ * the bare class above, so its `overflow: hidden` silently lost and the whole view
+ * scrolled instead of the grid. Same fix as .graph_copilot-graph-container.
+ */
+.workspace-leaf-content > .view-content.osint-copilot-registry-root {
+  overflow: hidden;
+}
+
 .osint-copilot-registry-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -2875,17 +2892,15 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
 .osint-copilot-registry-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /*
+   * Intrinsic rather than a media query: a media query measures the window, and this
+   * view lives in a pane that may be a third of it. Columns wrap as the pane narrows.
+   */
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 0.75rem;
   flex: 1;
   min-height: 0;
   overflow: auto;
-}
-
-@media (max-width: 900px) {
-  .osint-copilot-registry-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 .osint-copilot-registry-column {
@@ -3122,4 +3137,205 @@ svg.leaflet-image-layer.leaflet-interactive path {
 /* Leaflet paints its own background; let the theme show through instead of #ddd. */
 .leaflet-container {
   background: var(--background-primary);
+}
+
+/* ==========================================================================
+ * Location Map, Timeline, Tools & Skills registry -- audit fixes
+ * ========================================================================== */
+
+/*
+ * Leaflet's stylesheet is inlined above as shipped: white chrome, dark text. Under a
+ * dark theme that left the zoom buttons, the layers control, the attribution, the scale
+ * bar and every popup as bright white boxes with unreadable text. Themed here, prefixed
+ * with .leaflet-container for specificity, rather than edited in place, so the inlined
+ * block stays comparable with upstream Leaflet.
+ */
+.leaflet-container .leaflet-bar a {
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  border-bottom-color: var(--background-modifier-border);
+}
+.leaflet-container .leaflet-bar a:hover,
+.leaflet-container .leaflet-bar a:focus {
+  background-color: var(--interactive-hover);
+}
+.leaflet-container .leaflet-bar a.leaflet-disabled {
+  background-color: var(--background-secondary);
+  color: var(--text-faint);
+}
+.leaflet-touch .leaflet-control-layers,
+.leaflet-touch .leaflet-bar {
+  border-color: var(--background-modifier-border);
+}
+.leaflet-container .leaflet-control-layers,
+.leaflet-container .leaflet-control-layers-expanded {
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+.leaflet-container .leaflet-control-layers-separator {
+  border-top-color: var(--background-modifier-border);
+}
+.leaflet-container .leaflet-control-attribution {
+  background: var(--background-primary);
+  color: var(--text-muted);
+}
+.leaflet-container .leaflet-control-attribution a {
+  color: var(--text-accent);
+}
+.leaflet-container .leaflet-control-scale-line,
+.leaflet-container .leaflet-control-scale-line:not(:first-child),
+.leaflet-container .leaflet-control-scale-line:not(:first-child):not(:last-child) {
+  background: var(--background-primary);
+  color: var(--text-normal);
+  border-color: var(--text-muted);
+  text-shadow: none;
+}
+.leaflet-container .leaflet-popup-content-wrapper,
+.leaflet-container .leaflet-popup-tip {
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35);
+}
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--text-muted);
+}
+.leaflet-container a.leaflet-popup-close-button:hover,
+.leaflet-container a.leaflet-popup-close-button:focus {
+  color: var(--text-normal);
+}
+
+/* Toolbar buttons: a lucide glyph beside a label, never squeezed narrower than their text. */
+.graph_copilot-map-toolbar button,
+.graph_copilot-timeline-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.graph_copilot-map-btn-icon,
+.graph_copilot-timeline-btn-icon {
+  display: inline-flex;
+  line-height: 0;
+}
+
+/* The [refresh][fit] group rides at the right edge and wraps as one unit. */
+.graph_copilot-map-toolbar-trailing,
+.graph_copilot-timeline-toolbar-trailing {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/*
+ * The basemap strip takes whatever room the buttons leave and gives it up before they
+ * do. min-width: 0 is what lets it shrink at all -- a flex item's floor is its content
+ * width by default, and this one's content is a sentence.
+ */
+.graph_copilot-map-toolbar .graph_copilot-map-basemap-status {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* One line under the toolbar for the sentence that used to be a toolbar item. */
+.graph_copilot-map-hint,
+.graph_copilot-timeline-hint {
+  flex-shrink: 0;
+  padding: 0.3rem 0.625rem;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/*
+ * The map's empty state sits inside the Leaflet element, above the panes (z-index
+ * 400-700) and below the controls (1000), so the layer switcher still works while it
+ * shows. Pointer events are off: it is a caption, not a modal, and the map beneath must
+ * still pan. Styled like .graph_copilot-timeline-empty.
+ */
+.graph_copilot-map-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.graph_copilot-map-empty p {
+  margin: 0 0 10px 0;
+  max-width: 44ch;
+  padding: 0.2em 0.6em;
+  border-radius: 4px;
+  background: var(--background-primary);
+}
+.graph_copilot-map-empty-hint,
+.graph_copilot-timeline-empty-hint {
+  font-size: 12px;
+}
+.graph_copilot-timeline-empty p:first-child {
+  margin-bottom: 10px;
+}
+
+/*
+ * Remove button, hover included. The JS hover it replaces painted white text over
+ * --background-modifier-error, a tint rather than a fill, so the label vanished in the
+ * light theme; the error text colour reads on the tint in both.
+ */
+.graph_copilot-timeline-remove-btn {
+  background: transparent;
+  border: 1px solid var(--text-muted);
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+.graph_copilot-timeline-remove-btn:hover,
+.graph_copilot-timeline-remove-btn:focus-visible {
+  background: var(--background-modifier-error);
+  border-color: var(--text-error);
+  color: var(--text-error);
+}
+
+/*
+ * Below ~520px of pane the 200px date gutter left the cards no room. The date moves
+ * above its card and the line hugs the left edge. A container query, because a media
+ * query would measure the window and this view lives in a pane; the geometry it
+ * overrides is the stylesheet's, which is why renderEvent() no longer sets it inline.
+ */
+@container (max-width: 520px) {
+  .graph_copilot-timeline-wrapper {
+    padding-left: 32px;
+  }
+  .graph_copilot-timeline-line {
+    left: 12px;
+  }
+  .graph_copilot-timeline-date {
+    position: static;
+    width: auto;
+    text-align: left;
+    margin-bottom: 4px;
+  }
+}
+
+/* Registry: the trailing refresh, and the per-column line a failed registry leaves. */
+.osint-copilot-registry-toolbar-trailing {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.osint-copilot-registry-error {
+  color: var(--text-error);
+  font-size: 0.9em;
 }
