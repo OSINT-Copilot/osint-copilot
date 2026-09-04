@@ -1481,7 +1481,7 @@ export class FTMEntityTypeSelectorModal extends Modal {
         newTypeBtn.onclick = () => {
             this.close();
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const plugin = (this.app as any).plugins.plugins['osint-copilot'];
+            const plugin = getOsintCopilotPlugin(this.app);
             if (plugin && plugin.customTypesService) {
                 new CustomTypeCreationModal(this.app, plugin.customTypesService, undefined, (name) => {
                     // Re-open selector after creation
@@ -1811,7 +1811,7 @@ export class FTMEntityTypeSelectorModal extends Modal {
 
             // Check for custom type
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const plugin = (this.app as any).plugins.plugins['osint-copilot'];
+            const plugin = getOsintCopilotPlugin(this.app);
             const isCustom = plugin && plugin.customTypesService && plugin.customTypesService.getCustomSchema(typeInfo.name);
 
             if (isCustom) {
@@ -2775,7 +2775,7 @@ export class FTMIntervalTypeSelectorModal extends Modal {
         newTypeBtn.onclick = () => {
             this.close();
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const plugin = (this.app as any).plugins.plugins['osint-copilot'];
+            const plugin = getOsintCopilotPlugin(this.app);
             if (plugin && plugin.customTypesService) {
                 new CustomTypeCreationModal(
                     this.app,
@@ -3075,7 +3075,7 @@ color: var(--text - muted);
 
             // Check if custom type
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const plugin = (this.app as any).plugins.plugins['osint-copilot'];
+            const plugin = getOsintCopilotPlugin(this.app);
             const isCustom = plugin && plugin.customTypesService && plugin.customTypesService.getCustomSchema(typeInfo.name);
 
             if (isCustom) {

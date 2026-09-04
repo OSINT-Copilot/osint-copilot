@@ -35,6 +35,11 @@ export class RenameConversationModal extends Modal {
 				e.preventDefault();
 				this.submit();
 			} else if (e.key === "Escape") {
+				// Marked handled: close() removes the base Modal's document listener while this
+				// event is still in flight, so that listener's preventDefault never ran, and
+				// Tangent's window-level Escape then toggled Thread/Map focus under the dialog.
+				e.preventDefault();
+				e.stopPropagation();
 				this.close();
 			}
 		});

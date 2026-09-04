@@ -20,27 +20,36 @@ export interface OsintPluginState {
 
 type Subscriber = (state: OsintPluginState) => void;
 
-let current: OsintPluginState = { ready: false, settings: null };
-const subscribers = new Set<Subscriber>();
+/**
+ * Backed by a globalThis singleton for the same reason bootstrap.ts is: this module is
+ * reached both dynamically (App.svelte) and statically (Tangent.ts -> view-states), so
+ * module-local state is bundler-dependent. Two copies would leave the toolbar's gate and
+ * the canvas command's `ready` check frozen at their defaults, with no error.
+ */
+interface Shared { current: OsintPluginState; subscribers: Set<Subscriber> }
+const shared: Shared = ((globalThis as unknown as { __osintPluginState?: Shared }).__osintPluginState ??= {
+    current: { ready: false, settings: null },
+    subscribers: new Set<Subscriber>(),
+});
 
 export const osintPluginState = {
     get value(): OsintPluginState {
-        return current;
+        return shared.current;
     },
     subscribe(run: Subscriber): () => void {
-        subscribers.add(run);
-        run(current);
-        return () => { subscribers.delete(run); };
+        shared.subscribers.add(run);
+        run(shared.current);
+        return () => { shared.subscribers.delete(run); };
     },
 };
 
 /** Merges and notifies -- unconditionally, because settings are edited in place. */
 export function publishOsintPluginState(patch: Partial<OsintPluginState>): void {
-    current = { ...current, ...patch };
-    for (const run of subscribers) run(current);
+    shared.current = { ...shared.current, ...patch };
+    for (const run of shared.subscribers) run(shared.current);
 }
 
 /** The gate the toolbar and the view commands agree on. Defaults open, like the setting. */
-export function graphFeaturesEnabled(state: OsintPluginState = current): boolean {
+export function graphFeaturesEnabled(state: OsintPluginState = shared.current): boolean {
     return state.settings?.enableGraphFeatures ?? true;
 }

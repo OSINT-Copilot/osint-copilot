@@ -431,7 +431,10 @@ export default class VaultAIPlugin extends Plugin {
     // Register file watchers
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
-        if (file instanceof TFile) {
+        // Notes only. Every saveSettings() writes .osint-copilot/data.json through the
+        // vault, and without the filter that file -- Miro token included -- was indexed
+        // as a note and could be pasted into a prompt by retrieveNotes().
+        if (file instanceof TFile && file.extension === 'md') {
           void this.indexFile(file);
         }
       })
@@ -439,7 +442,10 @@ export default class VaultAIPlugin extends Plugin {
 
     this.registerEvent(
       this.app.vault.on("create", (file) => {
-        if (file instanceof TFile) {
+        // Notes only. Every saveSettings() writes .osint-copilot/data.json through the
+        // vault, and without the filter that file -- Miro token included -- was indexed
+        // as a note and could be pasted into a prompt by retrieveNotes().
+        if (file instanceof TFile && file.extension === 'md') {
           void this.indexFile(file);
         }
       })
@@ -1271,7 +1277,10 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
   async indexFile(file: TFile) {
     try {
       const content = await this.app.vault.read(file);
-      const cache = this.app.metadataCache.getFileCache(file);
+      // Populate, do not just read: nothing else ever called setFileCache, so every note
+      // indexed with no tags, no links and no frontmatter, and the tag-match branch of
+      // retrieveNotes could never score.
+      const cache = this.app.metadataCache.setFileCache(file, content);
 
       const tags = this.extractTags(cache);
       const links = this.extractLinks(cache);

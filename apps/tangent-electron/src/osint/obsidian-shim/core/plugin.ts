@@ -6,6 +6,7 @@
  * these were fire-and-forget because the host owned the registry; here we own it, so
  * the shell renders the command palette and ribbon straight from these maps.
  */
+import { Notice } from '../ui/notice';
 import { Component } from './component';
 import type { App } from '../app';
 
@@ -80,6 +81,11 @@ export abstract class Plugin extends Component {
         this.viewCreators.set(type, creator);
         this.app.workspace.registerViewFactory(type, creator);
         this.register(() => {
+            // Unload the views this factory created, not just the factory: leaf.detach()
+            // runs view.unload() -> onunload() -> onClose(), which is where a view drops
+            // its document listeners and destroys cytoscape/leaflet. Without it those
+            // outlived the plugin.
+            this.app.workspace.detachLeavesOfType(type);
             this.viewCreators.delete(type);
             this.app.workspace.unregisterViewFactory(type);
         });
@@ -99,10 +105,25 @@ export abstract class Plugin extends Component {
      * side effect of first launch would be hostile.
      */
     async loadData(): Promise<unknown> {
+        let raw: string;
         try {
-            return JSON.parse(await this.app.vault.adapter.read(DATA_PATH));
+            raw = await this.app.vault.adapter.read(DATA_PATH);
         } catch {
+            // Missing is the first-run case.
             return this.importLegacySettings();
+        }
+        try {
+            return JSON.parse(raw);
+        } catch (e) {
+            // Present but unparseable -- a crash mid-write, or a hand edit. This used to be
+            // indistinguishable from "missing", and the caller then saved defaults over the
+            // only copy of the user's CLI paths, folders and runtimes. Keep the damaged
+            // file under a new name, say so, and let defaults take over the live path.
+            const backup = `${DATA_PATH}.corrupt-${Date.now()}`;
+            try { await this.app.vault.adapter.write(backup, raw); } catch { /* best effort */ }
+            console.error(`[osint-copilot] ${DATA_PATH} could not be parsed; kept as ${backup}`, e);
+            new Notice(`OSINT Copilot settings could not be read and were reset. The damaged file was kept as ${backup}.`, 0);
+            return null;
         }
     }
 

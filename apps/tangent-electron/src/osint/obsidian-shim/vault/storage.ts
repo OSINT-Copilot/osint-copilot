@@ -25,6 +25,12 @@ export interface VaultStorage {
      * decode on the way in is undone by a UTF-8 encode on the way out.
      */
     writeBinary(path: string, data: Uint8Array): Promise<StatDto>;
+    /**
+     * Real bytes on the way in as well. `read` decodes as UTF-8, which replaces every
+     * invalid sequence with U+FFFD -- so a PDF or image round-tripped through it was
+     * corrupt and the wrong length.
+     */
+    readBinary(path: string): Promise<Uint8Array>;
     /** Throws Error("File already exists.") if present. */
     create(path: string, data: string): Promise<StatDto>;
     /** Creates intermediates; throws Error("Folder already exists.") if the target exists. */
@@ -68,6 +74,15 @@ export class MemoryStorage implements VaultStorage {
         for (const byte of data) binary += String.fromCharCode(byte);
         this.files.set(path, binary);
         return this.stamp(path, 'file', data.length);
+    }
+
+    async readBinary(path: string): Promise<Uint8Array> {
+        // The in-memory form is latin1, one char per byte (see writeBinary), so this is
+        // the exact inverse and never touches UTF-8.
+        const text = await this.read(path);
+        const bytes = new Uint8Array(text.length);
+        for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
+        return bytes;
     }
 
     async create(path: string, data: string): Promise<StatDto> {
@@ -172,6 +187,7 @@ export function hostStorage(host: { vault: import('../../host/types').VaultHost 
         read: (p) => host.vault.read(p),
         write: (p, d) => host.vault.write(p, d),
         writeBinary: (p, d) => host.vault.writeBinary(p, d),
+        readBinary: (p) => host.vault.readBinary(p),
         create: (p, d) => host.vault.create(p, d),
         mkdir: (p) => host.vault.mkdir(p),
         remove: (p) => host.vault.remove(p),

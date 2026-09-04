@@ -150,10 +150,10 @@ export class Vault {
     }
 
     async readBinary(file: TFile): Promise<ArrayBuffer> {
-        const text = await this.storage.read(file.path);
-        const bytes = new Uint8Array(text.length);
-        for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
-        return bytes.buffer;
+        // Bytes from the host, not a UTF-8 decode re-encoded as latin1: that path replaced
+        // every invalid sequence with U+FFFD, so the extractor was handed corrupt PDFs.
+        const bytes = await this.storage.readBinary(file.path);
+        return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
     }
 
     /**
@@ -364,6 +364,20 @@ export class Vault {
                     this.detach(file);
                     this.emit('delete', file);
                 }
+                continue;
+            }
+            if (event.kind === 'rename') {
+                // The watcher reports a move as one event; without this branch the file
+                // was indexed at its new path and LEFT at its old one, so
+                // getAbstractFileByPath(oldPath) kept returning a file that no longer
+                // existed, and no 'rename' ever reached the lock service.
+                const previous = event.oldPath ? this.index.get(event.oldPath) : undefined;
+                if (previous) this.detach(previous);
+                if (!event.stat) continue;
+                const node = this.upsert(event.stat);
+                this.contentCache.delete(event.path);
+                if (event.oldPath) this.emit('rename', node, event.oldPath);
+                else this.emit('create', node);
                 continue;
             }
             if (!event.stat) continue;

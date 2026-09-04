@@ -76,7 +76,11 @@ function applyInfo(el: HTMLElement, o?: DomElementInfo | string): void {
     }
     if (o.text !== undefined) {
         if (typeof o.text === 'string') el.textContent = o.text;
-        else el.appendChild(o.text);
+        else {
+            // Clear first, matching setText; appending onto existing children was a trap.
+            el.textContent = '';
+            el.appendChild(o.text);
+        }
     }
     if (o.title !== undefined) el.setAttribute('title', o.title);
     if (o.type !== undefined) el.setAttribute('type', o.type);
@@ -113,7 +117,10 @@ export function installDomExtensions(): void {
     if (installed) return;
     installed = true;
 
-    const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+    // Element, not HTMLElement: the declarations above promise these on Element, and
+    // SVGElement (which extends Element, not HTMLElement) would otherwise throw at runtime
+    // on the very calls the types allow.
+    const proto = Element.prototype as unknown as Record<string, unknown>;
     const fragProto = DocumentFragment.prototype as unknown as Record<string, unknown>;
 
     for (const target of [proto, fragProto]) {

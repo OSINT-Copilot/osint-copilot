@@ -121,6 +121,14 @@ export async function startOsintCopilot(tangentWorkspace: {
         open: () => openOsintSettings(),
         openTabById: () => openOsintSettings(),
     };
+    // entity-modal.ts reaches the plugin through Obsidian's `app.plugins` registry (for
+    // the schema catalog and the family/layer toggles). Without it every one of those
+    // lookups was null: eight settings toggles did nothing, and four un-guarded sites
+    // threw before the type picker rendered.
+    (app as unknown as { plugins: unknown }).plugins = {
+        plugins: { 'osint-copilot': plugin },
+        getPlugin: (id: string) => (id === 'osint-copilot' ? plugin : null),
+    };
 
     current = {
         app,
@@ -129,7 +137,11 @@ export async function startOsintCopilot(tangentWorkspace: {
         async dispose() {
             publishOsintPluginState({ ready: false, settings: null });
             try { plugin.unload(); } catch (e) { console.error('[osint] plugin teardown failed', e); }
+            // The storage watcher subscription lives in the vault; nothing else closes it.
+            try { app.vault.close(); } catch (e) { console.error('[osint] vault close failed', e); }
             current = null;
+            // Otherwise osintRuntime() kept resolving to the disposed runtime via the global.
+            delete (globalThis as any).osint;
         },
     };
 

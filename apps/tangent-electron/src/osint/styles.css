@@ -953,6 +953,25 @@
   width: 100%;
   height: 100%;
   background: var(--background-primary);
+  /*
+   * Never scrolls, overriding the generic `.view-content { overflow: auto }` in
+   * theme-bridge.css. That default is right for chat, wrong here: Cytoscape absolutely
+   * positions its canvases and owns pan and zoom itself, so a scrollbar on this element
+   * can never do anything useful.
+   *
+   * It was also visibly wrong. Cytoscape keeps the canvases at their previous pixel size
+   * for a few frames after the panel resizes -- toggling the sidebar left them overflowing
+   * by up to ~300px on 18% of frames -- and `auto` turned every one of those frames into a
+   * scrollbar flashing along the bottom and right edges. Cytoscape catches up on its own,
+   * so clipping is the whole fix; there is no stale-size bug underneath.
+   *
+   * The selector below must out-specify that rule (.workspace-leaf-content > .view-content,
+   * two classes); a bare .graph_copilot-graph-container loses and silently keeps `auto`.
+   */
+}
+
+.workspace-leaf-content > .view-content.graph_copilot-graph-container {
+  overflow: hidden;
 }
 
 .graph_copilot-graph-canvas {
