@@ -1,6 +1,5 @@
 import {
   Notice,
-  Setting,
   TFile,
   TFolder,
   ItemView,
@@ -10,6 +9,8 @@ import {
 } from "obsidian";
 import { importMiroBoard, miroImportPrompt, parseMiroBoardId, MiroImportError } from "../services/miro-import-service";
 import { DEFAULT_MIRO_BOARDS_FOLDER } from "../constants/vault-layout";
+import { openVaultLink } from "../integration/open-view";
+import { capConversationMemory } from "../services/agent-runtime/conversation-memory";
 
 import {
   EntityType,
@@ -28,7 +29,6 @@ import {
   type ConversationMessage,
   type CopilotChatMode,
   legacyFlagsForChatMode,
-  inferChatModeFromLegacyFields,
 } from '../services/conversation-service';
 import { ConfirmModal } from '../modals/confirm-modal';
 import {
@@ -199,7 +199,7 @@ export class ChatView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Osint copilot";
+    return "OSINT Copilot";
   }
 
   getIcon(): string {
@@ -241,7 +241,8 @@ export class ChatView extends ItemView {
   private applyRuntimeAvailabilityToSendButton(av: ChatRuntimeAvailability): void {
     if (!this.sendButtonEl) return;
     const none = av.availableIds.length === 0;
-    this.sendButtonEl.disabled = none;
+    this.noRuntimeAvailable = none;
+    this.syncSendControls();
     this.sendButtonEl.title = none
       ? "Install and configure Claude, Codex, Hermes, or a custom runtime in Settings → OSINT Copilot."
       : "";
@@ -261,22 +262,29 @@ export class ChatView extends ItemView {
         cls: "setting-item-description",
       });
     }
-    new Setting(wrap)
-      .setName("Runtime")
-      .addDropdown((dd) => {
-        for (const rt of configured) {
-          dd.addOption(rt.id, av.byId[rt.id] ? rt.displayName : `${rt.displayName} (unavailable)`);
-        }
-        dd.setValue(this.plugin.settings.agentRuntimeProvider);
-        dd.onChange(async (v) => {
-          if (this.plugin.settings.agentRuntimeProvider === v) return;
-          this.plugin.settings.agentRuntimeProvider = v;
-          if (v === CLAUDE_RUNTIME_ID || v === CODEX_RUNTIME_ID) {
-            this.plugin.settings.apiProvider = v;
-          }
-          await this.plugin.saveSettings();
-        });
-      });
+    // A bare label + select, not a Setting row: Setting is a full-width settings-list
+    // row with vertical padding and a border-top, which drew a stray rule across the
+    // header and squeezed the title in a narrow pane.
+    const select = this.headerField(wrap, "Runtime");
+    for (const rt of configured) {
+      select.createEl("option", { value: rt.id, text: av.byId[rt.id] ? rt.displayName : `${rt.displayName} (unavailable)` });
+    }
+    select.value = this.plugin.settings.agentRuntimeProvider;
+    select.addEventListener("change", async () => {
+      const v = select.value;
+      if (this.plugin.settings.agentRuntimeProvider === v) return;
+      this.plugin.settings.agentRuntimeProvider = v;
+      if (v === CLAUDE_RUNTIME_ID || v === CODEX_RUNTIME_ID) {
+        this.plugin.settings.apiProvider = v;
+      }
+      await this.plugin.saveSettings();
+    });
+  }
+
+  private headerField(parent: HTMLElement, label: string): HTMLSelectElement {
+    const field = parent.createEl("label", { cls: "vault-ai-header-field" });
+    field.createSpan({ text: label });
+    return field.createEl("select", { cls: "dropdown" });
   }
 
   /** Select a vault task agent, or leave the unified agent as the conversation workflow. */
@@ -299,22 +307,20 @@ export class ChatView extends ItemView {
     if (agents.length === 0) return;
 
     const wrap = buttonGroup.createDiv({ cls: "vault-ai-task-agent-header" });
-    new Setting(wrap)
-      .setName("Workflow")
-      .addDropdown((dd) => {
-        dd.addOption("", "Unified agent");
-        for (const agent of agents) dd.addOption(agent.id, agent.name);
-        dd.setValue(this.selectedTaskAgentId);
-        dd.onChange(async (value) => {
-          this.selectedTaskAgentId = value;
-          this.plugin.settings.preferredTaskAgentId = value;
-          if (this.currentConversation) {
-            this.currentConversation.taskAgentId = value || undefined;
-            await this.plugin.conversationService.saveConversation(this.currentConversation);
-          }
-          await this.plugin.saveSettings();
-        });
-      });
+    const select = this.headerField(wrap, "Workflow");
+    select.createEl("option", { value: "", text: "Unified agent" });
+    for (const agent of agents) select.createEl("option", { value: agent.id, text: agent.name });
+    select.value = this.selectedTaskAgentId;
+    select.addEventListener("change", async () => {
+      const value = select.value;
+      this.selectedTaskAgentId = value;
+      this.plugin.settings.preferredTaskAgentId = value;
+      if (this.currentConversation) {
+        this.currentConversation.taskAgentId = value || undefined;
+        await this.plugin.conversationService.saveConversation(this.currentConversation);
+      }
+      await this.plugin.saveSettings();
+    });
   }
 
   async onOpen() {
@@ -352,7 +358,8 @@ export class ChatView extends ItemView {
         Array.isArray(m.proposedCustomVaultOps) && m.proposedCustomVaultOps.length > 0
           ? normalizeCustomVaultOperations(m.proposedCustomVaultOps)
           : undefined,
-      proposedPlan: m.proposedPlan as OrchestrationPlan
+      proposedPlan: m.proposedPlan as OrchestrationPlan,
+      savedQuery: m.savedQuery,
     }));
   }
 
@@ -374,7 +381,9 @@ export class ChatView extends ItemView {
         usedEntities: h.usedEntities,
         proposedModifications: h.proposedModifications,
         proposedCustomVaultOps: h.proposedCustomVaultOps as unknown as Record<string, unknown>[] | undefined,
-        proposedPlan: h.proposedPlan
+        proposedPlan: h.proposedPlan,
+        // Without this, Apply after a reload fell back to a placeholder provenance query.
+        savedQuery: h.savedQuery,
       };
     });
   }
@@ -400,8 +409,46 @@ export class ChatView extends ItemView {
     this.renderConversationList();
   }
 
+  /**
+   * Re-renders while keeping what the user was in the middle of: the draft, the
+   * attachment chips and the scroll position. render() rebuilds the textarea and resets
+   * attachedFiles, so a settings save -- the header dropdowns cause one -- used to
+   * silently discard a half-written prompt and three attached PDFs.
+   */
   async refresh() {
+    const draft = this.inputEl?.value ?? "";
+    const files = this.attachedFiles;
+    const scrollTop = this.messagesContainer?.scrollTop;
     await this.render();
+    if (draft) this.inputEl.value = draft;
+    if (files.length > 0) {
+      this.attachedFiles = files;
+      this.renderAttachments();
+    }
+    if (scrollTop !== undefined && this.messagesContainer) this.messagesContainer.scrollTop = scrollTop;
+  }
+
+  /**
+   * Links in answers. Wikilinks are rendered as <a class="internal-link" data-href> by the
+   * markdown shim, which leaves resolution to the shell -- and no shell handler existed, so
+   * every [[note]] in an answer was dead. Web links are auto-linked by markdown-it and a
+   * plain click on one is a top-level navigation; window.open goes through main's
+   * window-open handler, which denies it and opens the browser instead.
+   */
+  private handleTranscriptClick(e: MouseEvent): void {
+    const anchor = (e.target as HTMLElement | null)?.closest?.("a") as HTMLAnchorElement | null;
+    if (!anchor || !this.messagesContainer.contains(anchor)) return;
+    const internal = anchor.getAttribute("data-href");
+    if (anchor.classList.contains("internal-link") && internal) {
+      e.preventDefault();
+      if (!openVaultLink(internal)) new Notice(`No note found for "${internal.split('#')[0].split('|')[0].trim()}".`);
+      return;
+    }
+    const href = anchor.getAttribute("href") || "";
+    if (/^https?:\/\//i.test(href)) {
+      e.preventDefault();
+      window.open(href);
+    }
   }
 
   async render() {
@@ -437,7 +484,7 @@ export class ChatView extends ItemView {
       }
     });
 
-    header.createEl("h3", { text: "Osint copilot" });
+    header.createEl("h3", { text: "OSINT Copilot" });
 
     const buttonGroup = header.createDiv("vault-ai-chat-header-buttons");
 
@@ -518,6 +565,7 @@ export class ChatView extends ItemView {
 
     // Messages container
     this.messagesContainer = chatArea.createDiv("vault-ai-chat-messages");
+    this.messagesContainer.addEventListener("click", (e) => this.handleTranscriptClick(e));
     await this.renderMessages();
 
     // Input area
@@ -542,7 +590,7 @@ export class ChatView extends ItemView {
       type: "file",
       cls: "vault-ai-file-upload",
       attr: {
-        "accept": ".md,.txt,.pdf,.docx,.doc,.jpg,.jpeg,.png,.gif,.webp,.svg,.bmp,.ico",
+        "accept": ChatView.acceptAttribute(),
         "style": "display: none;"
       }
     });
@@ -644,7 +692,7 @@ export class ChatView extends ItemView {
       }
     });
 
-    inputContainer.addEventListener("drop", async (e) => {
+    const onDrop = async (e: DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
       this.dragOverlay.removeClass("active");
@@ -656,9 +704,6 @@ export class ChatView extends ItemView {
       const dragManager = (this.app as any).dragManager;
       if (dragManager?.draggable) {
         const draggable = dragManager.draggable;
-        console.log('[OSINT Copilot] Drop: dragManager draggable type =', draggable.type,
-          'file =', draggable.file?.path || draggable.file,
-          'files =', draggable.files?.length);
 
         // Single item: .file can be TFile or TFolder regardless of .type string
         if (draggable.file instanceof TFolder) {
@@ -717,16 +762,34 @@ export class ChatView extends ItemView {
         handled = true;
       }
 
-      if (!handled) {
-        console.log('[OSINT Copilot] Drop: unhandled. dataTransfer types =',
-          e.dataTransfer ? Array.from(e.dataTransfer.types) : 'none');
-      }
+      if (!handled) new Notice("Nothing usable was dropped. Drop files, or notes from the file tree.");
+    };
+    inputContainer.addEventListener("drop", (e) => void onDrop(e));
+
+    // The transcript is by far the largest drop target on screen. Without these, a file
+    // dropped there was a navigation to its file:// URL, replacing the whole app.
+    for (const type of ["dragenter", "dragover"] as const) {
+      chatArea.addEventListener(type, (e) => {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+        this.dragOverlay.addClass("active");
+      });
+    }
+    chatArea.addEventListener("dragleave", (e) => {
+      if (!chatArea.contains(e.relatedTarget as Node | null)) this.dragOverlay.removeClass("active");
+    });
+    chatArea.addEventListener("drop", (e) => {
+      if (inputContainer.contains(e.target as Node | null)) return; // its own listener handles it
+      void onDrop(e);
     });
 
     // Handle Enter key (Shift+Enter for new line)
     this.inputEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
+        // The same gate as the button: with no runtime the button is greyed out, but
+        // Enter still ran a full probe before saying so.
+        if (this.sendButtonEl?.disabled) return;
         void this.handleSend();
       }
     });
@@ -756,7 +819,7 @@ export class ChatView extends ItemView {
     return {
       icon: "🤖",
       title: "Unified agent:",
-      text: `One local ${p} turn per message. Search vs graph work follows your message and attachments; vault prompts under OSINTCopilot/custom still augment the agent.`,
+      text: `One local ${p} turn per message. Search vs graph work follows your message and attachments; vault prompts under ${this.plugin.settings.promptsFolder} still augment the agent.`,
     };
   }
 
@@ -903,7 +966,9 @@ export class ChatView extends ItemView {
         if (typed) this.plugin.settings.miroAccessToken = typed;
         await this.plugin.saveSettings();
 
-        this.inputEl.value = miroImportPrompt(outcome);
+        // Appended, never over a draft the user was in the middle of typing.
+        const draft = this.inputEl.value.trim();
+        this.inputEl.value = draft ? `${draft}\n\n${miroImportPrompt(outcome)}` : miroImportPrompt(outcome);
         this.updateInputPlaceholder();
         new Notice(
           `Imported "${outcome.snapshot.board.name || outcome.snapshot.board.id}" `
@@ -978,8 +1043,11 @@ export class ChatView extends ItemView {
     // Focus input
     urlInput.focus();
 
-    // Close modal function
+    // Removed on EVERY close path. Only the Escape branch removed it, so each cancelled
+    // dialog left a permanent document listener whose stopPropagation then swallowed
+    // Escape for the whole app.
     const closeModal = () => {
+      document.removeEventListener("keydown", escHandler);
       overlay.remove();
     };
 
@@ -998,7 +1066,6 @@ export class ChatView extends ItemView {
         e.preventDefault();
         e.stopPropagation();
         closeModal();
-        document.removeEventListener("keydown", escHandler);
       }
     };
     document.addEventListener("keydown", escHandler);
@@ -1054,7 +1121,7 @@ export class ChatView extends ItemView {
         if (isLikelyExpectedUrlFetchFailure(errorMsg)) {
           console.debug("URL extraction skipped:", errorMsg.slice(0, 120));
           statusEl.textContent =
-            "Could not open this link from Obsidian (login or site protection). Copy the page text into the chat instead."; // eslint-disable-line obsidianmd/ui/sentence-case
+            "Could not open this link (login or site protection). Copy the page text into the chat instead."; // eslint-disable-line obsidianmd/ui/sentence-case
           statusEl.style.color = "var(--text-muted)";
         } else {
           console.error("URL extraction error:", error);
@@ -1108,10 +1175,20 @@ export class ChatView extends ItemView {
   }
 
   private static readonly IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico']);
+  /** Read as text straight from the vault. */
+  private static readonly TEXT_EXTENSIONS = new Set(['md', 'txt', 'csv', 'json', 'xml', 'html', 'htm', 'log', 'yaml', 'yml', 'toml', 'ini']);
+  private static readonly DOCUMENT_EXTENSIONS = new Set(['pdf', 'docx', 'doc']);
+  /**
+   * One list, derived. The picker's accept attribute, the drop filter and the extractor
+   * each kept their own, and they disagreed: a CSV -- the file the size warning was
+   * written for -- was refused at attach time with "Use images or documents".
+   */
   private static readonly ALLOWED_EXTENSIONS = new Set([
-    'md', 'txt', 'pdf', 'docx', 'doc',
-    'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico',
+    ...ChatView.IMAGE_EXTENSIONS, ...ChatView.TEXT_EXTENSIONS, ...ChatView.DOCUMENT_EXTENSIONS,
   ]);
+  static acceptAttribute(): string {
+    return [...ChatView.ALLOWED_EXTENSIONS].map((ext) => `.${ext}`).join(',');
+  }
 
   static isImageFile(name: string): boolean {
     const ext = (name.split('.').pop() || '').toLowerCase();
@@ -1281,44 +1358,6 @@ export class ChatView extends ItemView {
     }
   }
 
-  /**
-   * Check if input is a URL and extract text if so
-   */
-  async handleUrlExtraction(url: string): Promise<boolean> {
-    try {
-      if (!url.startsWith('http')) return false;
-
-      const originalPlaceholder = this.inputEl.placeholder;
-      this.inputEl.placeholder = "Extracting text from URL...";
-      this.inputEl.disabled = true;
-
-      new Notice(`Extracting text from URL: ${url}...`);
-
-      const text = await this.plugin.graphApiService.extractTextFromUrl(url);
-
-      this.inputEl.value = text;
-
-      new Notice(`Text extracted from URL`);
-      return true; // Return true to indicate URL was handled and text replaced
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (isLikelyExpectedUrlFetchFailure(msg)) {
-        console.debug("URL extraction skipped:", msg.slice(0, 120));
-        new Notice("Could not open this link from Obsidian. Paste the page text into the chat instead.");
-      } else {
-        console.error("URL extraction error:", error);
-        new Notice(`Error extracting URL: ${msg}`);
-      }
-      return false; // Return false to indicate failure/not handled
-    } finally {
-      this.inputEl.disabled = false;
-      this.updateInputPlaceholder();
-      this.inputEl.focus();
-    }
-  }
-
-
-
   isGraphOnlyMode(): boolean {
     return false;
   }
@@ -1332,7 +1371,7 @@ export class ChatView extends ItemView {
 
   // Get the appropriate input placeholder based on current mode
   getInputPlaceholder(): string {
-    return "Ask for an investigation (search vs graph follows from your wording and attachments). Pick the runtime in the header when multiple agents are available…";
+    return "Ask for an investigation — search or graph work follows from your wording and attachments. Enter sends, Shift+Enter adds a line…";
   }
 
   // Update the input placeholder text
@@ -1427,7 +1466,7 @@ export class ChatView extends ItemView {
     this.sidebarContainer.empty();
 
     // Sidebar header
-    const sidebarHeader = this.sidebarContainer.createDiv("vault-ai-sidebar-header");
+    const sidebarHeader = this.sidebarContainer.createDiv("vault-ai-chat-sidebar-header");
     sidebarHeader.createEl("h4", { text: "Conversations" });
 
     // Conversation list
@@ -1460,26 +1499,6 @@ export class ChatView extends ItemView {
       const meta = convContent.createDiv("vault-ai-conversation-meta");
       const date = new Date(conv.updatedAt);
       meta.createEl("span", { text: this.formatDate(date), cls: "vault-ai-conversation-date" });
-      const convMode = conv.chatMode ?? inferChatModeFromLegacyFields(conv);
-      if (convMode === "general") {
-        meta.createEl("span", {
-          text: "🤖",
-          cls: "vault-ai-conversation-orchestration",
-          title: "General agent",
-        });
-      } else if (convMode === "graph") {
-        meta.createEl("span", {
-          text: "🏷️",
-          cls: "vault-ai-conversation-graphonly",
-          title: "Graph generation",
-        });
-      } else {
-        meta.createEl("span", {
-          text: "🔍",
-          cls: "vault-ai-conversation-local-search",
-          title: "Local search",
-        });
-      }
 
       // Click to load conversation
       convContent.addEventListener("click", () => {
@@ -1508,18 +1527,20 @@ export class ChatView extends ItemView {
   }
 
   formatDate(date: Date): string {
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    if (days === 0) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (days === 1) {
-      return "Yesterday";
-    } else if (days < 7) {
-      return date.toLocaleDateString([], { weekday: 'short' });
-    } else {
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-    }
+    return ChatView.formatRelativeDate(date);
+  }
+
+  /**
+   * Calendar days, not elapsed hours: a conversation touched at 02:00 yesterday is 23h old
+   * at 01:00 today and used to be shown as a bare "02:00", indistinguishable from today.
+   */
+  static formatRelativeDate(date: Date, now: Date = new Date()): string {
+    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+    if (days <= 0) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (days === 1) return "Yesterday";
+    if (days < 7) return date.toLocaleDateString([], { weekday: 'short' });
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
 
   async loadConversation(id: string) {
@@ -1638,11 +1659,17 @@ export class ChatView extends ItemView {
   }
 
   private async doRenderMessages() {
+    // Whether the user was reading the end; only then does a re-render follow it. A pass
+    // ran for every progress line, and it always slammed to the bottom, yanking anyone who
+    // had scrolled up to re-read an earlier answer.
+    const box = this.messagesContainer;
+    const wasAtBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    const previousTop = box.scrollTop;
     this.messagesContainer.empty();
 
     if (this.chatHistory.length === 0) {
       this.messagesContainer.createEl("p", {
-        text: "Start a conversation by asking a question about your vault.",
+        text: "Start an investigation, or ask a question about your vault.",
         cls: "vault-ai-chat-empty",
       });
       return;
@@ -2092,7 +2119,10 @@ export class ChatView extends ItemView {
         });
         dismissBtn.addEventListener("click", () => {
           this.chatHistory[i].proposedModifications = undefined;
-          this.renderMessages();
+          void this.renderMessages();
+          // Persisted, like the vault-ops Dismiss: otherwise the box came back, all
+          // boxes re-checked, on the next conversation switch.
+          void this.saveCurrentConversation();
         });
       }
 
@@ -2225,8 +2255,7 @@ export class ChatView extends ItemView {
       }
     }
 
-    // Scroll to bottom
-    this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+    this.messagesContainer.scrollTop = wasAtBottom ? this.messagesContainer.scrollHeight : previousTop;
   }
 
   updateProgressBar(messageIndex: number, progress?: { message: string; percent: number }, intermediateResults?: string[]) {
@@ -2580,7 +2609,7 @@ export class ChatView extends ItemView {
           hist.content = currentContent + "\n\n❌ **Cancelled by user**";
           hist.progress = undefined;
           hist.multiProgress = undefined;
-          this.renderMessages();
+          void this.renderMessages();
         }
 
         new Notice("Operation cancelled");
@@ -2592,32 +2621,68 @@ export class ChatView extends ItemView {
     ).open();
   }
 
+  /** True while a send is in flight: the double-submit guard. */
+  private sending = false;
+  private noRuntimeAvailable = false;
+
+  private syncSendControls(): void {
+    if (this.sendButtonEl) this.sendButtonEl.disabled = this.sending || this.noRuntimeAvailable;
+  }
+
+  /** Puts a message and its attachments back after a send that could not go ahead. */
+  private restoreDraft(draft: string, files: typeof this.attachedFiles): void {
+    if (draft && !this.inputEl.value.trim()) this.inputEl.value = draft;
+    if (files.length > 0) {
+      this.attachedFiles = files;
+      this.renderAttachments();
+    }
+  }
+
   async handleSend() {
+    // The guard, the button state and the error boundary all live here; the actual send
+    // is doSend. Without the guard, Enter twice during the runtime probe sent the same
+    // message twice and ran two CLI processes; without the boundary a vault write failure
+    // left the user bubble on screen and nothing else, not even a console line.
+    if (this.sending) return;
     const value = this.inputEl.value.trim();
     if (!value && this.attachedFiles.length === 0 && !this.vaultGraphIngestMode) return;
-
-    if (value.startsWith("http")) {
-      const isUrlHandled = await this.handleUrlExtraction(value);
-      if (isUrlHandled) {
-        this.inputEl.value = ""; // Clear input if URL was handled
-        await this.saveCurrentConversation(); // Save conversation after URL handling
-        return; // Stop normal flow if URL was handled
-      }
-      // If not handled (returned false), continue normal flow
+    this.sending = true;
+    this.syncSendControls();
+    try {
+      await this.doSend(value);
+    } catch (e) {
+      console.error("[ChatView] send failed:", e);
+      const msg = e instanceof Error ? e.message : String(e);
+      new Notice(`Could not send: ${msg}`, 8000);
+      this.chatHistory.push({ role: "assistant", content: `❌ **Send failed:** ${msg}` });
+      await this.renderMessages().catch(() => undefined);
+    } finally {
+      this.sending = false;
+      this.syncSendControls();
     }
+  }
 
-    const sendRuntimeAvailability = await getChatRuntimeAvailability(this.plugin, true);
-    if (sendRuntimeAvailability.availableIds.length === 0) {
+  private async doSend(value: string) {
+    const requestRuntimeId = this.selectedTaskAgentId.trim()
+      ? this.plugin.settings.apiProvider
+      : this.plugin.settings.agentRuntimeProvider;
+
+    // The cached answer first. Forcing a re-probe on every send spawned `--version` for
+    // every configured runtime -- up to ~16s with a Hermes or custom runtime -- with the
+    // input still showing the text and nothing in the transcript. A fresh probe is only
+    // worth the wait when the cache says the selected runtime is missing.
+    let availability = await getChatRuntimeAvailability(this.plugin);
+    if (!availability.byId[requestRuntimeId]) {
+      availability = await getChatRuntimeAvailability(this.plugin, true);
+    }
+    if (availability.availableIds.length === 0) {
       new Notice(
         "No agent runtime is available. Install Claude, Codex, Hermes, or a custom runtime and confirm settings under OSINT Copilot.",
         8000,
       );
       return;
     }
-    const requestRuntimeId = this.selectedTaskAgentId.trim()
-      ? this.plugin.settings.apiProvider
-      : this.plugin.settings.agentRuntimeProvider;
-    if (!sendRuntimeAvailability.byId[requestRuntimeId]) {
+    if (!availability.byId[requestRuntimeId]) {
       new Notice(
         `${this.runtimeDisplayName(requestRuntimeId)} is unavailable, so your message was not sent. ` +
         'Check its executable and login, or explicitly select another runtime.',
@@ -2625,10 +2690,24 @@ export class ChatView extends ItemView {
       );
       return;
     }
+    // Images are read by the extraction CLI (apiProvider), not necessarily the chat
+    // runtime. Checked here rather than per file: the per-file failure emptied the
+    // input and dropped every attachment before saying anything.
+    const needsImageRuntime = this.attachedFiles.some(
+      (a) => ChatView.isImageFile(a.file.name) && !(a.extracted && a.content),
+    );
+    const imageRuntimeId = this.plugin.settings.apiProvider;
+    if (needsImageRuntime && !availability.byId[imageRuntimeId]) {
+      new Notice(
+        `Image attachments are read by ${this.runtimeDisplayName(imageRuntimeId)}, which is unavailable, ` +
+        'so your message was not sent. Remove the images or configure that CLI in Settings → OSINT Copilot.',
+        9000,
+      );
+      return;
+    }
 
+    const draft = this.inputEl.value;
     this.inputEl.value = "";
-
-    // Authentication check removed for local-only mode
 
     // Build processed value - keep file content separate from chat display
     let displayValue = value; // What user sees in chat
@@ -2715,8 +2794,7 @@ export class ChatView extends ItemView {
             );
           } else if (attachment.file instanceof TFile) {
             const ext = (attachment.file.extension || '').toLowerCase();
-            const textExts = ['md', 'txt', 'csv', 'json', 'xml', 'html', 'htm', 'log', 'yaml', 'yml', 'toml', 'ini'];
-            if (textExts.includes(ext)) {
+            if (ChatView.TEXT_EXTENSIONS.has(ext)) {
               text = await this.app.vault.read(attachment.file);
             } else {
               const arrayBuffer = await this.app.vault.readBinary(attachment.file);
@@ -2754,6 +2832,9 @@ export class ChatView extends ItemView {
           this.chatHistory[extractionMsgIndex].progress = undefined;
           this.chatHistory[extractionMsgIndex].content = `❌ **File extraction cancelled.**`;
         }
+        // The message and the files come back; cancelling extraction is not discarding
+        // the prompt the user typed.
+        this.restoreDraft(draft, filesToProcess);
         await this.renderMessages();
         return;
       }
@@ -2773,6 +2854,7 @@ export class ChatView extends ItemView {
             content: `❌ Failed to extract text from ${failedCount} file${failedCount > 1 ? 's' : ''}. Please try again.`,
           });
         }
+        this.restoreDraft(draft, filesToProcess);
         await this.renderMessages();
         return;
       }
@@ -2927,9 +3009,11 @@ export class ChatView extends ItemView {
       };
 
       // Extract conversational memory
-      const conversationMemory = this.chatHistory
-        .slice(0, assistantIndex) // All messages before this current pending assistant response
-        .map(msg => ({ role: msg.role, content: msg.content }));
+      const conversationMemory = capConversationMemory(
+        this.chatHistory
+          .slice(0, assistantIndex) // All messages before this current pending assistant response
+          .map(msg => ({ role: msg.role, content: msg.content })),
+      );
 
       const result = await this.plugin.orchestrationService.processRequest(
         query,
@@ -2951,6 +3035,10 @@ export class ChatView extends ItemView {
       releaseController();
       const item = this.chatHistory[assistantIndex];
       if (item !== pendingItem) return;
+      // A cancel that landed while the CLI was already exiting: handleCancel has written
+      // "Cancelled by user"; the late result must not overwrite it with an answer and
+      // a set of proposals for a run the user threw away.
+      if (controller.signal.aborted) return;
       item.orchestrationAbortByToolId = undefined;
       item.orchestrationDisplayToToolId = undefined;
 
@@ -3360,7 +3448,6 @@ export class ChatView extends ItemView {
    * This mode is active when graphGenerationMode is ON and all main modes are OFF.
    */
   async handleGraphOnlyMode(inputText: string) {
-    console.log(`[OSINT Copilot] Starting handleGraphOnlyMode (Input snippet: ${inputText.substring(0, 50)}...)`);
     const messageIndex = this.chatHistory.length;
     this.chatHistory.push({
       role: "assistant",
@@ -3399,11 +3486,8 @@ export class ChatView extends ItemView {
 
       const onChunkProgress = (chunkIndex: number, totalChunks: number, message: string) => {
         const chunkPercent = 30 + Math.round((chunkIndex / totalChunks) * 20);
-        console.log(`[OSINT Copilot] Extraction Progress: ${message}`);
         updateProgress(`📦 ${message}`, chunkPercent);
       };
-
-      console.log(`[OSINT Copilot] Calling graphApiService.processTextInChunks (Text length: ${inputText.length})...`);
 
       // Create AbortController so the cancel button in the progress bar works
       controller = new AbortController();
@@ -3420,7 +3504,6 @@ export class ChatView extends ItemView {
       );
 
       this.activeAbortControllers.delete(messageIndex); // Clean up after success
-      console.log(`[OSINT Copilot] Extraction API Result:`, result.success ? "Success" : "Failed", result.error || "");
 
       updateProgress("Processing API response...", 50);
 
@@ -3487,8 +3570,6 @@ export class ChatView extends ItemView {
           }
         }
       }
-
-      console.log(`[OSINT Copilot] Generated ${proposedCommands.length} graph commands for proposal list.`);
 
       if (proposedCommands.length === 0) {
         this.chatHistory[messageIndex].progress = undefined;

@@ -111,7 +111,19 @@
   flex-direction: column;
   height: 100%;
   padding: 10px;
+  box-sizing: border-box;
+  /* The responsive rules below measure THIS box, not the window: a chat pane beside a
+     note in a wide window is narrow, and a viewport media query never fired for it. */
+  container-type: inline-size;
 }
+.vault-ai-header-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9em;
+  color: var(--text-muted);
+}
+.vault-ai-header-field select { font: inherit; color: var(--text-normal); }
 
 .vault-ai-chat-header {
   display: flex;
@@ -1788,8 +1800,8 @@
   align-items: center;
 }
 
-/* Responsive adjustments for smaller windows */
-@media (max-width: 600px) {
+/* Responsive adjustments for a narrow chat pane */
+@container (max-width: 600px) {
   .vault-ai-chat-header {
     flex-direction: column;
     align-items: flex-start;
@@ -1820,8 +1832,8 @@
   }
 }
 
-/* Very small screens */
-@media (max-width: 400px) {
+/* A very narrow pane */
+@container (max-width: 400px) {
   .vault-ai-chat-view {
     padding: 5px;
   }

@@ -80,6 +80,8 @@ export interface ConversationMessage {
   /** Persisted proposed vault skill/credential ops (same shape as CustomVaultOperation). */
   proposedCustomVaultOps?: Record<string, unknown>[];
   proposedPlan?: any;
+  /** The user query the proposals answered; provenance when they are applied after a reload. */
+  savedQuery?: string;
 }
 
 export interface ConversationMetadata {
@@ -107,8 +109,8 @@ export class ConversationService {
   private basePath: string;
   private conversationList: ConversationMetadata[] = [];
   private currentConversationId: string | null = null;
-  private saveInProgress: boolean = false;
-  private pendingSave: boolean = false;
+  /** In-flight save per conversation id, with the latest queued version -- see saveConversation. */
+  private saveQueue = new Map<string, { running: Promise<void>; pending: Conversation | null }>();
 
   constructor(app: App, basePath: string) {
     this.app = app;
@@ -344,21 +346,30 @@ export class ConversationService {
   }
 
   async saveConversation(conversation: Conversation): Promise<void> {
-    if (this.saveInProgress) {
-      this.pendingSave = true;
-      return;
+    // Coalesced PER conversation. A single service-wide flag re-saved the FIRST caller's
+    // conversation and silently dropped a different one queued during the write -- a
+    // rename racing a chat save lost the rename until something else re-saved it.
+    const id = conversation.id;
+    const queued = this.saveQueue.get(id);
+    if (queued) {
+      queued.pending = conversation;
+      return queued.running;
     }
-
-    this.saveInProgress = true;
-    try {
-      await this.doSaveConversation(conversation);
-
-      while (this.pendingSave) {
-        this.pendingSave = false;
-        await this.doSaveConversation(conversation);
+    const slot: { running: Promise<void>; pending: Conversation | null } = { running: Promise.resolve(), pending: null };
+    this.saveQueue.set(id, slot);
+    slot.running = (async () => {
+      let next: Conversation | null = conversation;
+      while (next) {
+        const current = next;
+        slot.pending = null;
+        await this.doSaveConversation(current);
+        next = slot.pending;
       }
+    })();
+    try {
+      await slot.running;
     } finally {
-      this.saveInProgress = false;
+      if (this.saveQueue.get(id) === slot) this.saveQueue.delete(id);
     }
   }
 

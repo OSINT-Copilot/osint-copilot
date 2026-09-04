@@ -78,6 +78,15 @@ export function createWindow(assignedWorkspace?: string) {
 		shell.openExternal(details.url)
 		return { action: 'deny' }
 	})
+	// A left-click on a plain http(s) anchor -- markdown-it auto-links every URL in an
+	// agent's answer -- is a top-level navigation, which replaced the whole UI with the
+	// web page. Send it to the browser instead, like window.open above.
+	newWindow.webContents.on('will-navigate', (event, url) => {
+		if (/^https?:/i.test(url)) {
+			event.preventDefault()
+			shell.openExternal(url)
+		}
+	})
 
 	// and load the index.html of the app.
 	newWindow.loadFile(path.join(__dirname, '../../static/index.html'))

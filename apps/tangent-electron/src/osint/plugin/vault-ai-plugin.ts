@@ -996,8 +996,27 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
     }
   }
 
+  /** Keys whose change can alter which agent runtimes exist, are selected, or respond. */
+  private static readonly RUNTIME_SETTING_KEYS = [
+    'apiProvider', 'agentRuntimeProvider',
+    'claudeCodeCliPath', 'claudeCodeModel', 'claudeCodeExtraArgs', 'claudeCodeTimeoutMs',
+    'codexCliPath', 'codexCliModel', 'codexCliExtraArgs', 'codexCliTimeoutMs',
+    'hermesAgentCliPath', 'hermesAgentExtraArgs', 'hermesAgentTimeoutMs', 'hermesAgentHealthCheckArgs',
+    'customAgentRuntimes', 'taskAgentsEnabled', 'preferredTaskAgentId',
+  ] as const;
+  private lastRuntimeSettingsSnapshot: string | undefined;
+
   async saveSettings() {
-    invalidateChatRuntimeAvailabilityCache();
+    // Only a runtime-affecting change invalidates the availability cache and re-renders
+    // open chats. Every text field in the settings tab saves per keystroke, and each save
+    // used to re-probe every CLI (spawning `--version` for each) and rebuild the chat
+    // view from scratch, wiping the draft message and attachments as it went.
+    const snapshot = JSON.stringify(
+      VaultAIPlugin.RUNTIME_SETTING_KEYS.map((k) => (this.settings as unknown as Record<string, unknown>)[k]),
+    );
+    const runtimeChanged = snapshot !== this.lastRuntimeSettingsSnapshot;
+    this.lastRuntimeSettingsSnapshot = snapshot;
+    if (runtimeChanged) invalidateChatRuntimeAvailabilityCache();
     // Settings are edited in place, so nothing else can notice a change; say so.
     publishOsintPluginState({ settings: this.settings });
     await this.saveData(this.settings);
@@ -1026,12 +1045,14 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
       isPathLocked: (p: string) => this.vaultLockService.isPathLocked(p),
     });
 
-    // Refresh all chat views (header controls)
-    this.app.workspace.getLeavesOfType(CHAT_VIEW_TYPE).forEach((leaf) => {
-      if (leaf.view instanceof ChatView) {
-        leaf.view.refresh();
-      }
-    });
+    // Refresh the chat header controls -- only when something they show has changed.
+    if (runtimeChanged) {
+      this.app.workspace.getLeavesOfType(CHAT_VIEW_TYPE).forEach((leaf) => {
+        if (leaf.view instanceof ChatView) {
+          leaf.view.refresh().catch((e) => console.error('[VaultAIPlugin] chat refresh failed:', e));
+        }
+      });
+    }
   }
 
   isAuthenticated(): boolean {

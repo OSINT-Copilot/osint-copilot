@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { setTangentWorkspace, openIndexedVaultNode } from '../integration/open-view';
+import { setTangentWorkspace, openIndexedVaultNode, openVaultLink } from '../integration/open-view';
 import { publishOsintPluginState } from '../integration/osint-plugin-state';
 import { DEFAULT_SETTINGS, type OsintViewOpenMode } from '../settings/vault-ai-settings';
 
@@ -167,5 +167,38 @@ describe('alongside mode', () => {
         expect(openIndexedVaultNode('.tangent/osint/OSINT Chat.osintchat')).toBe(true);
         expect(calls.updateThread).toEqual([{ currentNode: chat, thread: 'retain' }]);
         expect(calls.navigateTo).toEqual([]);
+    });
+});
+
+
+describe('openVaultLink', () => {
+    const noteA = { path: '/vault/Notes/Ada Lovelace.md' };
+    const chat = { path: '/vault/.tangent/osint/OSINT Chat.osintchat' };
+
+    it('opens by exact path, by path without extension, and by bare name', () => {
+        setMode('switch');
+        const { workspace, calls } = fakeWorkspace([chat]);
+        (workspace.directoryStore as any).nodesByName = { 'Ada Lovelace': noteA };
+        (workspace.directoryStore as any).getMatchesForPath = (name: string) =>
+            (workspace.directoryStore as any).nodesByName[name];
+        (workspace.directoryStore as any).get = (path: string) =>
+            path === noteA.path ? noteA : undefined;
+        setTangentWorkspace(workspace as never);
+
+        expect(openVaultLink('Notes/Ada Lovelace.md')).toBe(true);
+        expect(openVaultLink('Notes/Ada Lovelace')).toBe(true);
+        expect(openVaultLink('Ada Lovelace|display text')).toBe(true);
+        expect(openVaultLink('Ada Lovelace#Section')).toBe(true);
+        // Notes navigate the way Tangent navigates; nothing was created.
+        expect(calls.navigateTo).toHaveLength(4);
+    });
+
+    it('never creates a note for a link that resolves to nothing', () => {
+        const { workspace, calls } = fakeWorkspace([chat]);
+        setTangentWorkspace(workspace as never);
+        expect(openVaultLink('Made Up Note')).toBe(false);
+        expect(openVaultLink('')).toBe(false);
+        expect(calls.navigateTo).toEqual([]);
+        expect(calls.updateThread).toEqual([]);
     });
 });

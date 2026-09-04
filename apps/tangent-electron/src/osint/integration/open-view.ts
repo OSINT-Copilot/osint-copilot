@@ -15,7 +15,12 @@ import { osintPluginState } from './osint-plugin-state';
 interface TangentNodeLike { path: string }
 
 interface TangentWorkspaceLike {
-    directoryStore: { files: { path: string }, get(path: string): TangentNodeLike | undefined };
+    directoryStore: {
+        files: { path: string };
+        get(path: string): TangentNodeLike | undefined;
+        /** Tangent's name resolver, as the wikilink autocompleter uses it. Optional: absent in tests. */
+        getMatchesForPath?(path: string, options: { bestOnly: true }): TangentNodeLike | TangentNodeLike[] | undefined;
+    };
     commands: { createNewFile: { execute(context: unknown): unknown } };
     /** Workspace.navigateTo: how a link click or the file tree opens a node in the thread. */
     navigateTo(data: {
@@ -161,6 +166,40 @@ export function openIndexedVaultNode(relativePath: string): boolean {
         return true;
     } catch (e) {
         console.error('[osint] could not open node', relativePath, e);
+        return false;
+    }
+}
+
+/**
+ * Opens whatever a wikilink points at: a workspace-relative path, with or without its
+ * extension, or a bare note name resolved the way Tangent resolves [[links]].
+ *
+ * Never creates anything. A link in an agent's answer can point at a note that does
+ * not exist, and openVaultNote's createOrOpen would have turned every such click into a
+ * new empty file.
+ */
+export function openVaultLink(target: string): boolean {
+    if (!workspace) return false;
+    const clean = target.split('#')[0].split('|')[0].trim();
+    if (!clean) return false;
+    const store = workspace.directoryStore;
+    const hasExtension = /\.[A-Za-z0-9]+$/.test(clean);
+    let node = store.get(absolutePathOf(clean))
+        ?? (hasExtension ? undefined : store.get(absolutePathOf(`${clean}.md`)));
+    if (!node && store.getMatchesForPath) {
+        try {
+            const match = store.getMatchesForPath(clean, { bestOnly: true });
+            node = Array.isArray(match) ? match[0] : match ?? undefined;
+        } catch {
+            node = undefined;
+        }
+    }
+    if (!node) return false;
+    try {
+        show(node);
+        return true;
+    } catch (e) {
+        console.error('[osint] could not open link', clean, e);
         return false;
     }
 }

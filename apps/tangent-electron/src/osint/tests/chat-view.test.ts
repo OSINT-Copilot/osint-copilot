@@ -94,7 +94,7 @@ describe('ChatView', () => {
     });
 
     it('should have correct display text', () => {
-        expect(chatView.getDisplayText()).toBe('Osint copilot');
+        expect(chatView.getDisplayText()).toBe('OSINT Copilot');
     });
 
     it('should initialize with default tri-mode (general agent)', () => {
@@ -258,5 +258,19 @@ describe('ChatView.canonicalEntityType', () => {
         expect(canonicalEntityType('NotARealType')).toBeNull();
         expect(canonicalEntityType(undefined)).toBeNull();
         expect(canonicalEntityType(42)).toBeNull();
+    });
+});
+
+describe('ChatView.formatRelativeDate', () => {
+    it('uses calendar days, so 23 hours across midnight is still "Yesterday"', () => {
+        const now = new Date(2026, 8, 7, 1, 0);          // 01:00
+        const yesterday = new Date(2026, 8, 6, 2, 0);    // 02:00 the day before, 23h earlier
+        expect(ChatView.formatRelativeDate(yesterday, now)).toBe('Yesterday');
+        const today = new Date(2026, 8, 7, 0, 30);
+        expect(ChatView.formatRelativeDate(today, now)).not.toBe('Yesterday');
+        const sixDaysAgo = new Date(2026, 8, 1, 12, 0);
+        expect(ChatView.formatRelativeDate(sixDaysAgo, now)).toMatch(/^[A-Z][a-z]{2}$/); // weekday
+        const older = new Date(2026, 7, 20, 12, 0);
+        expect(ChatView.formatRelativeDate(older, now)).toMatch(/Aug|8/);
     });
 });

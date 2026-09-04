@@ -307,7 +307,8 @@ export class OrchestrationService {
                 const srcLines = turn.retrieval_hits
                     .map((h) => {
                         const sn = h.snippet ? ` — _${h.snippet.slice(0, 200)}${h.snippet.length > 200 ? "…" : ""}_` : "";
-                        return `- \`${h.path}\`${sn}`;
+                        // A wikilink, not a code span: the transcript resolves these to the note.
+                        return `- [[${h.path}]]${sn}`;
                     })
                     .join("\n");
                 answer += `\n\n### Retrieval\n${srcLines}`;
