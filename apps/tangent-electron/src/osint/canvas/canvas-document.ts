@@ -144,6 +144,17 @@ export class CanvasDocumentStore {
         }
     }
 
+    /**
+     * Whether edits are allowed at all.
+     *
+     * Public, because the view has to know: touch() refusing AFTER a mutator had already
+     * changed state.doc left the in-memory board and the file disagreeing, and the UI
+     * showed cards that were never going to be saved.
+     */
+    canEdit(): boolean {
+        return this.state.loaded && !this.state.lossyLoad;
+    }
+
     /** Marks the document changed and schedules a write. */
     private touch(): void {
         // Never write a board we never managed to read: that would replace the file with
@@ -245,7 +256,10 @@ export class CanvasDocumentStore {
         type: CanvasNodeType,
         at: { x: number; y: number },
         fields: Partial<CanvasNode> = {},
-    ): CanvasNode {
+    ): CanvasNode | null {
+        // Refuse before mutating, not in touch(): a mutation that touch() then declined
+        // still changed the in-memory document, so the board showed edits it never saved.
+        if (!this.canEdit()) return null;
         const width = fields.width ?? DEFAULT_NODE_SIZE.width;
         const height = fields.height ?? DEFAULT_NODE_SIZE.height;
         const required: Record<CanvasNodeType, Record<string, unknown>> = {
@@ -307,6 +321,9 @@ export class CanvasDocumentStore {
     }
 
     removeNodes(ids: Set<string>): void {
+        // Refuse before mutating, not in touch(): a mutation that touch() then declined
+        // still changed the in-memory document, so the board showed edits it never saved.
+        if (!this.canEdit()) return;
         if (ids.size === 0) return;
         this.state.doc.nodes = this.state.doc.nodes.filter((node) => !ids.has(node.id));
         // Edges to a removed card would be lines to nowhere, and the format layer drops
@@ -320,6 +337,9 @@ export class CanvasDocumentStore {
     }
 
     addEdge(fromNode: string, toNode: string, fromSide?: Side, toSide?: Side): CanvasEdge | null {
+        // Refuse before mutating, not in touch(): a mutation that touch() then declined
+        // still changed the in-memory document, so the board showed edits it never saved.
+        if (!this.canEdit()) return null;
         // A self-edge has no meaningful anchor pair and reads as a rendering glitch.
         if (fromNode === toNode) return null;
         const nodeIds = new Set(this.state.doc.nodes.map((n) => n.id));
@@ -348,6 +368,9 @@ export class CanvasDocumentStore {
     }
 
     removeEdges(ids: Set<string>): void {
+        // Refuse before mutating, not in touch(): a mutation that touch() then declined
+        // still changed the in-memory document, so the board showed edits it never saved.
+        if (!this.canEdit()) return;
         if (ids.size === 0) return;
         this.state.doc.edges = this.state.doc.edges.filter((edge) => !ids.has(edge.id));
         this.state.selectedEdges = new Set(

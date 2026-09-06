@@ -12,6 +12,7 @@
  * Edges are drawings. Nothing here writes to the entity graph.
  */
 import { getContext, onDestroy, onMount } from 'svelte'
+import { Notice } from 'osint/obsidian-shim/ui/notice'
 import NodePreview from 'app/views/summaries/NodePreview.svelte'
 import CanvasInspector from './CanvasInspector.svelte'
 import CanvasPicker from './CanvasPicker.svelte'
@@ -300,17 +301,33 @@ function onPointerUp(event: PointerEvent) {
 	abortGesture(event.pointerId)
 }
 
+/**
+ * Board keys. On the board element, NOT on window: Tangent's own window keydown handler
+ * mounted first, so a window listener here always ran second -- Escape to clear a
+ * selection had already toggled Thread/Map focus and unmounted the board, and Delete had
+ * already reached Tangent's command dispatcher. Listening on the element puts this in the
+ * target/bubble phase below window, where marking the event handled actually stops it.
+ */
 function onKeyDown(event: KeyboardEvent) {
+	if (!isCurrent) return
 	if (event.key === 'Delete' || event.key === 'Backspace') {
 		// Never while typing into a card.
 		const active = document.activeElement
 		if (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) return
 		if (docState.selectedNodes.size === 0 && docState.selectedEdges.size === 0) return
 		event.preventDefault()
+		event.stopPropagation()
+		if (!store.canEdit()) {
+			new Notice(editingBlockedReason(), 6000, 'warning')
+			return
+		}
 		store.deleteSelection()
 		return
 	}
 	if (event.key === 'Escape') {
+		if (docState.selectedNodes.size === 0 && docState.selectedEdges.size === 0 && !gesture) return
+		event.preventDefault()
+		event.stopPropagation()
 		store.clearSelection()
 		// Through abortGesture, so the pointer capture is released too. Clearing `gesture`
 		// alone left the surface holding the pointer, and the next pointerup returned
@@ -319,12 +336,22 @@ function onKeyDown(event: KeyboardEvent) {
 	}
 }
 
+/** Why the board refuses edits, in the words the banner uses. */
+function editingBlockedReason(): string {
+	if (!docState.loaded) return docState.problems[0] ?? 'This canvas could not be read, so it cannot be edited.'
+	return 'Editing is held because part of this canvas could not be read. Use "Edit anyway" to continue.'
+}
+
+/** Reactive mirror of the store's write gate, for disabling the toolbar. */
+$: editable = docState.loaded && !docState.lossyLoad
+
 function centreOfView() {
 	return screenToWorld(viewport, { x: width / 2, y: height / 2 })
 }
 
 function addTextCard() {
 	const node = store.addNodeAt('text', centreOfView(), { width: 320, height: 180 } as any)
+	if (!node) return
 	store.setSelection([node.id])
 }
 
@@ -336,6 +363,7 @@ function addFileCard(path: string, at = centreOfView()) {
 		width: isImage ? 360 : 420,
 		height: isImage ? 300 : 380,
 	} as any)
+	if (!node) return null
 	store.setSelection([node.id])
 	return node
 }
@@ -350,6 +378,7 @@ function addFileCard(path: string, at = centreOfView()) {
 async function addLinkCard(url: string, at = centreOfView()) {
 	if (!isFetchableUrl(url)) return
 	const node = store.addNodeAt('link', at, { url, width: 340, height: 260 } as any)
+	if (!node) return
 	store.setSelection([node.id])
 	await loadLinkPreview(node.id, url)
 }
@@ -635,19 +664,21 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 }
 </script>
 
-<svelte:window on:keydown={isCurrent ? onKeyDown : undefined} />
-
 <div
 	class="CanvasView {layout}"
+	tabindex="-1"
+	on:keydown={onKeyDown}
 	style:--canvas-extra-top={extraTop + 'px'}
 	style:--canvas-extra-bottom={extraBottom + 'px'}
 	class:no-background={background === 'none'}
 >
 	<div class="canvas-toolbar">
-		<button on:click={addTextCard} title="Add a text card">+ text</button>
-		<button on:click={() => picker = 'file'} title="Add a note or file from the vault">+ file</button>
-		<button on:click={() => picker = 'image'} title="Add an image from the vault">+ image</button>
-		<button on:click={() => picker = 'link'} title="Add a web link">+ link</button>
+		<!-- Disabled when the document refuses writes. They used to look live and even add a
+		     visible card, which was never marked dirty, never saved, and gone on reopen. -->
+		<button on:click={addTextCard} disabled={!editable} title={editable ? 'Add a text card' : editingBlockedReason()}>+ text</button>
+		<button on:click={() => picker = 'file'} disabled={!editable} title={editable ? 'Add a note or file from the vault' : editingBlockedReason()}>+ file</button>
+		<button on:click={() => picker = 'image'} disabled={!editable} title={editable ? 'Add an image from the vault' : editingBlockedReason()}>+ image</button>
+		<button on:click={() => picker = 'link'} disabled={!editable} title={editable ? 'Add a web link' : editingBlockedReason()}>+ link</button>
 		<button on:click={fitAll} disabled={nodes.length === 0} title="Fit everything on screen">⊡ fit</button>
 		<span class="canvas-spacer"></span>
 		<span class="canvas-count">{nodes.length} card{nodes.length === 1 ? '' : 's'}</span>
@@ -657,10 +688,16 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 	{#if docState.problems.length > 0}
 		<div class="canvas-problems" title={docState.problems.join('\n')}>
 			<span>
-				{docState.problems.length} item{docState.problems.length === 1 ? '' : 's'} in this canvas
-				could not be read.
-				{#if docState.lossyLoad}
-					Editing is held, because saving would remove {docState.problems.length === 1 ? 'it' : 'them'}.
+				{#if !docState.loaded}
+					<!-- The whole file failed. Reporting that as "1 item could not be read" read
+					     like one bad card, and the real message was only a tooltip. -->
+					{docState.problems[0]}
+				{:else}
+					{docState.problems.length} item{docState.problems.length === 1 ? '' : 's'} in this canvas
+					could not be read.
+					{#if docState.lossyLoad}
+						Editing is held, because saving would remove {docState.problems.length === 1 ? 'it' : 'them'}.
+					{/if}
 				{/if}
 			</span>
 			{#if docState.lossyLoad}
