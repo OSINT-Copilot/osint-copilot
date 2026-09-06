@@ -637,6 +637,12 @@ export class GraphView extends ItemView {
             if (Math.abs(box.width - this.lastSize.width) < 1
                 && Math.abs(box.height - this.lastSize.height) < 1) return;
             this.lastSize = { width: box.width, height: box.height };
+            // Synchronously, not on the next frame. A ResizeObserver callback runs after
+            // layout and before paint, so resizing here lands in the SAME frame; going
+            // through requestAnimationFrame left the canvas one frame stale for every
+            // frame of a pane transition. The trailing timer below is only a safety net
+            // for a final size the observer and the frame boundary disagree about.
+            this.resizeNow();
             this.scheduleResize();
         });
         this.resizeObserver.observe(this.container);
@@ -651,7 +657,7 @@ export class GraphView extends ItemView {
         }
     }
 
-    /** Trailing debounce: a pane transition emits a record per frame for ~300ms. */
+    /** Settles the final size, in case the last observer record and the last paint disagree. */
     private scheduleResize(): void {
         if (this.resizeTimer !== null) window.clearTimeout(this.resizeTimer);
         this.resizeTimer = window.setTimeout(() => {
