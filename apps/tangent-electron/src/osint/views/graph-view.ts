@@ -90,6 +90,8 @@ interface CytoscapeCore {
     edges(): Collection;
     getElementById(id: string): Collection;
     fit(): void;
+    /** Re-reads the container size and re-sizes every canvas layer; keeps pan and zoom. */
+    resize(): void;
     pan(): { x: number; y: number };
     zoom(): number;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -117,6 +119,10 @@ export class GraphView extends ItemView {
     private onEntityClick: ((entityId: string) => void) | null = null;
     private onShowOnMap: ((entityId: string) => void) | null = null;
     private _keyHandler: ((e: KeyboardEvent) => void) | null = null;
+    /** See onAttached: cytoscape sizes its canvases once and never re-measures on its own. */
+    private resizeObserver: ResizeObserver | null = null;
+    private resizeTimer: number | null = null;
+    private lastSize = { width: 0, height: 0 };
 
     // Connection mode state
     private connectionMode: boolean = false;
@@ -208,8 +214,34 @@ export class GraphView extends ItemView {
     }
 
     private entityPassesConfidenceFilter(entity: Entity): boolean {
+        // Every box unchecked hides every entity. That is what the filter means, but with
+        // nothing on screen and no message it reads as a broken graph, so the count row
+        // reports it (see reportHiddenByFilter).
         if (this.confidenceFilter.size === 0) return false;
         return this.confidenceFilter.has(this.entityOsintConfidenceValue(entity));
+    }
+
+    /**
+     * Tells the analyst when the graph is empty because of the confidence filter rather
+     * than because the vault is.
+     */
+    private reportHiddenByFilter(total: number, shown: number): void {
+        if (!this.selectionCountEl) return;
+        if (this.selectedNodes.size + this.selectedEdges.size > 0) return;
+        const hidden = total - shown;
+        if (hidden <= 0) {
+            if (this.selectionCountEl.dataset.filterNote === '1') {
+                this.selectionCountEl.textContent = '';
+                this.selectionCountEl.setCssProps({ display: 'none' });
+                delete this.selectionCountEl.dataset.filterNote;
+            }
+            return;
+        }
+        this.selectionCountEl.dataset.filterNote = '1';
+        this.selectionCountEl.textContent = this.confidenceFilter.size === 0
+            ? `All ${total} entities hidden — no confidence level is selected`
+            : `${hidden} of ${total} entities hidden by the confidence filter`;
+        this.selectionCountEl.setCssProps({ display: 'block' });
     }
 
     /**
@@ -572,11 +604,85 @@ export class GraphView extends ItemView {
         return undefined;
     }
 
+    // ---------------------------------------------------------------- attachment
+
+    /**
+     * Cytoscape sizes its three canvases when it is created and does not watch the
+     * container, so every pane resize left them at the old pixel size: measured over a
+     * sidebar toggle, 17% of frames showed the container's bare background as an L-shaped
+     * gap along the bottom and right edges, up to 300px wide, until something else
+     * happened to trigger a redraw. That flicker is what a user sees as "the margins are
+     * blinking". This is the same treatment map-view gives Leaflet's invalidateSize.
+     */
+    protected onAttached(): void {
+        this.observeCanvas();
+        // One-shot: an observer that has only ever seen 0x0 has nothing to report a
+        // change from, and under jsdom it is a stub that never fires at all.
+        requestAnimationFrame(() => this.resizeNow());
+    }
+
+    protected onDetached(): void {
+        this.unobserveCanvas();
+    }
+
+    private observeCanvas(): void {
+        if (this.resizeObserver || !this.container) return;
+        if (typeof ResizeObserver === 'undefined') return;
+        this.resizeObserver = new ResizeObserver((entries) => {
+            const box = entries[entries.length - 1]?.contentRect;
+            if (!box) return;
+            // 0x0 means detached, hidden or mid-collapse; lastSize is deliberately not
+            // updated, so detaching and reattaching at the same size stays a no-op.
+            if (box.width < 1 || box.height < 1) return;
+            if (Math.abs(box.width - this.lastSize.width) < 1
+                && Math.abs(box.height - this.lastSize.height) < 1) return;
+            this.lastSize = { width: box.width, height: box.height };
+            this.scheduleResize();
+        });
+        this.resizeObserver.observe(this.container);
+    }
+
+    private unobserveCanvas(): void {
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = null;
+        if (this.resizeTimer !== null) {
+            window.clearTimeout(this.resizeTimer);
+            this.resizeTimer = null;
+        }
+    }
+
+    /** Trailing debounce: a pane transition emits a record per frame for ~300ms. */
+    private scheduleResize(): void {
+        if (this.resizeTimer !== null) window.clearTimeout(this.resizeTimer);
+        this.resizeTimer = window.setTimeout(() => {
+            this.resizeTimer = null;
+            this.resizeNow();
+        }, 120);
+    }
+
+    private resizeNow(): void {
+        const canvas = this.container;
+        if (!this.cy || !canvas?.isConnected) return;
+        if (canvas.clientWidth < 1 || canvas.clientHeight < 1) return;
+        this.lastSize = { width: canvas.clientWidth, height: canvas.clientHeight };
+        // resize() re-reads the container and re-sizes every layer; the viewport (pan and
+        // zoom) is preserved, so this must not be a fit() -- that would throw away
+        // wherever the analyst had navigated to every time the pane changed width.
+        this.cy.resize();
+    }
+
     async onClose(): Promise<void> {
         // Clean up keyboard handler
         if (this._keyHandler) {
             document.removeEventListener('keydown', this._keyHandler);
         }
+        this.unobserveCanvas();
+        // Dialogs and context menus are appended to document.body, so they outlive the
+        // pane unless they are removed here -- a delete confirmation left on screen over
+        // another view still had a live, wired-up Delete button.
+        document.querySelectorAll(
+            '.graph_copilot-delete-modal, .graph_copilot-context-menu, .graph_copilot-rearrange-modal',
+        ).forEach((orphan) => orphan.remove());
 
         if (this.cy) {
             this.cy.destroy();
@@ -617,6 +723,7 @@ export class GraphView extends ItemView {
 
         // Add Entity button
         const addBtn = toolbar.createEl('button', { text: '+ add entity' });
+        addBtn.title = 'Create a new entity and place it on the graph';
         addBtn.addClass('graph_copilot-add-entity-btn');
         addBtn.onclick = () => this.openEntityCreator();
 
@@ -873,9 +980,14 @@ export class GraphView extends ItemView {
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
             a.href = url;
             a.download = `osint-investigation-${timestamp}.json`;
+            // In the document and revoked on a later tick: Chromium starts the download
+            // asynchronously, so revoking in the same tick as click() raced it and
+            // produced an empty file often enough to notice -- while still claiming
+            // success.
+            document.body.appendChild(a);
             a.click();
-
-            URL.revokeObjectURL(url);
+            a.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 0);
             new Notice('Investigation exported successfully');
         } catch (error) {
             console.error('[GraphView] Export failed:', error);
@@ -1406,6 +1518,11 @@ export class GraphView extends ItemView {
         const keyHandler = (e: KeyboardEvent) => {
             // Only handle if this view is active
             if (!this.container?.isConnected) return;
+            // ...and only when the keyboard is actually in this pane. Mounted was not
+            // enough: with the graph open beside a note, Delete pressed while the file
+            // tree had focus reached showDeleteConfirmation.
+            const root = this.containerEl;
+            if (!root.contains(document.activeElement) && document.activeElement !== document.body) return;
 
             // Don't intercept keyboard events when user is typing in an input field or modal
             const activeElement = document.activeElement;
@@ -1418,11 +1535,17 @@ export class GraphView extends ItemView {
 
             // If user is typing in an input or a modal is open, don't intercept most keys
             if (isInputActive || modalOpen) {
-                // Only handle Escape to exit modes when not in modal
-                if (e.key === 'Escape' && !modalOpen) {
+                // Escape leaves the mode -- and must be marked handled, exactly as the
+                // branch below does. Tangent's window-level Escape treats an unhandled
+                // one as "toggle Thread/Map focus", which unmounts every pane: leaving a
+                // connection mode with the caret in any input threw the analyst out of
+                // the graph entirely.
+                if (e.key === 'Escape' && !modalOpen && (this.boxSelectMode || this.connectionMode)) {
+                    e.preventDefault();
+                    e.stopPropagation();
                     if (this.boxSelectMode) {
                         this.exitBoxSelectMode();
-                    } else if (this.connectionMode) {
+                    } else {
                         this.exitConnectionMode();
                     }
                 }
@@ -1556,6 +1679,7 @@ export class GraphView extends ItemView {
 
         if (this.selectionCountEl) {
             if (totalCount > 0) {
+                delete this.selectionCountEl.dataset.filterNote;
                 const parts: string[] = [];
                 if (nodeCount > 0) parts.push(`${nodeCount} ${nodeCount === 1 ? 'entity' : 'entities'}`);
                 if (edgeCount > 0) parts.push(`${edgeCount} ${edgeCount === 1 ? 'relationship' : 'relationships'}`);
@@ -1625,7 +1749,10 @@ export class GraphView extends ItemView {
 
         // Create confirmation modal
         const modal = document.createElement('div');
-        modal.className = 'graph_copilot-delete-modal';
+        // 'modal-container' too: the keyboard handler probes for that class to decide a
+        // dialog is open, so without it Delete opened a second confirmation on top of the
+        // first, and a third on top of that.
+        modal.className = 'modal-container graph_copilot-delete-modal';
         modal.setCssProps({
             position: 'fixed',
             top: '0',
@@ -1834,7 +1961,10 @@ export class GraphView extends ItemView {
     private showSingleDeleteConfirmation(entityId: string, label: string): void {
         // Create confirmation modal
         const modal = document.createElement('div');
-        modal.className = 'graph_copilot-delete-modal';
+        // 'modal-container' too: the keyboard handler probes for that class to decide a
+        // dialog is open, so without it Delete opened a second confirmation on top of the
+        // first, and a third on top of that.
+        modal.className = 'modal-container graph_copilot-delete-modal';
         modal.setCssProps({
             position: 'fixed',
             top: '0',
@@ -2642,7 +2772,13 @@ export class GraphView extends ItemView {
         try {
             await this.entityManager.loadEntitiesFromNotes();
         } catch (error) {
+            // Return, do not carry on. loadEntitiesFromNotes clears the shared store
+            // before it reads, so after a failure getGraphData() is empty -- and the code
+            // below would then remove every element and rebuild from nothing, silently
+            // blanking the whole graph on a transient read error.
             console.error('[GraphView] Failed to reload entities from notes:', error);
+            new Notice('Could not reload entities; keeping the current graph.', 8000, 'error');
+            return;
         }
 
         const { entities: allEntities, connections: allConnections } = this.entityManager.getGraphData();
@@ -2757,7 +2893,13 @@ export class GraphView extends ItemView {
         try {
             await this.entityManager.loadEntitiesFromNotes();
         } catch (error) {
+            // Return, do not carry on. loadEntitiesFromNotes clears the shared store
+            // before it reads, so after a failure getGraphData() is empty -- and the code
+            // below would then remove every element and rebuild from nothing, silently
+            // blanking the whole graph on a transient read error.
             console.error('[GraphView] Failed to reload entities from notes:', error);
+            new Notice('Could not reload entities; keeping the current graph.', 8000, 'error');
+            return;
         }
 
         const { entities: allEntities, connections: allConnections } = this.entityManager.getGraphData();
@@ -3069,7 +3211,7 @@ export class GraphView extends ItemView {
     private showRearrangeConfirmation(): Promise<boolean> {
         return new Promise((resolve) => {
             const modal = document.createElement('div');
-            modal.className = 'modal-container';
+            modal.className = 'modal-container graph_copilot-rearrange-modal';
             modal.setCssProps({
                 position: 'fixed',
                 top: '0',

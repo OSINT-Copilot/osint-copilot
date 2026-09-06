@@ -108,6 +108,8 @@
 		"category": "Office",
 		"maintainer": "Probe Point Analytics LLC",
 		"synopsis": "OSINT investigation workspace",
+		"__comment_executableArgs": "X11 through XWayland. Under a Wayland session the app initialises and then crashes in the compositor, and the platform cannot be chosen from JS -- Chromium fixes it before the main script runs, so app.commandLine.appendSwitch is too late even as the first statement. The desktop entry is the earliest place it can be set. %U is repeated here because electron-builder only appends it when executableArgs carries no exec code.",
+		"executableArgs": ["--ozone-platform=x11", "%U"],
 		"target": [
 			{
 				"target": "AppImage",
