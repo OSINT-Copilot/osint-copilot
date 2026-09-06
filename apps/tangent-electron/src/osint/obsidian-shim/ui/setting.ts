@@ -34,6 +34,16 @@ abstract class ValueComponent<T> {
         this.disabled = disabled;
         return this;
     }
+
+    /**
+     * Obsidian's chaining escape hatch: run a callback with the component and keep
+     * chaining. Used where a row needs the underlying element (to attach a blur handler,
+     * say) without breaking out of the fluent call.
+     */
+    then(callback: (component: this) => unknown): this {
+        callback(this);
+        return this;
+    }
 }
 
 export class TextComponent extends ValueComponent<string> {

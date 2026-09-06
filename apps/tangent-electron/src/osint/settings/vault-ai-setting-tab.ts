@@ -1,3 +1,6 @@
+import { isUsableTileUrl } from '../services/basemap/basemap-types';
+import { ConfirmModal } from '../modals/confirm-modal';
+import { coerceInteger, validateCustomRootFolder, validateVaultFolder } from './settings-validation';
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type { EnabledSchemaFamilies } from "../services/schema-catalog-types";
 import { VaultPromptBootstrapService } from "../services/vault-prompt-bootstrap";
@@ -72,6 +75,60 @@ export class VaultAISettingTab extends PluginSettingTab {
 		};
 	}
 
+	/**
+	 * Shows or clears an inline message under a settings control.
+	 *
+	 * Rows used to accept a value, quietly substitute a different one, and say nothing --
+	 * the field kept showing what was typed while the stored setting was something else.
+	 */
+	/**
+	 * A folder row that refuses what the rest of the code would refuse later.
+	 *
+	 * These accepted absolute paths, ".." and backslashes, and (for the agent-writable
+	 * folders) anything outside OSINTCopilot/custom -- the constraint the description
+	 * already claimed. The rejection then surfaced far away: a Notice from an unrelated
+	 * button, or a console warning on the next launch.
+	 */
+	private applyFolderSetting(
+		input: HTMLInputElement,
+		fallback: string,
+		mustBeUnderCustomRoot: boolean,
+		apply: (folder: string) => void | Promise<void>,
+	): () => Promise<void> {
+		return async () => {
+			const raw = input.value.trim();
+			if (!raw) {
+				input.value = fallback;
+				this.setRowError(input, "");
+				await apply(fallback);
+				return;
+			}
+			const check = mustBeUnderCustomRoot ? validateCustomRootFolder(raw) : validateVaultFolder(raw);
+			if (!check.ok) {
+				this.setRowError(input, check.message);
+				return;
+			}
+			this.setRowError(input, "");
+			await apply(raw);
+		};
+	}
+
+	private setRowError(input: HTMLElement, message: string): void {
+		const row = input.closest(".setting-item") as HTMLElement | null;
+		if (!row) return;
+		let note = row.querySelector(".osint-setting-error") as HTMLElement | null;
+		if (!message) {
+			note?.remove();
+			input.removeAttribute("aria-invalid");
+			return;
+		}
+		if (!note) {
+			note = row.createDiv({ cls: "osint-setting-error" });
+		}
+		note.setText(message);
+		input.setAttribute("aria-invalid", "true");
+	}
+
 	display(): void {
 		if (this._settingsDisplayDepth > 0) {
 			this._settingsDisplayQueued = true;
@@ -85,8 +142,11 @@ export class VaultAISettingTab extends PluginSettingTab {
 		// plugin files in place: there is no plugin folder to overwrite any more.
 		new Setting(containerEl).setName("About").setHeading();
 		new Setting(containerEl)
-			.setName("Version " + this.plugin.manifest.version)
-			.setDesc("OSINT Copilot checks for updates automatically and installs them on restart.");
+			.setName("OSINT layer " + this.plugin.manifest.version)
+			.setDesc(
+				"The app's own version is on the About page. When automatic update checks are enabled, " +
+				"updates are downloaded and installed on restart.",
+			);
 
 		new Setting(containerEl).setName("Views").setHeading();
 		new Setting(containerEl)
@@ -106,36 +166,57 @@ export class VaultAISettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl).setName("Graph note lock").setHeading();
+		// The count lives in the description, which is re-read on every render, rather than
+		// baked into the row name where it went stale as soon as a note was locked elsewhere.
 		new Setting(containerEl)
-			.setName(`Locked notes (${this.plugin.vaultLockService.getLockedCount()})`)
+			.setName("Locked notes")
 			.setDesc(
+				`${this.plugin.vaultLockService.getLockedCount()} locked. ` +
 				"Notes locked from the entity graph are read-only until you unlock them (editor toolbar or here). Task agents and orchestration skip writes to locked paths.",
 			)
 			.addButton((btn) =>
-				btn.setButtonText("Unlock all").onClick(async () => {
-					if (!confirm("Unlock all notes locked from the graph?")) return;
-					this.plugin.vaultLockService.unlockAll();
-					new Notice("All graph locks cleared.");
-					this.display();
+				btn.setButtonText("Unlock all").onClick(() => {
+					// ConfirmModal, not the browser's confirm(): a native dialog in a frameless
+					// Electron window ignores the theme and blocks the renderer, and every other
+					// confirmation in this app is already a ConfirmModal.
+					new ConfirmModal(
+						this.plugin.app,
+						"Unlock all notes?",
+						"Every note locked from the entity graph becomes writable again.",
+						() => {
+							this.plugin.vaultLockService.unlockAll();
+							new Notice("All graph locks cleared.");
+							this.display();
+						},
+						undefined,
+						true,
+						undefined,
+						"Unlock all",
+					).open();
 				}),
 			);
+
+		new Setting(containerEl).setName("Chat context").setHeading();
 
 		// Max Notes
 		new Setting(containerEl)
 			.setName("Max notes")
 			.setDesc("Maximum number of notes to include in context")
-			.addText((text) =>
-				text
-					.setPlaceholder("15")
-					.setValue(String(this.plugin.settings.maxNotes))
-					.onChange(async (value) => {
-						const num = parseInt(value);
-						if (!isNaN(num) && num > 0) {
-							this.plugin.settings.maxNotes = num;
-							await this.plugin.saveSettings();
-						}
-					}),
-			);
+			.addText((text) => {
+				text.setPlaceholder("15").setValue(String(this.plugin.settings.maxNotes));
+				text.inputEl.addEventListener("blur", async () => {
+					// On blur, not per keystroke: clamped, written back into the field, and
+					// explained. Silently keeping the old value while the box showed something
+					// else meant "100" could mean a stored 15 -- and there was no ceiling on a
+					// number that decides how many whole notes go into a prompt.
+					const r = coerceInteger(text.inputEl.value, { min: 1, max: 200, fallback: this.plugin.settings.maxNotes });
+					text.setValue(String(r.value));
+					this.setRowError(text.inputEl, r.accepted ? "" : r.message);
+					if (this.plugin.settings.maxNotes === r.value) return;
+					this.plugin.settings.maxNotes = r.value;
+					await this.plugin.saveSettings();
+				});
+			});
 
 		// System Prompt
 		new Setting(containerEl)
@@ -161,10 +242,11 @@ export class VaultAISettingTab extends PluginSettingTab {
 				text
 					.setPlaceholder(DEFAULT_PROMPTS_FOLDER)
 					.setValue(this.plugin.settings.promptsFolder)
-					.onChange(async (value) => {
-						this.plugin.settings.promptsFolder = value.trim() || DEFAULT_PROMPTS_FOLDER;
-						await this.plugin.saveSettings();
-					}),
+					.then((t) => t.inputEl.addEventListener("blur", this.applyFolderSetting(
+						t.inputEl, DEFAULT_PROMPTS_FOLDER, false, async (folder) => {
+							this.plugin.settings.promptsFolder = folder;
+							await this.plugin.saveSettings();
+						})))
 			);
 		new Setting(containerEl)
 			.setName("Active agent id")
@@ -213,11 +295,12 @@ export class VaultAISettingTab extends PluginSettingTab {
 				text
 					.setPlaceholder(DEFAULT_SKILLS_FOLDER)
 					.setValue(this.plugin.settings.skillsFolder)
-					.onChange(async (value) => {
-						this.plugin.settings.skillsFolder = value.trim() || DEFAULT_SKILLS_FOLDER;
-						this.plugin.skillRegistry?.invalidate();
-						await this.plugin.saveSettings();
-					}),
+					.then((t) => t.inputEl.addEventListener("blur", this.applyFolderSetting(
+						t.inputEl, DEFAULT_SKILLS_FOLDER, false, async (folder) => {
+							this.plugin.settings.skillsFolder = folder;
+							this.plugin.skillRegistry?.invalidate();
+							await this.plugin.saveSettings();
+						})))
 			);
 		new Setting(containerEl)
 			.setName("Enrichers folder")
@@ -226,11 +309,12 @@ export class VaultAISettingTab extends PluginSettingTab {
 				text
 					.setPlaceholder(DEFAULT_ENRICHERS_FOLDER)
 					.setValue(this.plugin.settings.enrichersFolder)
-					.onChange(async (value) => {
-						this.plugin.settings.enrichersFolder = value.trim() || DEFAULT_ENRICHERS_FOLDER;
-						this.plugin.enricherRegistry?.invalidate();
-						await this.plugin.saveSettings();
-					}),
+					.then((t) => t.inputEl.addEventListener("blur", this.applyFolderSetting(
+						t.inputEl, DEFAULT_ENRICHERS_FOLDER, false, async (folder) => {
+							this.plugin.settings.enrichersFolder = folder;
+							this.plugin.enricherRegistry?.invalidate();
+							await this.plugin.saveSettings();
+						})))
 			);
 		new Setting(containerEl)
 			.setName("Credentials folder")
@@ -241,24 +325,26 @@ export class VaultAISettingTab extends PluginSettingTab {
 				text
 					.setPlaceholder(DEFAULT_CREDENTIALS_FOLDER)
 					.setValue(this.plugin.settings.credentialsFolder)
-					.onChange(async (value) => {
-						this.plugin.settings.credentialsFolder = value.trim() || DEFAULT_CREDENTIALS_FOLDER;
-						await this.plugin.saveSettings();
-					}),
+					.then((t) => t.inputEl.addEventListener("blur", this.applyFolderSetting(
+						t.inputEl, DEFAULT_CREDENTIALS_FOLDER, true, async (folder) => {
+							this.plugin.settings.credentialsFolder = folder;
+							await this.plugin.saveSettings();
+						})))
 			);
 		new Setting(containerEl)
 			.setName("Scripts folder")
 			.setDesc(
-				"Text scripts (e.g. .py, .sh, .ts) the unified agent may propose via upsert_script / delete_script. Review the side-by-side diff in chat; the plugin does not execute scripts.",
+				"Text scripts (e.g. .py, .sh, .ts) the unified agent may propose via upsert_script / delete_script. Review the side-by-side diff in chat; OSINT Copilot does not execute scripts.",
 			)
 			.addText((text) =>
 				text
 					.setPlaceholder(DEFAULT_SCRIPTS_FOLDER)
 					.setValue(this.plugin.settings.scriptsFolder)
-					.onChange(async (value) => {
-						this.plugin.settings.scriptsFolder = value.trim() || DEFAULT_SCRIPTS_FOLDER;
-						await this.plugin.saveSettings();
-					}),
+					.then((t) => t.inputEl.addEventListener("blur", this.applyFolderSetting(
+						t.inputEl, DEFAULT_SCRIPTS_FOLDER, true, async (folder) => {
+							this.plugin.settings.scriptsFolder = folder;
+							await this.plugin.saveSettings();
+						})))
 			);
 
 		new Setting(containerEl).setName("Task agents (vault)").setHeading();
@@ -280,11 +366,12 @@ export class VaultAISettingTab extends PluginSettingTab {
 				text
 					.setPlaceholder(DEFAULT_TASK_AGENTS_FOLDER)
 					.setValue(this.plugin.settings.taskAgentsFolder)
-					.onChange(async (value) => {
-						this.plugin.settings.taskAgentsFolder = value.trim() || DEFAULT_TASK_AGENTS_FOLDER;
-						this.plugin.taskAgentRegistry?.invalidate();
-						await this.plugin.saveSettings();
-					}),
+					.then((t) => t.inputEl.addEventListener("blur", this.applyFolderSetting(
+						t.inputEl, DEFAULT_TASK_AGENTS_FOLDER, false, async (folder) => {
+							this.plugin.settings.taskAgentsFolder = folder;
+							this.plugin.taskAgentRegistry?.invalidate();
+							await this.plugin.saveSettings();
+						})))
 			);
 		new Setting(containerEl)
 			.setName("Global output allowlist")
@@ -396,10 +483,12 @@ export class VaultAISettingTab extends PluginSettingTab {
 					text
 						.setPlaceholder(String(DEFAULT_SETTINGS.hermesAgentTimeoutMs))
 						.setValue(String(this.plugin.settings.hermesAgentTimeoutMs))
-						.onChange(async (value) => {
-							const n = parseInt(value.trim(), 10);
-							this.plugin.settings.hermesAgentTimeoutMs =
-								Number.isFinite(n) && n >= 5000 ? n : DEFAULT_SETTINGS.hermesAgentTimeoutMs;
+						.inputEl.addEventListener("blur", async () => {
+							const r = coerceInteger(text.inputEl.value, { min: 5000, max: 3_600_000, fallback: this.plugin.settings.hermesAgentTimeoutMs });
+							text.setValue(String(r.value));
+							this.setRowError(text.inputEl, r.accepted ? "" : r.message);
+							if (this.plugin.settings.hermesAgentTimeoutMs === r.value) return;
+							this.plugin.settings.hermesAgentTimeoutMs = r.value;
 							await this.plugin.saveSettings();
 						}),
 				);
@@ -521,15 +610,19 @@ export class VaultAISettingTab extends PluginSettingTab {
 				.setName("Runtime id")
 				.setDesc("Stored as custom:<id>. Lowercase letters, numbers, _ and -.")
 				.addText((text) =>
-					text.setValue(rt.id.replace(/^custom:/, "")).onChange(async (value) => {
-						const nextId = this.uniqueCustomRuntimeId(value, rt.id);
+					// On blur, and without re-rendering. onChange fires per keystroke, and
+					// this.display() empties the container -- so the first character removed the
+					// input being typed into and rewrote the id letter by letter.
+					text.setValue(rt.id.replace(/^custom:/, "")).inputEl.addEventListener("blur", async () => {
+						const nextId = this.uniqueCustomRuntimeId(text.inputEl.value, rt.id);
 						const prevId = rt.id;
+						if (nextId === prevId) return;
 						rt.id = nextId;
 						if (this.plugin.settings.agentRuntimeProvider === prevId) {
 							this.plugin.settings.agentRuntimeProvider = nextId;
 						}
+						text.setValue(nextId.replace(/^custom:/, ""));
 						await this.plugin.saveSettings();
-						this.display();
 					}),
 				);
 			new Setting(containerEl)
@@ -563,9 +656,12 @@ export class VaultAISettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 				.setName("Request timeout (ms)")
 				.addText((text) =>
-					text.setValue(String(rt.timeoutMs)).onChange(async (value) => {
-						const n = parseInt(value.trim(), 10);
-						rt.timeoutMs = Number.isFinite(n) && n >= 5000 ? n : 120000;
+					text.setValue(String(rt.timeoutMs)).inputEl.addEventListener("blur", async () => {
+						const r = coerceInteger(text.inputEl.value, { min: 5000, max: 3_600_000, fallback: rt.timeoutMs });
+						text.setValue(String(r.value));
+						this.setRowError(text.inputEl, r.accepted ? "" : r.message);
+						if (rt.timeoutMs === r.value) return;
+						rt.timeoutMs = r.value;
 						await this.plugin.saveSettings();
 					}),
 				);
@@ -610,7 +706,7 @@ export class VaultAISettingTab extends PluginSettingTab {
 						.setPlaceholder("claude")
 						.setValue(this.plugin.settings.claudeCodeCliPath)
 						.onChange(async (value) => {
-							this.plugin.settings.claudeCodeCliPath = value || "claude";
+							this.plugin.settings.claudeCodeCliPath = value.trim() || "claude";
 							await this.plugin.saveSettings();
 						}),
 				);
@@ -623,7 +719,7 @@ export class VaultAISettingTab extends PluginSettingTab {
 						.setPlaceholder("sonnet")
 						.setValue(this.plugin.settings.claudeCodeModel)
 						.onChange(async (value) => {
-							this.plugin.settings.claudeCodeModel = value || "sonnet";
+							this.plugin.settings.claudeCodeModel = value.trim() || "sonnet";
 							await this.plugin.saveSettings();
 						}),
 				);
@@ -643,9 +739,15 @@ export class VaultAISettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 				.setName("Claude Code timeout (ms)")
 				.addText((text) =>
-					text.setValue(String(this.plugin.settings.claudeCodeTimeoutMs)).onChange(async (value) => {
-						const n = parseInt(value.trim(), 10);
-						this.plugin.settings.claudeCodeTimeoutMs = Number.isFinite(n) && n >= 5000 ? n : 300_000;
+					text.setValue(String(this.plugin.settings.claudeCodeTimeoutMs)).inputEl.addEventListener("blur", async () => {
+						// On blur, clamped, written back and explained: substituting the default
+						// silently while the box still showed what was typed meant a field reading
+						// "100" could be a stored 300000.
+						const r = coerceInteger(text.inputEl.value, { min: 5000, max: 3_600_000, fallback: this.plugin.settings.claudeCodeTimeoutMs });
+						text.setValue(String(r.value));
+						this.setRowError(text.inputEl, r.accepted ? "" : r.message);
+						if (this.plugin.settings.claudeCodeTimeoutMs === r.value) return;
+						this.plugin.settings.claudeCodeTimeoutMs = r.value;
 						await this.plugin.saveSettings();
 					}),
 				);
@@ -666,7 +768,7 @@ export class VaultAISettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 				.setName("Codex sign-in")
 				.setDesc(
-					`Run “${this.plugin.settings.codexCliPath || "codex"} login” in a terminal. The plugin reuses that saved login and never stores it in the vault.`,
+					`Run “${this.plugin.settings.codexCliPath || "codex"} login” in a terminal. OSINT Copilot reuses that saved login and never stores it in the vault.`,
 				)
 				.addButton((btn) =>
 					btn.setButtonText("Check login").onClick(async () => {
@@ -701,7 +803,7 @@ export class VaultAISettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 				.setName("Codex exec extra args")
 				.setDesc(
-					"Optional whitespace-separated codex exec flags (for example, --oss). Safety, output, model, image, working-directory, and session flags are managed by the plugin and rejected here.",
+					"Optional whitespace-separated codex exec flags (for example, --oss). Safety, output, model, image, working-directory, and session flags are managed by OSINT Copilot and rejected here.",
 				)
 				.addText((text) =>
 					text.setValue(this.plugin.settings.codexCliExtraArgs).onChange(async (value) => {
@@ -713,9 +815,15 @@ export class VaultAISettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 				.setName("Codex timeout (ms)")
 				.addText((text) =>
-					text.setValue(String(this.plugin.settings.codexCliTimeoutMs)).onChange(async (value) => {
-						const n = parseInt(value.trim(), 10);
-						this.plugin.settings.codexCliTimeoutMs = Number.isFinite(n) && n >= 5000 ? n : 300_000;
+					text.setValue(String(this.plugin.settings.codexCliTimeoutMs)).inputEl.addEventListener("blur", async () => {
+						// On blur, clamped, written back and explained: substituting the default
+						// silently while the box still showed what was typed meant a field reading
+						// "100" could be a stored 300000.
+						const r = coerceInteger(text.inputEl.value, { min: 5000, max: 3_600_000, fallback: this.plugin.settings.codexCliTimeoutMs });
+						text.setValue(String(r.value));
+						this.setRowError(text.inputEl, r.accepted ? "" : r.message);
+						if (this.plugin.settings.codexCliTimeoutMs === r.value) return;
+						this.plugin.settings.codexCliTimeoutMs = r.value;
 						await this.plugin.saveSettings();
 					}),
 				);
@@ -801,7 +909,7 @@ export class VaultAISettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Miro access token")
-			.setDesc("Personal access token / app token from your Miro account. Stored in plain text in this plugin's own settings.")
+			.setDesc("Personal access token / app token from your Miro account. Stored in plain text in OSINT Copilot's own settings.")
 			.addText((text) => {
 				text.inputEl.type = "password";
 				text
@@ -965,10 +1073,20 @@ export class VaultAISettingTab extends PluginSettingTab {
 					text
 						.setPlaceholder("https://example.com/tiles/{z}/{x}/{y}.png")
 						.setValue(this.plugin.settings.mapCustomTileUrl)
-						.onChange(async (value) => {
+						.then((t) => t.inputEl.addEventListener("blur", async () => {
+							// The description already said {z}, {x} and {y} were required; nothing
+							// checked. An unusable URL just produced the generic "no basemap"
+							// strip, with nothing pointing at this field.
+							const value = t.inputEl.value.trim();
+							if (value && !isUsableTileUrl(value)) {
+								this.setRowError(t.inputEl, "Must contain {z}, {x} and {y}.");
+								return;
+							}
+							this.setRowError(t.inputEl, "");
+							if (this.plugin.settings.mapCustomTileUrl === value) return;
 							this.plugin.settings.mapCustomTileUrl = value;
 							await this.plugin.saveSettings();
-						}),
+						})),
 				);
 
 			new Setting(containerEl)

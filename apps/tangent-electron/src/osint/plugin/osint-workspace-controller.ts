@@ -61,7 +61,7 @@ export class OsintWorkspaceController {
    */
   async openGraphView(forceNew: boolean = false) {
     if (!this.plugin.settings.enableGraphFeatures) {
-      new Notice('Graph features are disabled. Enable them in settings → osint copilot → enable graph features', 5000);
+      new Notice('Graph features are disabled. Enable them in Preferences → OSINT Copilot → Graph view.', 5000);
       console.warn('[VaultAIPlugin] Attempted to open graph view but graph features are disabled');
       return;
     }
@@ -182,6 +182,14 @@ export class OsintWorkspaceController {
    * @param forceNew If true, opens another instance as a new tab next to existing OSINT tabs when possible.
    */
   async openTimelineView(forceNew: boolean = false) {
+    // The same gate openGraphView has. These views read the same entity store, which is
+    // only initialised when graph features are on -- without the guard they opened empty,
+    // reachable from the palette and shortcuts even though the toolbar hides them.
+    if (!this.plugin.settings.enableGraphFeatures) {
+      new Notice('Graph features are disabled. Enable them in Preferences → OSINT Copilot → Graph view.', 5000);
+      return;
+    }
+
     const existing = this.plugin.app.workspace.getLeavesOfType(TIMELINE_VIEW_TYPE);
 
     // If not forcing new and one exists, reveal it
@@ -203,6 +211,14 @@ export class OsintWorkspaceController {
    * @param forceNew If true, opens another instance as a new tab next to existing OSINT tabs when possible.
    */
   async openMapView(forceNew: boolean = false) {
+    // The same gate openGraphView has. These views read the same entity store, which is
+    // only initialised when graph features are on -- without the guard they opened empty,
+    // reachable from the palette and shortcuts even though the toolbar hides them.
+    if (!this.plugin.settings.enableGraphFeatures) {
+      new Notice('Graph features are disabled. Enable them in Preferences → OSINT Copilot → Graph view.', 5000);
+      return;
+    }
+
     const existing = this.plugin.app.workspace.getLeavesOfType(MAP_VIEW_TYPE);
 
     // If not forcing new and one exists, reveal it

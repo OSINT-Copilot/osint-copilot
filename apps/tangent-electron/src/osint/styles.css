@@ -2737,3 +2737,20 @@ svg.leaflet-image-layer.leaflet-interactive path {
   color: var(--text-error);
   font-size: 0.9em;
 }
+
+/* ============================================
+   Settings rows -- audit fixes
+   ============================================ */
+
+/* Inline validation, under the control it belongs to. Rows used to accept a value,
+   quietly substitute another, and say nothing. */
+.setting-item .osint-setting-error {
+  flex-basis: 100%;
+  margin-top: .35em;
+  color: var(--text-error);
+  font-size: var(--font-ui-smaller);
+  text-align: right;
+}
+.setting-item-control input[aria-invalid="true"] {
+  border-color: var(--text-error);
+}
