@@ -3,8 +3,6 @@ require('dotenv').config({ path: path.resolve(__dirname, '.env') })
 
 const { notarize } = require('@electron/notarize')
 
-const config = require('../electron-builder.json')
-
 exports.default = async function notarizeTheApp(context) {
 
 	if (context.electronPlatformName !== 'darwin') {
@@ -22,7 +20,12 @@ exports.default = async function notarizeTheApp(context) {
 
 	let notarizeConfig = {
 		tool: 'notarytool',
-		appBundleId: config.appId,
+		// From the resolved app info rather than by re-reading electron-builder.json.
+		// That require() had to parse the file as strict JSON, which stopped it carrying
+		// comments -- and electron-builder itself reads it as JSON5, so the config could
+		// not explain itself. This is also simply the more correct value: it is the appId
+		// electron-builder actually used, not a second reading of the same file.
+		appBundleId: context.packager.appInfo.id,
 		appPath: `${context.appOutDir}/${appName}.app`,
 		appleId: process.env.APPLE_ID,
 		teamId: process.env.APPLE_TEAM_ID,

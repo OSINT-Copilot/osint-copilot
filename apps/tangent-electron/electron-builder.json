@@ -108,7 +108,17 @@
 		"category": "Office",
 		"maintainer": "Probe Point Analytics LLC",
 		"synopsis": "OSINT investigation workspace",
-		"__comment_executableArgs": "X11 through XWayland. Under a Wayland session the app initialises and then crashes in the compositor, and the platform cannot be chosen from JS -- Chromium fixes it before the main script runs, so app.commandLine.appendSwitch is too late even as the first statement. The desktop entry is the earliest place it can be set. %U is repeated here because electron-builder only appends it when executableArgs carries no exec code.",
+		// X11 through XWayland. Under a Wayland session the app initialises and then crashes
+		// in the compositor, and the platform cannot be chosen from JS -- Chromium fixes it
+		// before the main script runs, so app.commandLine.appendSwitch is too late even as the
+		// first statement. The desktop entry is the earliest place it can be set. %U is
+		// repeated here because electron-builder only appends it when executableArgs carries
+		// no exec code.
+		//
+		// A real comment, not a "__comment_" key: electron-builder validates this object
+		// against a schema that rejects unknown properties, so the key form failed the whole
+		// build. It parses this file with JSON5 (app-builder-lib/out/util/config/load.js:22),
+		// which allows comments -- but Node's require() does not, so nothing may require it.
 		"executableArgs": ["--ozone-platform=x11", "%U"],
 		"target": [
 			{
