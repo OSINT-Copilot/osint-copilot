@@ -104,6 +104,16 @@
 		"artifactName": "${productName}-Portable-${version}.${ext}"
 	},
 
+	"appImage": {
+		// No spaces in the filename. The default carries productName verbatim -- "OSINT
+		// Copilot-0.12.10.AppImage" -- and every tool that touches it sanitises the space
+		// differently: electron-builder writes a hyphen into latest-linux.yml, GitHub's
+		// upload API writes a dot into the asset name. The updater then asks for a file
+		// that does not exist and silently never updates. Naming it with no space to
+		// begin with means nothing has to guess.
+		"artifactName": "${name}-${version}-${arch}.${ext}"
+	},
+
 	"linux": {
 		"category": "Office",
 		"maintainer": "Probe Point Analytics LLC",
