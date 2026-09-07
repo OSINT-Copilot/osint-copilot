@@ -172,11 +172,20 @@
 		]
 	},
 
+	// Releases go to a separate PUBLIC repository while the source stays private.
+	// GitHub has no per-release visibility: assets in a private repo need an
+	// authenticated token to download, so electron-updater cannot reach them without one
+	// being shipped inside the app. A public releases repo is what makes in-app updates
+	// possible without publishing the source or embedding a credential.
+	//
+	// This value is baked into resources/app-update.yml at package time, so an artifact
+	// looks for updates wherever this pointed WHEN IT WAS BUILT. Changing it requires
+	// repackaging, not just re-uploading.
 	"publish": [
 		{
 			"provider": "github",
 			"owner": "Probe-Point-Analytics-LLC",
-			"repo": "osint-copilot",
+			"repo": "osint-copilot-releases",
 			"releaseType": "draft"
 		}
 	],
