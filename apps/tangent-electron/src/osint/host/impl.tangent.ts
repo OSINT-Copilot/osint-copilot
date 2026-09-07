@@ -77,6 +77,23 @@ export function pushVaultEvents(events: WatchEvent[]): void {
     for (const listener of changeListeners) listener(fresh);
 }
 
+/** Encodes each segment separately, so separators survive and everything else is escaped. */
+function encodePathSegments(value: string): string {
+    return value.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/');
+}
+
+/**
+ * The vault root as the authority-and-path part of a file:// URL.
+ *
+ * Windows needs both fixes: `C:\\vault` has no separator to split on, so the drive colon
+ * would be escaped to `C%3A` -- which is a hostname, not a path -- and there is no leading
+ * slash for `file://` to hang the absolute path from.
+ */
+function fileUrlRoot(root: string): string {
+    const encoded = encodePathSegments(root).replace(/^([A-Za-z])%3A/i, '$1:');
+    return encoded.startsWith('/') ? encoded : `/${encoded}`;
+}
+
 export const host: Host = {
     get platform() { return api().platform(); },
     secrets: {
@@ -119,13 +136,15 @@ export const host: Host = {
         /**
          * Tangent serves its window from file://, so a vault image can be referenced
          * directly. `?v=<mtime>` busts Electron's image cache, which otherwise serves a
-         * stale thumbnail forever after a re-import. Per-segment encoding matters:
-         * entity labels routinely contain spaces, #, ? and &.
+         * stale thumbnail forever after a re-import.
+         *
+         * Per-segment encoding, not encodeURI: entity labels routinely contain spaces, #,
+         * ? and &. The space matters twice over -- cytoscape's `background-image` is a
+         * multi-valued `urls` property that splits a mapped value on /\s+/, so a single
+         * unencoded space silently becomes two URLs, neither of which loads.
          */
         resourceUrl(p: string): string {
-            const encoded = p.split('/').map(encodeURIComponent).join('/');
-            const root = vaultRoot.split('/').map(encodeURIComponent).join('/');
-            return `file://${root}/${encoded}`;
+            return `file://${fileUrlRoot(vaultRoot)}/${encodePathSegments(p)}`;
         },
     },
     basemap: {

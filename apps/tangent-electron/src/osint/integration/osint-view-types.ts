@@ -70,6 +70,11 @@ export const OSINT_VIEWS: readonly OsintViewDescriptor[] = [
         label: 'Tools & Skills', icon: 'layout-list', shortcut: 'Mod+Alt+5',
         requiresGraphFeatures: false, commandKey: 'osintOpenRegistry',
     },
+    {
+        viewType: 'osint-copilot-docs-view', fileType: '.osintdocs', title: 'Documentation',
+        label: 'Guide', icon: 'book-open', shortcut: 'Mod+Alt+6',
+        requiresGraphFeatures: false, commandKey: 'osintOpenDocs',
+    },
 ] as const;
 
 export const OSINT_FILE_TYPES = OSINT_VIEWS.map(v => v.fileType);

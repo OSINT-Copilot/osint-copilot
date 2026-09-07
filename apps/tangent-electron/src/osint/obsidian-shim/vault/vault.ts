@@ -157,12 +157,27 @@ export class Vault {
     }
 
     /**
-     * Displayable URL for a vault file -- graph node thumbnails (graph-view.ts:582).
-     * The mtime query busts Electron's cache, which otherwise serves a stale image
-     * forever after a re-import.
+     * Displayable URL for a vault file -- graph node thumbnails (graph-view.ts).
+     *
+     * This used to return `osint-vault://<path>`, and NOTHING IN THE APP EVER SERVED THAT
+     * SCHEME: there is no protocol.handle or registerFileProtocol anywhere in src/main.
+     * So every graph thumbnail since the Tangent port has failed to load and painted the
+     * node's background colour instead. It worked in the Obsidian original, where
+     * getResourcePath returned an app:// URL the host did serve.
+     *
+     * The host builds the URL (Tangent serves its window from file://, so a vault file is
+     * directly referenceable) and the mtime query busts Electron's image cache, which
+     * otherwise serves a stale picture forever after a re-import.
+     *
+     * Two properties of the result are load-bearing for the graph, and both come from the
+     * host's per-segment encoding:
+     *   - no whitespace: cytoscape's `background-image` is a multi-valued `urls` property
+     *     and it splits a mapped value on /\s+/, so one URL with a space becomes two
+     *     broken ones.
+     *   - '#', '?' and '&' encoded: entity labels routinely contain all three.
      */
     getResourcePath(file: TFile): string {
-        return `osint-vault://${encodeURI(file.path)}?v=${file.stat.mtime}`;
+        return `${this.storage.resourceUrl(file.path)}?v=${file.stat.mtime}`;
     }
 
     async read(file: TFile): Promise<string> {

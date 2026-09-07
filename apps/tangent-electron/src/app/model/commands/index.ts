@@ -45,6 +45,7 @@ import { ToggleCheckboxCommand } from './ToggleCheckboxCommand.ts'
 import { toTitleCase } from 'common/stringUtils'
 import { highlightEmojiToClassDescriptor } from 'common/markdownModel/formatting'
 import { createOsintViewCommands } from './OsintViewCommands'
+import { UpdateAppCommand } from './UpdateApp'
 export { Command, CommandAction, type WorkspaceCommand }
 
 type LiteralCommands = ReturnType<typeof createAllCommands>
@@ -83,6 +84,7 @@ function createAllCommands(workspace: Workspace) {
 		toggleLeftSidebar: new ToggleSidebarCommand(workspace),
 		openPreferences: new OpenPreferencesCommand(workspace),
 		openDocumenation: new OpenDocumentationCommand(workspace),
+		updateApp: new UpdateAppCommand(workspace),
 
 		createNewFile: new CreateNewFileCommand(workspace),
 		createNewNoteFromRule: new ShowCommandPaletteCommand(workspace, {

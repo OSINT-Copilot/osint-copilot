@@ -134,6 +134,67 @@ export class NewOsintCanvasCommand extends WorkspaceCommand {
 	}
 }
 
+/**
+ * Opens the board picker: which canvas board to open, or a new one.
+ *
+ * In the toolbar pill rather than only the New Note menu, because a board is one of the
+ * places an investigation actually lives. It is a picker and not a create button for the
+ * reason spelled out in BoardPickerModal: every other button in the pill opens something,
+ * and clicking a create button twice leaves an empty "Board 2" behind.
+ *
+ * Its shortcut is Mod+Alt+7, the seventh position in the pill -- the boards button sits
+ * after the six views, so the "shortcut digit = position in the bar" rule still holds for
+ * the whole strip even though this is not an OSINT_VIEWS entry.
+ */
+export class OpenOsintCanvasCommand extends WorkspaceCommand {
+	constructor(workspace: Workspace) {
+		super(workspace, { shortcut: 'Mod+Alt+7' })
+		workspace.viewState?.tangent?.currentNode?.subscribe?.(() => this.alertDirty())
+		osintPluginState.subscribe(() => this.alertDirty())
+	}
+
+	canExecute(_context?: CommandContext) {
+		// The picker reads the vault index and can create a board; both need the plugin.
+		return osintPluginState.value.ready
+	}
+
+	/** Lit while a board is the current node, the way the view buttons light for theirs. */
+	getChecked(_context?: CommandContext) {
+		const node = this.workspace.viewState?.tangent?.currentNode?.value
+		return node?.fileType === '.canvas'
+	}
+
+	async execute(_context?: CommandContext) {
+		const { osintRuntime } = await import('osint/integration/bootstrap')
+		const runtime = osintRuntime()
+		if (!runtime) {
+			// canExecute gates on ready, so reaching here is a fault rather than a race.
+			console.error('[osint] Canvas: the plugin is not available')
+			return
+		}
+		const [{ BoardPickerModal }, { openIndexedVaultNode }] = await Promise.all([
+			import('osint/modals/board-picker-modal'),
+			import('osint/integration/open-view'),
+		])
+		new BoardPickerModal(runtime.app as never, {
+			openBoard: (path: string) => {
+				if (!openIndexedVaultNode(path)) {
+					console.error('[osint] Canvas: board is not indexed', path)
+				}
+			},
+			createBoard: () => runtime.plugin.createCanvasBoard(),
+		}).open()
+	}
+
+	getLabel(_context?: CommandContext) {
+		return 'OSINT: Canvas boards'
+	}
+
+	getTooltip(_context?: CommandContext) {
+		return 'Open a canvas board'
+	}
+}
+
 /** Keyed by the descriptor's commandKey, ready to spread into the command registry. */
 export function createOsintViewCommands(workspace: Workspace) {
 	const commands: Record<string, WorkspaceCommand> = {}
@@ -141,6 +202,7 @@ export function createOsintViewCommands(workspace: Workspace) {
 		commands[view.commandKey] = new OpenOsintViewCommand(workspace, view)
 	}
 	commands.osintNewCanvas = new NewOsintCanvasCommand(workspace)
+	commands.osintOpenCanvas = new OpenOsintCanvasCommand(workspace)
 	// The plugin's own commands only exist after its async startup, so they are added
 	// later. CommandPalette reads Object.keys(workspace.commands) each time it opens.
 	void attachPluginCommandsWhenReady(workspace)

@@ -22,6 +22,18 @@
  */
 const openModals: Modal[] = [];
 
+/**
+ * Whether any shim dialog is currently up.
+ *
+ * Tangent tracks its own dialogs in `viewState.modal.stack` and checks it before doing
+ * anything that would steal the screen. Shim dialogs are not in that stack -- they are
+ * plain elements on document.body -- so anything making that kind of decision has to ask
+ * here as well. System.svelte does, before auto-opening settings for a ready update.
+ */
+export function anyShimModalIsOpen(): boolean {
+    return openModals.length > 0;
+}
+
 const FOCUSABLE = 'input, textarea, select, button, a[href], [tabindex]:not([tabindex="-1"])';
 
 export class Modal {

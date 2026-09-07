@@ -15,3 +15,7 @@ node_modules/
 # Plugin settings, written into whatever directory is opened as a vault. Ends up in
 # the repo whenever the app is launched with the checkout itself as the workspace.
 .osint-copilot/
+
+# Licence signing key. NEVER commit: anyone holding it can mint valid licence keys.
+.license-signing-key.pem
+*.license-signing-key.pem

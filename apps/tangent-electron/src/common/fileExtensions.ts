@@ -116,6 +116,7 @@ export const visibleFileTypeMatch = getFileTypeRegex([
 	// tsconfig cannot resolve `osint/*`. osint-view-types.test.ts asserts the two lists
 	// stay in step.
 	'.osintchat', '.osintgraph', '.osinttimeline', '.osintmap', '.osintregistry',
+	'.osintdocs',
 	// Canvas boards. Obsidian's extension, deliberately: the same file opens in either app.
 	'.canvas'
 ])

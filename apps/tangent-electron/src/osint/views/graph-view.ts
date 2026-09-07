@@ -9,8 +9,6 @@ import {
     type Connection,
     ENTITY_CONFIGS,
     EntityType,
-    OSINT_CONFIDENCE_LEVELS,
-    type OsintConfidence,
 } from '../entities/types';
 import { EntityManager } from '../services/entity-manager';
 import { ensureFolderExists } from '../utils/vault-bootstrap-fs';
@@ -23,6 +21,9 @@ import { GeocodingService, GeocodingError } from '../services/geocoding-service'
 import { GRAPH_NODE_POSITIONS_FILE } from '../constants/vault-layout';
 import type { VaultLockService } from '../services/vault-lock-service';
 import { isEventEntityType } from './timeline-view';
+import { GRAPH_NODE_SIZE, entityImagePath, graphNodeStyles, isGraphImageExtension } from './graph-node-visual';
+import { ENTITY_IMAGE_KEY } from '../services/entity-image-service';
+import { importedFileName } from '../canvas/canvas-runtime';
 
 /** Passed from main — vault lock + graph workspace (multi-graph positions). */
 export interface OSINTCopilotGraphHost {
@@ -169,9 +170,6 @@ export class GraphView extends ItemView {
     private rearrangeLayout: RearrangeLayout = 'decentralized';
     private rearrangeLayoutSelectEl: HTMLSelectElement | null = null;
 
-    /** Which provenance confidence levels are visible (multi-select). */
-    private confidenceFilter: Set<OsintConfidence> = new Set(OSINT_CONFIDENCE_LEVELS);
-
     // Geocoding service for location entities
     private geocodingService: GeocodingService;
 
@@ -203,45 +201,45 @@ export class GraphView extends ItemView {
         return this.graphHost.getGraphEntityVisual(entity);
     }
 
-    private entityOsintConfidenceValue(entity: Entity): OsintConfidence {
-        return (entity.osint_confidence ?? 'unverified') as OsintConfidence;
-    }
-
-    private entityOsintNodeClasses(entity: Entity, hasCoordinates: boolean): string {
-        const parts: string[] = [`osint-${this.entityOsintConfidenceValue(entity)}`];
-        if (hasCoordinates) parts.push('has-coordinates');
-        return parts.join(' ');
-    }
-
-    private entityPassesConfidenceFilter(entity: Entity): boolean {
-        // Every box unchecked hides every entity. That is what the filter means, but with
-        // nothing on screen and no message it reads as a broken graph, so the count row
-        // reports it (see reportHiddenByFilter).
-        if (this.confidenceFilter.size === 0) return false;
-        return this.confidenceFilter.has(this.entityOsintConfidenceValue(entity));
+    /**
+     * The only class a node carries: the double border that marks a Location or Address
+     * whose coordinates are known, styled by the `.has-coordinates` rule below.
+     */
+    /** Location with real coordinates -- what the double-border marker means. */
+    private entityHasCoordinates(entity: Entity): boolean {
+        return entity.type === EntityType.Location
+            && !!entity.properties.latitude
+            && !!entity.properties.longitude;
     }
 
     /**
-     * Tells the analyst when the graph is empty because of the confidence filter rather
-     * than because the vault is.
+     * Everything the stylesheet reads about an entity, built in one place.
+     *
+     * Six call sites used to assemble this by hand and they had drifted apart: two never
+     * set thumbUrl at all, so an entity added through them showed no picture until the
+     * next full refresh, and three truncated the label at 15 characters where the other
+     * three used the default 20. A seventh, updateEntityInGraph, refreshed five fields and
+     * not the image -- so an entity that GAINED a picture kept its placeholder.
+     *
+     * One builder means the next field to be added cannot be forgotten at five of them.
      */
-    private reportHiddenByFilter(total: number, shown: number): void {
-        if (!this.selectionCountEl) return;
-        if (this.selectedNodes.size + this.selectedEdges.size > 0) return;
-        const hidden = total - shown;
-        if (hidden <= 0) {
-            if (this.selectionCountEl.dataset.filterNote === '1') {
-                this.selectionCountEl.textContent = '';
-                this.selectionCountEl.setCssProps({ display: 'none' });
-                delete this.selectionCountEl.dataset.filterNote;
-            }
-            return;
-        }
-        this.selectionCountEl.dataset.filterNote = '1';
-        this.selectionCountEl.textContent = this.confidenceFilter.size === 0
-            ? `All ${total} entities hidden — no confidence level is selected`
-            : `${hidden} of ${total} entities hidden by the confidence filter`;
-        this.selectionCountEl.setCssProps({ display: 'block' });
+    private buildNodeData(entity: Entity): Record<string, unknown> {
+        const visual = this.getNodeVisual(entity);
+        const entityLabel = entity.label != null ? String(entity.label) : '';
+        return {
+            id: entity.id,
+            label: this.truncateLabel(entityLabel),
+            fullLabel: entityLabel,
+            type: entity.type,
+            color: visual.color,
+            icon: visual.icon,
+            hasCoordinates: this.entityHasCoordinates(entity),
+            thumbUrl: this.resolveThumbUrl(entity) || undefined,
+        };
+    }
+
+    private entityNodeClasses(hasCoordinates: boolean): string {
+        return hasCoordinates ? 'has-coordinates' : '';
     }
 
     /**
@@ -446,6 +444,11 @@ export class GraphView extends ItemView {
 
                 const position = this.screenToModelPosition(evt.clientX, evt.clientY);
 
+                // Dropped ON an entity? Then this is "give that thing a picture", not
+                // "add a new file to the graph". Checked before every create path below.
+                const onEntity = this.entityIdAt(position);
+                if (onEntity && await this.attachDroppedImage(onEntity, evt)) return;
+
                 // Method 1: Internal vault drag via Obsidian dragManager
                 const dragManager = (this.app as any).dragManager;
                 if (dragManager?.draggable?.type === 'file' && dragManager.draggable.file instanceof TFile) {
@@ -469,6 +472,92 @@ export class GraphView extends ItemView {
                 }
             });
         }
+    }
+
+    /**
+     * The entity under a point in model space, if any.
+     *
+     * A half-extent test rather than cytoscape's boundingBox(): every node is now the same
+     * fixed square, so the box is known without asking the renderer -- and the local
+     * Collection interface does not declare boundingBox. A diamond is inscribed in the
+     * same square, which makes its corners forgiving rather than wrong.
+     */
+    private entityIdAt(position: { x: number; y: number }): string | null {
+        if (!this.cy) return null;
+        const half = GRAPH_NODE_SIZE / 2;
+        let hit: string | null = null;
+        this.cy.nodes().forEach((node: NodeSingular) => {
+            if (hit) return;
+            const at = node.position();
+            if (Math.abs(at.x - position.x) <= half && Math.abs(at.y - position.y) <= half) {
+                hit = String(node.id());
+            }
+        });
+        return hit;
+    }
+
+    /**
+     * Sets a dropped image as an entity's picture. Returns false if the drop was not one.
+     *
+     * Both drop flavours are accepted -- a file already in the vault (dragged from the
+     * tree) and one from the desktop, which is imported first. A non-image drop returns
+     * false so the caller falls through to the ordinary "add a file to the graph" paths.
+     */
+    private async attachDroppedImage(entityId: string, evt: DragEvent): Promise<boolean> {
+        const entity = this.entityManager.getEntity(entityId);
+        if (!entity) return false;
+        if (this.graphHost.vaultLockService.isPathLocked(entity.filePath)) {
+            new Notice(`"${entity.label}" is locked.`, 6000, 'warning');
+            return true;
+        }
+
+        try {
+            const vaultPath = evt.dataTransfer?.getData('text/plain');
+            const dragged = vaultPath ? this.app.vault.getAbstractFileByPath(vaultPath) : null;
+            if (dragged instanceof TFile && isGraphImageExtension(dragged.path)) {
+                return await this.setEntityImage(entity, dragged.path);
+            }
+
+            const file = evt.dataTransfer?.files?.[0];
+            if (!file || !isGraphImageExtension(file.name)) return false;
+
+            const imported = await this.importImageToEvidence(file);
+            return imported ? await this.setEntityImage(entity, imported) : false;
+        } catch (error) {
+            console.error('[GraphView] could not attach the dropped image', error);
+            new Notice('Could not attach that image.', 6000, 'error');
+            return true;
+        }
+    }
+
+    /**
+     * Copies a desktop file into the Evidence tree and returns its vault path.
+     *
+     * Named by importedFileName, which appends a hash of the content -- unlike
+     * handleExternalFileDrop below, which reuses any existing file of the same name and so
+     * silently attaches the wrong picture when two different photos are both "photo.jpg".
+     */
+    private async importImageToEvidence(file: File): Promise<string | null> {
+        const bytes = await file.arrayBuffer();
+        const folder = normalizePath(`${this.entityManager.getBasePath()}/Evidence`);
+        await ensureFolderExists(this.app, folder);
+
+        const path = normalizePath(`${folder}/${importedFileName(file.name, bytes)}`);
+        const existing = this.app.vault.getAbstractFileByPath(path);
+        // Same name means same bytes here, so an existing file is the same picture.
+        if (existing instanceof TFile) return existing.path;
+
+        const created = await this.app.vault.createBinary(path, bytes);
+        return created?.path ?? null;
+    }
+
+    /** Writes the entity's new picture and repaints its node without a full refresh. */
+    private async setEntityImage(entity: Entity, path: string): Promise<boolean> {
+        await this.entityManager.updateEntity(entity.id, { [ENTITY_IMAGE_KEY]: path });
+        const updated = this.entityManager.getEntity(entity.id);
+        if (updated) this.updateEntityInGraph(updated);
+        new Notice(`Picture set for ${entity.label}.`, 4000);
+        return true;
     }
 
     private screenToModelPosition(clientX: number, clientY: number): { x: number; y: number } {
@@ -557,32 +646,13 @@ export class GraphView extends ItemView {
 
     private addEntityToGraphAtPosition(entity: Entity, position: { x: number; y: number }): void {
         if (!this.cy) return;
-        if (!this.entityPassesConfidenceFilter(entity)) return;
 
         const existingNode = this.cy.getElementById(entity.id);
         if (existingNode.length > 0) return;
 
-        const visual = this.getNodeVisual(entity);
-        const entityLabel = entity.label != null ? String(entity.label) : '';
-        const label = this.truncateLabel(entityLabel, 15);
-        const thumbUrl = this.resolveThumbUrl(entity);
-        const hasCoordinates =
-            entity.type === EntityType.Location &&
-            !!entity.properties.latitude &&
-            !!entity.properties.longitude;
-
         this.cy.add({
-            data: {
-                id: entity.id,
-                label: label,
-                fullLabel: entityLabel,
-                type: entity.type,
-                color: visual.color,
-                icon: visual.icon,
-                thumbUrl: thumbUrl || undefined,
-                osintConfidence: this.entityOsintConfidenceValue(entity),
-            },
-            classes: this.entityOsintNodeClasses(entity, hasCoordinates),
+            data: this.buildNodeData(entity),
+            classes: this.entityNodeClasses(this.entityHasCoordinates(entity)),
             position: position,
         });
 
@@ -590,14 +660,18 @@ export class GraphView extends ItemView {
         this.savePositionsDebounced();
     }
 
+    /**
+     * The URL for this entity's picture, or undefined for a placeholder tile.
+     *
+     * Which property holds the path is entityImagePath's business. What happens here is
+     * the vault lookup: an entity can name an image that has not been indexed yet, or one
+     * that was deleted, and a placeholder tile is the right answer for both.
+     */
     private resolveThumbUrl(entity: Entity): string | undefined {
-        const fp = entity.properties.filePath as string;
-        if (!fp) return undefined;
+        const path = entityImagePath(entity);
+        if (!path) return undefined;
 
-        const ext = fp.split('.').pop()?.toLowerCase() || '';
-        if (!GraphView.IMAGE_EXTENSIONS.has(ext)) return undefined;
-
-        const file = this.app.vault.getAbstractFileByPath(fp);
+        const file = this.app.vault.getAbstractFileByPath(path);
         if (file instanceof TFile) {
             return this.app.vault.getResourcePath(file);
         }
@@ -787,33 +861,6 @@ export class GraphView extends ItemView {
                 true,
             ).open();
         };
-
-        const confRow = toolbar.createDiv({ cls: 'graph_copilot-confidence-filter' });
-        confRow.setCssProps({
-            display: 'flex',
-            gap: '6px',
-            'align-items': 'center',
-            'flex-wrap': 'wrap',
-            'max-width': '420px',
-        });
-        confRow.createSpan({ text: 'Confidence:', cls: 'graph_copilot-graph-label' });
-        for (const level of OSINT_CONFIDENCE_LEVELS) {
-            const wrap = confRow.createDiv();
-            wrap.setCssProps({ display: 'flex', 'align-items': 'center', gap: '3px' });
-            const id = `graph-osint-conf-${level}`;
-            const cb = wrap.createEl('input', { type: 'checkbox', attr: { id } });
-            (cb as HTMLInputElement).checked = true;
-            (cb as HTMLInputElement).onchange = () => {
-                if ((cb as HTMLInputElement).checked) {
-                    this.confidenceFilter.add(level);
-                } else {
-                    this.confidenceFilter.delete(level);
-                }
-                void this.refresh();
-            };
-            const lab = wrap.createEl('label', { text: level, attr: { for: id } });
-            lab.setCssProps({ 'font-size': '10px', cursor: 'pointer' });
-        }
 
         // Separator
         toolbar.createDiv({ cls: 'graph_copilot-toolbar-separator' });
@@ -1445,7 +1492,10 @@ export class GraphView extends ItemView {
         this.cy.on('mouseover', 'node', (evt: CytoscapeEvent) => {
             const node = evt.target as NodeSingular;
             const entityType = node.data('type');
-            node.style('border-width', 4);
+            // A class, not .style(): an inline style is a bypass that outranks the
+            // stylesheet permanently, so the old pair of handlers pinned every node's
+            // border to 2px for the rest of the session after a single hover.
+            node.addClass('hovered');
 
             // Show tooltip with map hint for Location entities
             if (entityType === EntityType.Location) {
@@ -1455,7 +1505,7 @@ export class GraphView extends ItemView {
 
         this.cy.on('mouseout', 'node', (evt: CytoscapeEvent) => {
             const node = evt.target as NodeSingular;
-            node.style('border-width', 2);
+            node.removeClass('hovered');
             this.hideLocationTooltip();
         });
 
@@ -1685,7 +1735,6 @@ export class GraphView extends ItemView {
 
         if (this.selectionCountEl) {
             if (totalCount > 0) {
-                delete this.selectionCountEl.dataset.filterNote;
                 const parts: string[] = [];
                 if (nodeCount > 0) parts.push(`${nodeCount} ${nodeCount === 1 ? 'entity' : 'entities'}`);
                 if (edgeCount > 0) parts.push(`${edgeCount} ${edgeCount === 1 ? 'relationship' : 'relationships'}`);
@@ -2110,6 +2159,26 @@ export class GraphView extends ItemView {
             menu.appendChild(unlockNoteItem);
         }
 
+        // Pictures. Dropping an image on a node does the same thing and is quicker, but
+        // that gesture is invisible until someone tries it -- this is where it is findable.
+        const pictured = this.entityManager.getEntity(entityId);
+        const hasPicture = pictured ? entityImagePath(pictured) !== undefined : false;
+        const pictureItem = this.createMenuItem(
+            hasPicture ? '🖼 Replace picture…' : '🖼 Set picture…',
+            () => {
+                menu.remove();
+                this.pickEntityPicture(entityId);
+            });
+        menu.appendChild(pictureItem);
+
+        if (hasPicture) {
+            const removePictureItem = this.createMenuItem('🖼 Remove picture', () => {
+                menu.remove();
+                void this.clearEntityPicture(entityId);
+            });
+            menu.appendChild(removePictureItem);
+        }
+
         // Edit Entity option (for all entity types) - uses FTM format
         const editItem = this.createMenuItem('✏️ Edit Entity', () => {
             const entity = this.entityManager.getEntity(entityId);
@@ -2248,6 +2317,56 @@ export class GraphView extends ItemView {
     /**
      * Create a menu item element.
      */
+    /**
+     * Asks for an image file and makes it this entity's picture.
+     *
+     * A detached <input type="file"> rather than a vault picker: the common case is a
+     * photograph that is not in the vault yet, and importImageToEvidence copies it in.
+     * accept is the set the graph can actually paint.
+     */
+    private pickEntityPicture(entityId: string): void {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/png,image/jpeg,image/gif,image/webp,image/bmp,image/svg+xml';
+        input.onchange = async () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            const entity = this.entityManager.getEntity(entityId);
+            if (!entity) return;
+            if (this.graphHost.vaultLockService.isPathLocked(entity.filePath)) {
+                new Notice(`"${entity.label}" is locked.`, 6000, 'warning');
+                return;
+            }
+            try {
+                const path = await this.importImageToEvidence(file);
+                if (path) await this.setEntityImage(entity, path);
+            } catch (error) {
+                console.error('[GraphView] could not set the picture', error);
+                new Notice('Could not set that picture.', 6000, 'error');
+            }
+        };
+        input.click();
+    }
+
+    /** Drops the picture, returning the node to its type-coloured placeholder. */
+    private async clearEntityPicture(entityId: string): Promise<void> {
+        const entity = this.entityManager.getEntity(entityId);
+        if (!entity) return;
+        if (this.graphHost.vaultLockService.isPathLocked(entity.filePath)) {
+            new Notice(`"${entity.label}" is locked.`, 6000, 'warning');
+            return;
+        }
+        try {
+            // The file itself is left in Evidence: it may be case material, and removing a
+            // node's picture is not a decision to delete a collected image.
+            await this.entityManager.updateEntity(entity.id, { [ENTITY_IMAGE_KEY]: '' });
+            const updated = this.entityManager.getEntity(entity.id);
+            if (updated) this.updateEntityInGraph(updated);
+        } catch (error) {
+            console.error('[GraphView] could not remove the picture', error);
+        }
+    }
+
     private createMenuItem(text: string, onClick: () => void): HTMLElement {
         const item = document.createElement('div');
         item.textContent = text;
@@ -2469,16 +2588,6 @@ export class GraphView extends ItemView {
             const type = ele.data('type');
             titleDiv.innerText = label;
             typeDiv.innerText = type;
-            const oc = ele.data('osintConfidence');
-            if (oc) {
-                const confDiv = tooltip.createDiv();
-                confDiv.setCssProps({
-                    'font-size': '10px',
-                    'margin-top': '4px',
-                    color: 'var(--text-accent)',
-                });
-                confDiv.innerText = `Confidence: ${oc}`;
-            }
         } else {
             // Edge
             const label = ele.data('label');
@@ -2572,132 +2681,17 @@ export class GraphView extends ItemView {
     /**
      * Get Cytoscape style configuration.
      */
+    /**
+     * The stylesheet, applied once at construction.
+     *
+     * Node rules live in graph-node-visual.ts so the two that fail silently in the browser
+     * -- the crossorigin opt-out and `:selected` staying last -- can be asserted in a test.
+     * Applying once is still correct: cytoscape re-runs a function mapper whenever the
+     * data it reads changes, because data() setters carry updateStyle.
+     */
     private getGraphStyle(): unknown[] {
         return [
-            {
-                selector: 'node',
-                style: {
-                    'background-color': 'data(color)',
-                    'label': (ele: NodeSingular) => {
-                        const icon = ele.data('icon') || '📦';
-                        const label = ele.data('label') || '';
-                        const type = ele.data('type') || '';
-                        return `${icon}\n${label}\n(${type})`;
-                    },
-                    'text-valign': 'center',
-                    'text-halign': 'center',
-                    'font-size': '16px',
-                    'color': '#ffffff',
-                    'text-outline-color': '#000000',
-                    'text-outline-width': 1.5,
-                    'text-wrap': 'wrap',
-                    'text-max-width': '100px',
-                    'width': 65,
-                    'height': 65,
-                    'border-width': 2,
-                    'border-color': '#ffffff'
-                }
-            },
-            {
-                // Image nodes with a thumbnail show the image instead of a colored circle
-                selector: 'node[?thumbUrl]',
-                style: {
-                    'background-image': 'data(thumbUrl)',
-                    'background-fit': 'cover',
-                    'background-image-opacity': 1,
-                    'background-color': '#333333',
-                    'shape': 'round-rectangle',
-                    'width': 80,
-                    'height': 80,
-                    'border-width': 3,
-                    'border-color': '#E9B96E',
-                    'label': (ele: NodeSingular) => {
-                        const label = ele.data('label') || '';
-                        return label;
-                    },
-                    'text-valign': 'bottom',
-                    'text-halign': 'center',
-                    'text-margin-y': 8
-                }
-            },
-            {
-                // Location/Address nodes get a special pin-like shape
-                selector: 'node[type = "Location"], node[type = "Address"]',
-                style: {
-                    'shape': 'diamond',
-                    'width': 70,
-                    'height': 80,
-                    'border-width': 3,
-                    'border-color': '#ffffff'
-                }
-            },
-            {
-                // Location/Address nodes with coordinates get a map indicator
-                selector: 'node[type = "Location"].has-coordinates, node[type = "Address"].has-coordinates',
-                style: {
-                    'border-style': 'double',
-                    'border-width': 4
-                }
-            },
-            {
-                selector: 'node:selected',
-                style: {
-                    'border-width': 4,
-                    'border-color': '#ffff00'
-                }
-            },
-            {
-                selector: 'node.connection-source',
-                style: {
-                    'border-width': 5,
-                    'border-color': '#00ff00',
-                    'border-style': 'dashed'
-                }
-            },
-            {
-                // Multi-selected nodes
-                selector: 'node.multi-selected',
-                style: {
-                    'border-width': 4,
-                    'border-color': '#ff6b6b',
-                    'border-style': 'solid',
-                    'overlay-color': '#ff6b6b',
-                    'overlay-padding': 6,
-                    'overlay-opacity': 0.2
-                }
-            },
-            {
-                selector: 'node.osint-conflicted',
-                style: {
-                    'border-width': 5,
-                    'border-color': '#ff44dd',
-                    'border-style': 'double'
-                }
-            },
-            {
-                selector: 'node.osint-high',
-                style: {
-                    'border-color': '#5dff7a'
-                }
-            },
-            {
-                selector: 'node.osint-medium',
-                style: {
-                    'border-color': '#ffd45c'
-                }
-            },
-            {
-                selector: 'node.osint-low',
-                style: {
-                    'border-color': '#9ecbff'
-                }
-            },
-            {
-                selector: 'node.osint-unverified',
-                style: {
-                    'border-color': '#aaaaaa'
-                }
-            },
+            ...graphNodeStyles(),
             {
                 selector: 'edge',
                 style: {
@@ -2788,9 +2782,7 @@ export class GraphView extends ItemView {
         }
 
         const { entities: allEntities, connections: allConnections } = this.entityManager.getGraphData();
-        const entities = this.getEntitiesForActiveWorkspace(allEntities).filter((e) =>
-            this.entityPassesConfidenceFilter(e),
-        );
+        const entities = this.getEntitiesForActiveWorkspace(allEntities);
         const isDefaultWorkspace = this.graphHost.getActiveGraphId() === 'default';
 
         // Clear existing elements
@@ -2798,29 +2790,10 @@ export class GraphView extends ItemView {
 
         // Add nodes
         const nodes = entities.map((entity, index) => {
-            const hasCoordinates = entity.type === EntityType.Location &&
-                entity.properties.latitude &&
-                entity.properties.longitude;
-
-            const entityLabel = entity.label != null ? String(entity.label) : '';
-            const thumbUrl = this.resolveThumbUrl(entity);
-            const visual = this.getNodeVisual(entity);
-            const oc = this.entityOsintConfidenceValue(entity);
-
             return {
-                data: {
-                    id: entity.id,
-                    label: this.truncateLabel(entityLabel),
-                    fullLabel: entityLabel,
-                    type: entity.type,
-                    color: visual.color,
-                    icon: visual.icon,
-                    hasCoordinates: hasCoordinates,
-                    thumbUrl: thumbUrl || undefined,
-                    osintConfidence: oc,
-                },
+                data: this.buildNodeData(entity),
                 position: this.getNodePosition(index, Math.max(entities.length, 1)),
-                classes: this.entityOsintNodeClasses(entity, !!hasCoordinates),
+                classes: this.entityNodeClasses(this.entityHasCoordinates(entity)),
             };
         });
 
@@ -2871,7 +2844,7 @@ export class GraphView extends ItemView {
                         fullLabel: "Unknown Entity (" + id.substring(0, 8) + ")",
                         type: "Unknown",
                         color: "#9E9E9E",
-                        icon: "help-circle",
+                        icon: "❓",
                         isUnknown: true
                     },
                     position: this.getNodePosition(nodes.length + index, nodes.length + unknownEntityIds.size),
@@ -2909,9 +2882,7 @@ export class GraphView extends ItemView {
         }
 
         const { entities: allEntities, connections: allConnections } = this.entityManager.getGraphData();
-        const entities = this.getEntitiesForActiveWorkspace(allEntities).filter((e) =>
-            this.entityPassesConfidenceFilter(e),
-        );
+        const entities = this.getEntitiesForActiveWorkspace(allEntities);
         const isDefaultWorkspace = this.graphHost.getActiveGraphId() === 'default';
         console.debug(`[GraphView] Found ${entities.length} workspace entities (${allEntities.length} in vault) and ${allConnections.length} connections`);
 
@@ -2924,15 +2895,6 @@ export class GraphView extends ItemView {
 
         // Add nodes with saved positions or mark for layout
         const nodes = entities.map((entity, index) => {
-            const hasCoordinates = entity.type === EntityType.Location &&
-                entity.properties.latitude &&
-                entity.properties.longitude;
-
-            const entityLabel = entity.label != null ? String(entity.label) : '';
-            const thumbUrl = this.resolveThumbUrl(entity);
-            const visual = this.getNodeVisual(entity);
-            const oc = this.entityOsintConfidenceValue(entity);
-
             const savedPos = this.nodePositionsCache.get(entity.id);
             let position: { x: number; y: number };
 
@@ -2945,19 +2907,9 @@ export class GraphView extends ItemView {
             }
 
             return {
-                data: {
-                    id: entity.id,
-                    label: this.truncateLabel(entityLabel),
-                    fullLabel: entityLabel,
-                    type: entity.type,
-                    color: visual.color,
-                    icon: visual.icon,
-                    hasCoordinates: hasCoordinates,
-                    thumbUrl: thumbUrl || undefined,
-                    osintConfidence: oc,
-                },
+                data: this.buildNodeData(entity),
                 position: position,
-                classes: this.entityOsintNodeClasses(entity, !!hasCoordinates),
+                classes: this.entityNodeClasses(this.entityHasCoordinates(entity)),
             };
         });
 
@@ -3483,31 +3435,14 @@ export class GraphView extends ItemView {
      */
     addEntity(entity: Entity): void {
         if (!this.cy) return;
-        if (!this.entityPassesConfidenceFilter(entity)) return;
 
         const existingNode = this.cy.getElementById(entity.id);
         if (existingNode.length > 0) return;
 
-        // Ensure label is a string
-        const entityLabel = entity.label != null ? String(entity.label) : '';
-        const visual = this.getNodeVisual(entity);
-        const hasCoordinates =
-            entity.type === EntityType.Location &&
-            !!entity.properties.latitude &&
-            !!entity.properties.longitude;
-
         const pos = { x: 400, y: 300 };
         this.cy.add({
-            data: {
-                id: entity.id,
-                label: this.truncateLabel(entityLabel),
-                fullLabel: entityLabel,
-                type: entity.type,
-                color: visual.color,
-                icon: visual.icon,
-                osintConfidence: this.entityOsintConfidenceValue(entity),
-            },
-            classes: this.entityOsintNodeClasses(entity, hasCoordinates),
+            data: this.buildNodeData(entity),
+            classes: this.entityNodeClasses(this.entityHasCoordinates(entity)),
             position: pos,
         });
 
@@ -3867,19 +3802,9 @@ export class GraphView extends ItemView {
      */
     private addEntityToGraphPreserveLayout(entity: Entity): void {
         if (!this.cy) return;
-        if (!this.entityPassesConfidenceFilter(entity)) return;
 
         const existingNode = this.cy.getElementById(entity.id);
         if (existingNode.length > 0) return;
-
-        const visual = this.getNodeVisual(entity);
-        const entityLabel = entity.label != null ? String(entity.label) : '';
-        const label = this.truncateLabel(entityLabel, 15);
-        const thumbUrl = this.resolveThumbUrl(entity);
-        const hasCoordinates =
-            entity.type === EntityType.Location &&
-            !!entity.properties.latitude &&
-            !!entity.properties.longitude;
 
         const cachedPos = this.nodePositionsCache.get(entity.id);
         const position = cachedPos || {
@@ -3888,17 +3813,8 @@ export class GraphView extends ItemView {
         };
 
         this.cy.add({
-            data: {
-                id: entity.id,
-                label: label,
-                fullLabel: entityLabel,
-                type: entity.type,
-                color: visual.color,
-                icon: visual.icon,
-                thumbUrl: thumbUrl || undefined,
-                osintConfidence: this.entityOsintConfidenceValue(entity),
-            },
-            classes: this.entityOsintNodeClasses(entity, hasCoordinates),
+            data: this.buildNodeData(entity),
+            classes: this.entityNodeClasses(this.entityHasCoordinates(entity)),
             position: position,
         });
 
@@ -3914,25 +3830,17 @@ export class GraphView extends ItemView {
         const node = this.cy.getElementById(entity.id);
         if (node.length === 0) return;
 
-        const visual = this.getNodeVisual(entity);
-        // Ensure label is a string
-        const entityLabel = entity.label != null ? String(entity.label) : '';
-        const label = this.truncateLabel(entityLabel, 15);
+        // Every field the builder produces, so an entity that gains a picture updates in
+        // place. `id` is skipped: cytoscape will not let it be reassigned, and it has not
+        // changed. Setting data() is also what re-runs the style mappers.
+        const data = this.buildNodeData(entity);
+        for (const [key, value] of Object.entries(data)) {
+            if (key === 'id') continue;
+            node.data(key, value);
+        }
 
-        node.data('label', label);
-        node.data('fullLabel', entityLabel);
-        node.data('type', entity.type);
-        node.data('color', visual.color);
-        node.data('icon', visual.icon);
-        node.data('osintConfidence', this.entityOsintConfidenceValue(entity));
-
-        const hasCoordinates =
-            entity.type === EntityType.Location &&
-            !!entity.properties.latitude &&
-            !!entity.properties.longitude;
-        node.removeClass('osint-unverified osint-low osint-medium osint-high osint-conflicted');
         node.removeClass('has-coordinates');
-        node.addClass(this.entityOsintNodeClasses(entity, hasCoordinates));
+        if (data.hasCoordinates) node.addClass('has-coordinates');
     }
 
     /**

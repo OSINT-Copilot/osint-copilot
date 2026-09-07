@@ -6,6 +6,7 @@ import type { ContextMenuTemplate } from './menus'
 import type { QueryResult } from './indexing/queryResults'
 import type { QueryParseResult } from '@such-n-such/tangent-query-parser'
 import type { UrlData } from './urlData'
+import type { LicenseStatus } from './license'
 import type {
 	BasemapOpenResult, BasemapRange, ExecOptions, ExecResult, HttpRequest, HttpResponse,
 	PlatformInfo, SecretRef, StatDto
@@ -142,6 +143,18 @@ export default interface WindowAPI {
 		get(name: string)
 		getChangelogs(): Promise<string[]>
 		getRecentChanges(): Promise<string[]>
+	}
+
+	/**
+	 * Licence checking. The stored key never crosses into the renderer -- these return
+	 * status only, so a compromised window cannot read the key back out.
+	 */
+	license: {
+		status(): Promise<LicenseStatus>
+		/** Verifies and, when good, stores the key. */
+		activate(key: string): Promise<LicenseStatus>
+		/** Forgets the stored key and returns the resulting (unlicensed) status. */
+		clear(): Promise<LicenseStatus>
 	}
 
 	dictionary: {

@@ -161,6 +161,12 @@ export default class Workspace extends EventDispatcher {
 		this.settings = new Settings()
 		this.settings.observePatch(patch => api.settings.patch(patch))
 
+		// Before the commands, like viewState above it: UpdateAppCommand subscribes to
+		// updateState.mode in its constructor so the toolbar button re-evaluates as a
+		// check runs. Created after them, that subscription silently bound to nothing and
+		// the button never went disabled mid-download. It only needs `api.update`.
+		this.updateState = new UpdateState(api.update)
+
 		this.commands = workspaceCommands(this)
 		this.commandUnsubs = Object.keys(this.commands).map(key => {
 			const command = this.commands[key]
@@ -282,8 +288,6 @@ export default class Workspace extends EventDispatcher {
 		})
 
 		api.menus.onRequestAllMenus(sendMainMenu)
-
-		this.updateState = new UpdateState(api.update)
 
 		this.codeThemeManager = new CodeThemeManager(this)
 		this.styleManager = new CustomStyleManager(this)

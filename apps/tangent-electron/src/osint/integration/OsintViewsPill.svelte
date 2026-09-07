@@ -22,6 +22,15 @@ const workspace: any = getContext('workspace')
 // buttons would cost toolbar width for nothing, and the ribbon hid them too. The store
 // makes this live, where the ribbon read the setting once at startup.
 $: views = OSINT_VIEWS.filter(v => !v.requiresGraphFeatures || graphFeaturesEnabled($osintPluginState))
+
+/*
+ * Boards are not an OSINT_VIEWS entry -- a view is one marker file per vault, a board is
+ * an ordinary document and there can be any number -- so the button is spelled out here
+ * rather than coming from the descriptor list. It sits last, which keeps the descriptors'
+ * "shortcut digit = position in the bar" rule true across the whole strip: the six views
+ * take Mod+Alt+1..6 and this takes Mod+Alt+7.
+ */
+const CANVAS_ICON = 'layout-dashboard'
 </script>
 
 <!--
@@ -39,6 +48,12 @@ $: views = OSINT_VIEWS.filter(v => !v.requiresGraphFeatures || graphFeaturesEnab
 			use:command={{ command: workspace.commands[view.commandKey] }}
 		>{@html lucideSvg(view.icon)}</button>
 	{/each}
+	<!-- svelte-ignore a11y_consider_explicit_label -->
+	<button
+		class="subtle"
+		aria-label="Canvas"
+		use:command={{ command: workspace.commands.osintOpenCanvas }}
+	>{@html lucideSvg(CANVAS_ICON)}</button>
 </span>
 
 <style>

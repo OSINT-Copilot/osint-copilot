@@ -2754,3 +2754,412 @@ svg.leaflet-image-layer.leaflet-interactive path {
 .setting-item-control input[aria-invalid="true"] {
   border-color: var(--text-error);
 }
+
+/* ============================================
+   Guide view, welcome tour, and the board picker
+   ============================================ */
+
+/* --- The Guide view -------------------------------------------------------- */
+
+/*
+ * Two columns: a contents rail that stays put, and the guide itself, which scrolls.
+ * The root is the ItemView's `.view-content`, which OsintViewHost stretches to the panel,
+ * so the height comes from the flex parent rather than a viewport unit.
+ */
+.osint-docs-root {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--background-primary);
+}
+
+.osint-docs-rail {
+  flex: 0 0 14em;
+  overflow-y: auto;
+  padding: 1.5em 0.75em;
+  border-right: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+.osint-docs-rail-title {
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  padding: 0 0.6em 0.5em;
+}
+
+.osint-docs-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.45em 0.6em;
+  margin-bottom: 2px;
+  border: none;
+  border-radius: var(--radius-s, 4px);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-ui-small);
+  text-align: left;
+  cursor: pointer;
+}
+.osint-docs-rail-item:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+/* Set by the IntersectionObserver as you scroll; it follows, it is not a click state. */
+.osint-docs-rail-item.is-current {
+  background: var(--background-modifier-active-hover);
+  color: var(--text-accent);
+}
+
+.osint-docs-rail-icon,
+.osint-docs-section-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+.osint-docs-rail-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.osint-docs-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 2.5em 3em 6em;
+}
+
+.osint-docs-header h1 {
+  margin: 0;
+  font-size: 1.9em;
+  font-weight: 600;
+}
+.osint-docs-subtitle {
+  margin: 0.25em 0 0;
+  color: var(--text-muted);
+}
+
+/* Generous, because a section is a place you are sent to, not a paragraph you pass. */
+.osint-docs-section {
+  margin-top: 2.75em;
+  max-width: 46em;
+}
+
+.osint-docs-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin: 0 0 0.6em;
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: 1.25em;
+  font-weight: 600;
+}
+.osint-docs-section-icon svg {
+  width: 18px;
+  height: 18px;
+  color: var(--text-accent);
+}
+
+.osint-docs-markdown {
+  line-height: 1.65;
+  color: var(--text-normal);
+}
+.osint-docs-markdown p,
+.osint-welcome-markdown p {
+  margin: 0.7em 0;
+}
+.osint-docs-markdown ol,
+.osint-docs-markdown ul,
+.osint-welcome-markdown ol,
+.osint-welcome-markdown ul {
+  padding-left: 1.4em;
+}
+.osint-docs-markdown li,
+.osint-welcome-markdown li {
+  margin: 0.35em 0;
+}
+.osint-docs-markdown code,
+.osint-welcome-markdown code {
+  font-family: var(--font-monospace);
+  font-size: 0.88em;
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-s, 4px);
+  background: var(--code-background);
+}
+
+/*
+ * Tables scroll inside their own box. The guide's shortcut table is wider than a narrow
+ * panel, and without this the whole view scrolled sideways.
+ */
+.osint-docs-markdown table,
+.osint-welcome-markdown table {
+  display: block;
+  overflow-x: auto;
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.95em;
+}
+.osint-docs-markdown th,
+.osint-docs-markdown td,
+.osint-welcome-markdown th,
+.osint-welcome-markdown td {
+  padding: 0.4em 0.8em;
+  border: 1px solid var(--background-modifier-border);
+  text-align: left;
+}
+/*
+ * Only the first column resists wrapping. It carries the shortcut or the label -- the
+ * short, scannable thing -- while the last column is a sentence; letting the sentence wrap
+ * is what keeps the table inside a narrow panel instead of scrolling it out of reach.
+ */
+.osint-docs-markdown td:first-child,
+.osint-docs-markdown th:first-child,
+.osint-welcome-markdown td:first-child,
+.osint-welcome-markdown th:first-child {
+  white-space: nowrap;
+}
+.osint-docs-markdown th,
+.osint-welcome-markdown th {
+  background: var(--background-secondary);
+  font-weight: 600;
+}
+
+/* --- The first-run tour ---------------------------------------------------- */
+
+.osint-welcome-modal {
+  width: min(680px, calc(100vw - 4em));
+  max-height: min(80vh, 46em);
+}
+
+.osint-welcome {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.osint-welcome h1 {
+  margin: 0;
+  font-size: 1.6em;
+  font-weight: 600;
+}
+.osint-welcome-lede {
+  margin: 0.3em 0 0;
+  color: var(--text-muted);
+}
+
+/* The sections scroll; the footer buttons must not scroll away with them. */
+.osint-welcome-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  margin: 1.2em 0;
+  padding-right: 0.5em;
+}
+
+.osint-welcome-section + .osint-welcome-section {
+  margin-top: 1.6em;
+  padding-top: 1.4em;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.osint-welcome-section h2 {
+  margin: 0 0 0.4em;
+  font-size: 1.1em;
+  font-weight: 600;
+  color: var(--text-accent);
+}
+.osint-welcome-markdown {
+  line-height: 1.6;
+}
+
+.osint-welcome-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  flex-wrap: wrap;
+  padding-top: 1em;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.osint-welcome-count {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
+.osint-welcome-buttons {
+  display: flex;
+  gap: 0.6em;
+  margin-left: auto;
+}
+.osint-welcome-buttons button {
+  font: inherit;
+  padding: 0.5em 1.1em;
+  border-radius: var(--radius-s, 4px);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  cursor: pointer;
+}
+.osint-welcome-buttons button:hover {
+  background: var(--interactive-hover);
+}
+.osint-welcome-buttons button.mod-cta {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.osint-welcome-buttons button.mod-cta:hover {
+  background: var(--interactive-accent-hover);
+}
+
+/* --- The board picker ------------------------------------------------------ */
+
+.osint-board-picker-modal {
+  width: min(520px, calc(100vw - 4em));
+}
+
+.osint-board-search {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 0.5em 0.7em;
+  border-radius: var(--radius-s, 4px);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.osint-board-new {
+  width: 100%;
+  margin: 0.6em 0;
+  font: inherit;
+  text-align: left;
+  padding: 0.55em 0.8em;
+  border-radius: var(--radius-s, 4px);
+  border: 1px dashed var(--background-modifier-border);
+  background: transparent;
+  color: var(--text-accent);
+  cursor: pointer;
+}
+.osint-board-new:hover {
+  background: var(--background-modifier-hover);
+  border-style: solid;
+}
+
+/* Capped so a vault with fifty boards does not grow a dialog taller than the window. */
+.osint-board-list {
+  max-height: 22em;
+  overflow-y: auto;
+}
+
+.osint-board-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7em;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5em 0.8em;
+  border: none;
+  border-radius: var(--radius-s, 4px);
+  background: transparent;
+  color: var(--text-normal);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.osint-board-item:hover {
+  background: var(--background-modifier-hover);
+}
+.osint-board-title {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.osint-board-folder {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-left: auto;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
+
+.osint-board-empty {
+  padding: 1.5em 0.8em;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  text-align: center;
+}
+
+/* ============================================
+   Entity picture field (create / edit dialogs)
+   ============================================ */
+
+.graph_copilot-entity-picture {
+  margin: 1em 0 0.5em;
+}
+
+.graph_copilot-entity-picture-label {
+  display: block;
+  margin-bottom: 0.35em;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.graph_copilot-entity-picture-zone {
+  border: 2px dashed var(--background-modifier-border);
+  border-radius: var(--radius-m, 6px);
+  padding: 0.85em;
+  background: var(--background-secondary);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.graph_copilot-entity-picture-zone.is-dragging {
+  border-color: var(--interactive-accent);
+  background: var(--background-primary-alt);
+}
+
+.graph_copilot-entity-picture-preview img {
+  /* contain, not cover: an evidence photo must not be silently cropped by the box it
+     happens to be previewed in. Same rule the canvas applies to its image cards. */
+  object-fit: contain;
+  margin-bottom: 0.4em;
+  background: var(--background-primary);
+}
+
+.graph_copilot-entity-picture-path {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-accent);
+  /* A vault path can be long and has no spaces to break on. */
+  word-break: break-all;
+}
+
+.graph_copilot-entity-picture-status {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.graph_copilot-entity-picture-actions {
+  display: flex;
+  gap: 0.5em;
+  margin-top: 0.6em;
+}
+.graph_copilot-entity-picture-actions button {
+  font: inherit;
+  padding: 0.35em 0.8em;
+  border-radius: var(--radius-s, 4px);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  cursor: pointer;
+}
+.graph_copilot-entity-picture-actions button:hover {
+  background: var(--interactive-hover);
+}

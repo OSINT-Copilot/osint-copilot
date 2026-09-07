@@ -322,7 +322,15 @@ export const ENTITY_ICONS: Record<string, string> = {
 };
 
 // Common properties for all entities
-export const COMMON_PROPERTIES = ["notes", "source", "image"];
+/**
+ * Properties every entity may carry, whatever its type.
+ *
+ * This list is also an allowlist: buildFrontmatter() writes only properties found here or
+ * in the type's own config, and silently drops the rest. `image` (a vault-relative path to
+ * a picture of the entity) and `image_url` (one the app has not downloaded yet) are here
+ * so they survive that path as well as the FTM one.
+ */
+export const COMMON_PROPERTIES = ["notes", "source", "image", "image_url"];
 
 /** Persisted confidence for investigator-facing filtering (graph, lists). */
 export const OSINT_CONFIDENCE_LEVELS = ['unverified', 'low', 'medium', 'high', 'conflicted'] as const;

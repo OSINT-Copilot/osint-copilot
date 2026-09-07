@@ -199,7 +199,15 @@ export const host: Host = {
         rename: vaultFs.rename,
         stat: vaultFs.stat,
         onChange: vaultFs.onChange,
-        resourceUrl: (path: string) => `osint-vault://${encodeURI(path)}`,
+        // Same file:// shape as the renderer host. It used to mint `osint-vault://`, a
+        // scheme nothing registers -- and this is the implementation the `osint` vitest
+        // project resolves `host-impl` to, so a test would have proved the wrong thing.
+        resourceUrl: (path: string) => {
+            const encode = (value: string) =>
+                value.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/');
+            const root = encode(vaultFs.basePath()).replace(/^([A-Za-z])%3A/i, '$1:');
+            return `file://${root.startsWith('/') ? root : `/${root}`}/${encode(path)}`;
+        },
     },
     basemap: {
         pick: () => basemapStore.pick(),

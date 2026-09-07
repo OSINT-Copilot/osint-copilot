@@ -31,6 +31,7 @@ import { setupLogging } from './logging'
 
 import { loadSettings, saveSettings, getSettings} from './settings'
 import { initDocumentation, openDocumentation, shouldShowChangelog } from './documentation'
+import { initLicense } from './license'
 import { createWindow, getOrCreateWindowForWorkspace } from './windows'
 
 import './messages'
@@ -168,6 +169,10 @@ Tangent ${app.getVersion()} Launched With Arguments:`, process.argv)
 		let hasOpenedWindows = false
 		
 		try {
+			// Synchronous, and before the async group: the first window's renderer asks for
+			// licence status as it boots, and an unregistered handler would reject.
+			initLicense()
+
 			await Promise.all([
 				loadSettings(),
 				initDocumentation(),

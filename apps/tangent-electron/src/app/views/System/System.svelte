@@ -10,6 +10,7 @@ import CreationRules from './CreationRules.svelte'
 import Database from './Database.svelte'
 import Updates from './Updates.svelte'
 import About from './About.svelte'
+import License from './License.svelte'
 import Maps from './Maps.svelte'
 import Notes from './Notes.svelte'
 import Styles from './Styles.svelte'
@@ -17,6 +18,7 @@ import Dictionary from './Dictionary.svelte'
 import Shortcuts from './Shortcuts.svelte'
 import Debug from './Debug.svelte'
 import OsintSettings from 'osint/integration/OsintSettings.svelte'
+import { anyShimModalIsOpen } from 'osint/obsidian-shim/ui/modal'
 import DocumentationLink from 'app/utils/DocumentationLink.svelte'
 
 export let detailsOpen = false
@@ -28,17 +30,18 @@ let section = workspace.viewState.system.section
 let updateState = workspace.updateState
 let suppressUpdates = false
 $: mode = updateState.mode
-$: downloadProgress = updateState.downloadProgress
 
 $: onModeChanged($mode)
 function onModeChanged(_m?) {
-	if ($mode === 'ready' && !suppressUpdates && !detailsOpen && workspace.viewState.modal.stack.length == 0) {
+	// anyShimModalIsOpen() as well as Tangent's own stack: OSINT Copilot's dialogs are
+	// elements on document.body rather than entries in viewState.modal, so without it a
+	// ready update threw the settings menu over the top of the first-run tour.
+	if ($mode === 'ready' && !suppressUpdates && !detailsOpen
+		&& workspace.viewState.modal.stack.length == 0 && !anyShimModalIsOpen()) {
 		detailsOpen = true
 		section.set('Updates')
 	}
 }
-
-$: downloadPercent = $downloadProgress?.percent || 0
 
 // Sub-menus
 const menus = [
@@ -87,6 +90,12 @@ const menus = [
 		component: Updates
 	},
 	{
+		// No documentation page: the licence is ours, not something Tangent documents.
+		name: 'Licence',
+		component: License,
+		documentation: false
+	},
+	{
 		name: 'About',
 		component: About,
 		documentation: false
@@ -112,17 +121,20 @@ $: currentMenu = menus.find(m => m.name === $section) ?? menus[0]
 	}}
 >
 	<svelte:fragment slot="button">
-		<div class={'buttonContent ' + $mode} class:supressed={suppressUpdates}>
+		<!--
+			A gear, and only a gear. This button used to carry the update state as well --
+			swapping its glyph for an arrow, tinting itself, and drawing a progress bar --
+			because it was the only way into the update flow. UpdateButton now sits
+			immediately to its left and shows all three, so doing it here too put two
+			identical green arrows side by side, reading as two things to click.
+
+			onModeChanged below is untouched: opening this menu on the Updates page when an
+			update is ready is behaviour, not a second indicator.
+		-->
+		<div class="buttonContent">
 			<svg style={`width: 24px; height: 24px;`}>
-				{#if $mode === 'ready'}
-					<use href="update.svg#arrow" />
-				{:else}
 				<use href="system.svg#gear" />
-				{/if}
 			</svg>
-			<div class="progressBar" class:show={downloadPercent}>
-				<div class="progress" style={`width: ${downloadPercent}%;`}></div>
-			</div>
 		</div>
 	</svelte:fragment>
 	<main class="SystemMenu">
@@ -152,44 +164,10 @@ $: currentMenu = menus.find(m => m.name === $section) ?? menus[0]
 </PopUpButton>
 
 <style lang="scss">
-.progressBar {
-	visibility: hidden;
-	height: 4px;
-
-	&.show {
-		visibility: visible;
-	}
-
-	.progress {
-		height: 100%;
-		background-color: var(--accentTextColor);
-
-		transition: width .1s;
-	}
-}
-
 .buttonContent {
 	display: flex;
 	align-items: center;
 	position: relative;
-	&.ready {
-		--updateFill: var(--accentTextColor);
-		--iconStroke: var(--accentTextColor);
-	}
-	&.supressed {
-		--updateFill: none;
-	}
-	&.error {
-		--updateFill: red;
-		--iconStroke: red;
-	}
-
-	.progressBar {
-		position: absolute;
-		bottom: 1px;
-		width: 100%;
-		height: 3px;
-	}
 }
 
 main {

@@ -15,6 +15,8 @@ import { isMac } from 'common/platform'
 import { mailTo } from 'common/email'
 import { mediaQueryStore } from './utils/svelte'
 import SvgIcon from './views/smart-icons/SVGIcon.svelte'
+import LicenseGate from './views/LicenseGate.svelte'
+import type { LicenseStatus } from 'common/license'
 
 import { dropAllTooltips, tooltips } from './utils/tooltips'
 import Tooltip from './utils/Tooltip.svelte'
@@ -189,12 +191,44 @@ window.addEventListener('keyup', (event:KeyboardEvent) => {
 	}
 })
 
-// Try to load a default workspace
-api.getWorkspace().then(setState)
-.catch(e => {
-	console.error('Could not load default workspace.')
-	console.log(e)
+/**
+ * The licence gate runs before anything else is built.
+ *
+ * `null` means "not asked yet", and the app renders nothing at all until main answers --
+ * a few milliseconds -- because flashing the loading screen and then replacing it with a
+ * licence prompt looks like a failure. No workspace is opened, and no vault is read,
+ * until a key has been accepted.
+ */
+let licenseStatus: LicenseStatus = null
+$: licensed = licenseStatus?.valid === true
+
+api.license.status().then(status => {
+	licenseStatus = status
+	if (status.valid) loadDefaultWorkspace()
 })
+.catch(e => {
+	console.error('Could not check the licence', e)
+	// Fail closed. A check that cannot run must not become a way past the gate.
+	licenseStatus = {
+		valid: false,
+		reason: 'missing',
+		message: 'The licence could not be checked. Please restart OSINT Copilot.'
+	}
+})
+
+function onLicensed(status: LicenseStatus) {
+	licenseStatus = status
+	loadDefaultWorkspace()
+}
+
+// Try to load a default workspace
+function loadDefaultWorkspace() {
+	api.getWorkspace().then(setState)
+	.catch(e => {
+		console.error('Could not load default workspace.')
+		console.log(e)
+	})
+}
 
 let title = 'OSINT Copilot'
 async function setState(state: WorkspaceInitState) {
@@ -337,7 +371,9 @@ Below is a stack trace of the error. Please provide any additional details above
 </svelte:head>
 <svelte:body on:focusin={onFocusIn} on:focusout={onFocusOut} on:contextmenu={dropAllTooltips} />
 
-{#if applicationState === 'initializing' && showLoading}
+{#if licenseStatus && !licensed}
+	<LicenseGate {api} status={licenseStatus} {onLicensed} />
+{:else if applicationState === 'initializing' && showLoading}
 	<div class="loading">
 		<SvgIcon
 			ref="tangent-icon-nocolor.svg#icon"

@@ -53,6 +53,7 @@ import { GraphView, GRAPH_VIEW_TYPE } from '../views/graph-view';
 import { TimelineView, TIMELINE_VIEW_TYPE } from '../views/timeline-view';
 import { MapView, MAP_VIEW_TYPE } from '../views/map-view';
 import { ToolsSkillsRegistryView, TOOLS_SKILLS_REGISTRY_VIEW_TYPE } from '../views/tools-skills-registry-view';
+import { DocsView, DOCS_VIEW_TYPE } from '../views/docs-view';
 import { ConfirmModal } from '../modals/confirm-modal';
 import { CustomTypesService } from '../services/custom-types-service';
 import {
@@ -418,6 +419,9 @@ export default class VaultAIPlugin extends Plugin {
     );
 
     this.registerView(TOOLS_SKILLS_REGISTRY_VIEW_TYPE, (leaf) => new ToolsSkillsRegistryView(leaf, this));
+
+    // The guide takes no host: it renders static content from data/guide-content.ts.
+    this.registerView(DOCS_VIEW_TYPE, (leaf) => new DocsView(leaf));
 
     // Add ribbon icons for all OSINT Copilot features (grouped together)
     // Ctrl/Cmd+click opens a new instance as a tab next to other OSINT views in the same tab strip

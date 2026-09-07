@@ -22,6 +22,7 @@ import { createAgentProvider } from './agent-runtime/create-agent-provider';
 import { HermesAgentProvider } from './agent-runtime/hermes-agent-provider';
 import type { AgentTurnContext } from './agent-runtime/provider-types';
 import { aiOperationsToGraphCommands } from './graph-commands-from-operations';
+import { resolveEntityImage, type ResolvedEntityImage } from './entity-image-service';
 import type { CustomVaultOperation } from './custom-vault-operations';
 import type { OrchestrationPlan } from './orchestration-plan';
 import type { ExtractionLogOptions, ExtractionLogEvent } from './claude-code-service';
@@ -843,6 +844,31 @@ export class OrchestrationService {
      * Apply @@ graph commands without modal (vault ingest / evidence analysis).
      * Returns one human-readable line per command.
      */
+    /**
+     * Turns an entity's image_url / image into a vault path before the entity is written.
+     *
+     * Writes beside the Evidence tree the graph's own file drop already uses, so an
+     * analyst has one place to look for the pictures attached to a case rather than three.
+     *
+     * Swallows everything. resolveEntityImage does not throw on its own, but the folder
+     * lookup that feeds it touches the plugin, and a half-started plugin must not turn
+     * "create these entities" into an exception.
+     */
+    private async resolveEntityPicture(
+        properties: Record<string, unknown>,
+    ): Promise<ResolvedEntityImage> {
+        try {
+            const base = this.plugin.entityManager.getBasePath();
+            return await resolveEntityImage(
+                { app: this.plugin.app, folder: `${base}/Evidence` },
+                properties,
+            );
+        } catch (error) {
+            console.error('[osint] could not resolve an entity picture', error);
+            return { properties, outcome: { kind: 'none' } };
+        }
+    }
+
     public async executeGraphCommandsImmediate(
         commands: string[],
         options: ExecuteGraphCommandsOptions,
@@ -865,13 +891,24 @@ export class OrchestrationService {
                             osint_captured_at: ctx?.captured_at ?? new Date().toISOString(),
                             conversation_id: ctx?.conversation_id,
                         };
+                        // Before the write, so the note is saved with a path that resolves
+                        // rather than a URL the graph cannot draw. Never throws: an entity
+                        // without a picture is still a good entity, and one unreachable
+                        // host must not take the rest of the batch with it.
+                        const picture = await this.resolveEntityPicture(data.properties);
+                        const properties = picture.properties;
                         if (isFTMSchema(String(data.type))) {
-                            await this.plugin.entityManager.createFTMEntity(data.type, data.properties, osintOpts);
+                            await this.plugin.entityManager.createFTMEntity(data.type, properties, osintOpts);
                         } else {
-                            await this.plugin.entityManager.createEntity(data.type, data.properties, osintOpts);
+                            await this.plugin.entityManager.createEntity(data.type, properties, osintOpts);
                         }
-                        const name = data.label || getEntityLabel(data.type as EntityType, data.properties || {});
-                        lines.push(`✓ Created ${data.type}: **${name}**`);
+                        const name = data.label || getEntityLabel(data.type as EntityType, properties || {});
+                        // Say when a promised picture did not arrive. "The AI said it added
+                        // a photo and there is no photo" is the confusing case worth words.
+                        const note = picture.outcome.kind === 'downloaded' ? ' (image saved)'
+                            : picture.outcome.kind === 'failed' ? ' (image unavailable)'
+                            : '';
+                        lines.push(`✓ Created ${data.type}: **${name}**${note}`);
                     }
                 } else if (command.startsWith("@@delete_entity")) {
                     const jsonStr = command.replace("@@delete_entity", "").trim();

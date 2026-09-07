@@ -21,6 +21,7 @@ import { openOsintSettings, openOsintView, openVaultNote, setTangentWorkspace } 
 import { publishOsintPluginState } from './osint-plugin-state';
 import VaultAIPlugin from '../plugin/vault-ai-plugin';
 import { OSINT_VERSION } from '../version';
+import { viewForFileType } from './osint-view-types';
 
 export interface OsintRuntime {
     app: App;
@@ -80,6 +81,34 @@ export async function startOsintCopilot(tangentWorkspace: {
     }
 }
 
+/**
+ * The first-run tour, shown once per vault.
+ *
+ * Here rather than in the plugin's onload() for the reason the rest of this file exists:
+ * onload() is Obsidian-shaped plugin code, and "what the shell does after the plugin is
+ * up" belongs on this side of the seam. It is also the first point at which navigating to
+ * the Guide view can actually work.
+ */
+async function showWelcomeIfFirstRun(app: App, plugin: VaultAIPlugin): Promise<void> {
+    try {
+        if (plugin.settings.hasSeenWelcomeGuide) return;
+
+        // Written BEFORE the dialog is shown, not after it is dismissed: a crash or a
+        // force-quit while the tour is open should not mean seeing it again every launch.
+        plugin.settings.hasSeenWelcomeGuide = true;
+        await plugin.saveSettings();
+
+        const docs = viewForFileType('.osintdocs');
+        const { WelcomeModal } = await import('../modals/welcome-modal');
+        new WelcomeModal(app, {
+            openGuide: () => { if (docs) openOsintView(docs.viewType); },
+        }).open();
+    }
+    catch (e) {
+        console.error('[osint] could not show the welcome guide', e);
+    }
+}
+
 async function startOsintCopilotUncached(tangentWorkspace: Parameters<typeof startOsintCopilot>[0]): Promise<OsintRuntime> {
     // Obsidian patches createEl/createDiv/addClass/empty/setCssProps onto HTMLElement,
     // and the plugin calls them about 1,100 times — including from constructors, so
@@ -126,6 +155,10 @@ async function startOsintCopilotUncached(tangentWorkspace: Parameters<typeof sta
     await plugin.whenLoaded();
     // Now the toolbar's canvas command can run and its gate has real settings to read.
     publishOsintPluginState({ ready: true, settings: plugin.settings });
+
+    // Not awaited: the tour is for the user to read at their pace, and startup should not
+    // block on a dialog. Failures are swallowed -- a broken tour must not stop the app.
+    void showWelcomeIfFirstRun(app, plugin);
 
     // The plugin's own commands are picked up on Tangent's side, by
     // app/model/commands/OsintViewCommands.ts, which waits for this runtime to appear.

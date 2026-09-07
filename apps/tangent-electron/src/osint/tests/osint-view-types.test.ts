@@ -6,6 +6,7 @@ import { GRAPH_VIEW_TYPE } from '../views/graph-view';
 import { TIMELINE_VIEW_TYPE } from '../views/timeline-view';
 import { MAP_VIEW_TYPE } from '../views/map-view';
 import { TOOLS_SKILLS_REGISTRY_VIEW_TYPE } from '../views/tools-skills-registry-view';
+import { DOCS_VIEW_TYPE } from '../views/docs-view';
 import { CANVAS_FILE_TYPE } from '../canvas/canvas-file-type';
 import { hasLucideIcon } from '../integration/lucide-svg';
 import { readFileSync } from 'node:fs';
@@ -22,7 +23,7 @@ describe('OSINT view descriptors', () => {
         const declared = OSINT_VIEWS.map(v => v.viewType).sort();
         const actual = [
             CHAT_VIEW_TYPE, GRAPH_VIEW_TYPE, TIMELINE_VIEW_TYPE,
-            MAP_VIEW_TYPE, TOOLS_SKILLS_REGISTRY_VIEW_TYPE,
+            MAP_VIEW_TYPE, TOOLS_SKILLS_REGISTRY_VIEW_TYPE, DOCS_VIEW_TYPE,
         ].sort();
         expect(declared).toEqual(actual);
     });
@@ -94,6 +95,7 @@ describe('OSINT view descriptors', () => {
         // cannot orphan every existing vault's markers.
         expect(OSINT_VIEWS.map(v => v.title)).toEqual([
             'OSINT Chat', 'Entity Graph', 'Timeline', 'Location Map', 'Tools & Skills',
+            'Documentation',
         ]);
     });
 });

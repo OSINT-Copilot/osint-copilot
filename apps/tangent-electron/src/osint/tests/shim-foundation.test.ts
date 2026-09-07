@@ -162,6 +162,7 @@ function hostLikeStorage(files: Record<string, Uint8Array>, onChangeCapture?: (c
         remove: async () => {}, trash: async () => {}, rename: async () => {},
         onChange: (cb) => { onChangeCapture?.(cb); return () => {}; },
         basePath: () => '/vault',
+        resourceUrl: (p) => `file:///vault/${p.split('/').map(encodeURIComponent).join('/')}`,
     };
 }
 
@@ -196,6 +197,57 @@ describe('Vault against a host-like storage', () => {
         const bytes = new Uint8Array([0, 1, 0x7f, 0x80, 0xfe, 0xff]);
         await s.writeBinary('x.bin', bytes);
         expect([...await s.readBinary('x.bin')]).toEqual([...bytes]);
+    });
+
+    /**
+     * getResourcePath used to return `osint-vault://...`, a scheme nothing in the app ever
+     * registered, so every graph thumbnail silently failed to load. These pin the three
+     * properties the graph actually depends on.
+     */
+    describe('getResourcePath', () => {
+        const resourcePathOf = async (path: string, bytes = new Uint8Array([1])) => {
+            const vault = new Vault(hostLikeStorage({ [path]: bytes }));
+            await vault.open();
+            return vault.getResourcePath(vault.getAbstractFileByPath(path) as TFile);
+        };
+
+        it('returns a scheme the renderer can actually load', async () => {
+            const url = await resourcePathOf('Evidence/photo.png');
+            // Not osint-vault://, which no protocol handler serves.
+            expect(url.startsWith('file:///vault/Evidence/photo.png?v=')).toBe(true);
+        });
+
+        it('contains no whitespace, however the path is spelt', async () => {
+            // Load-bearing for the graph: cytoscape's `background-image` is a multi-valued
+            // `urls` property and splits a mapped value on /\s+/, so one URL containing a
+            // space becomes two URLs and neither of them loads.
+            const url = await resourcePathOf('Evidence/A. Ivanov portrait.png');
+            expect(url).not.toMatch(/\s/);
+            expect(url).toContain('A.%20Ivanov%20portrait.png');
+        });
+
+        it('encodes the characters entity labels routinely contain', async () => {
+            const url = await resourcePathOf('Evidence/q? a& b#c.png');
+            // Unescaped, '#' truncates the URL at the fragment and '?' starts the query
+            // early -- both would silently address a different file, or none.
+            expect(url).toContain('q%3F%20a%26%20b%23c.png');
+            // Exactly one '?', the cache-buster's.
+            expect(url.split('?')).toHaveLength(2);
+        });
+
+        it('keeps the separators as separators', async () => {
+            const url = await resourcePathOf('Evidence/sub/photo.png');
+            expect(url).toContain('/vault/Evidence/sub/photo.png');
+        });
+
+        it('busts the cache with the mtime, so a replaced image is not served stale', async () => {
+            const vault = new Vault(hostLikeStorage({ 'a.png': new Uint8Array([1]) }));
+            await vault.open();
+            const file = vault.getAbstractFileByPath('a.png') as TFile;
+            const before = vault.getResourcePath(file);
+            file.stat = { ...file.stat, mtime: file.stat.mtime + 1000 };
+            expect(vault.getResourcePath(file)).not.toBe(before);
+        });
     });
 });
 

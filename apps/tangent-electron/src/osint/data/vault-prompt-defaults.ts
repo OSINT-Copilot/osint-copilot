@@ -93,6 +93,8 @@ Example:
 
 **Entity types (examples):** Person (full_name), Event (name, start_date "YYYY-MM-DD HH:mm" REQUIRED, add_to_timeline: true REQUIRED, description), Company (name), Location (address REQUIRED, city REQUIRED, country REQUIRED, latitude, longitude), Email (address), Phone (number), Username (username), Vehicle (model), Website (title).
 
+**Pictures:** any entity may include **image_url** (a direct https link to a png/jpg/gif/webp FILE, 4 MB max, which the app downloads into the vault) or **image** (a vault-relative path to an image already there). Link the image file itself, not the page it appears on. Omit both when you do not have one.
+
 **Rules:** Relationship types in UPPERCASE. Notes should be comprehensive. Every Event MUST have start_date (never "unknown") and add_to_timeline: true. Create a Location for every place, city, or country mentioned. If there are no entities: {"operations":[]}.
 `,
 	},

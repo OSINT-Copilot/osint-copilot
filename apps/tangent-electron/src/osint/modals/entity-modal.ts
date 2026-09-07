@@ -5,6 +5,25 @@
 
 import { App, Modal, Notice, Setting } from 'obsidian';
 import { type Entity, type Connection, EntityType, ENTITY_CONFIGS, COMMON_PROPERTIES, getFTMEntityConfig, getAvailableFTMEntityTypes, getAvailableFTMIntervalTypes, type FTMEntityConfig, validateEntityName, getEntityIcon } from '../entities/types';
+import { createEntityPictureField } from './entity-picture-field';
+import { ENTITY_IMAGE_KEY } from '../services/entity-image-service';
+
+/**
+ * A "Current File: <path>" block, built rather than interpolated.
+ *
+ * The two call sites used to write this as an innerHTML template with the path spliced
+ * into it. A vault path is not obviously dangerous text, but it is stored entity data --
+ * and entity properties are now written by the extraction pipeline from pages the model
+ * reads, so the value is attacker-influenceable. This renderer has window.api and there is
+ * no CSP behind it, which makes the difference between textContent and innerHTML real.
+ */
+function renderFilePathBlock(container: HTMLElement, heading: string, path: string): void {
+    container.empty();
+    const title = container.createDiv({ text: heading });
+    title.style.cssText = 'font-weight: bold; margin-bottom: 4px;';
+    const value = container.createDiv({ text: path });
+    value.style.cssText = 'font-size: 12px; color: var(--text-accent); word-break: break-all;';
+}
 import { EntityManager } from '../services/entity-manager';
 import { GeocodingService, GeocodingError, GeocodingErrorType, geocodingService } from '../services/geocoding-service';
 import { ftmSchemaService, type FTMPropertyDefinition } from '../services/ftm-schema-service';
@@ -156,10 +175,20 @@ export class EntityCreationModal extends Modal {
         const commonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-form' });
 
         for (const prop of COMMON_PROPERTIES) {
-            if (prop !== 'image') { // Skip image for now
-                this.createPropertyField(commonContainer, prop, false);
-            }
+            // `image` gets the picker below rather than a text box asking for a path, and
+            // `image_url` is the model's inbox -- a field for pasting a URL the app has
+            // not fetched yet would only invite a path that never resolves.
+            if (prop === 'image' || prop === 'image_url') continue;
+            this.createPropertyField(commonContainer, prop, false);
         }
+
+        createEntityPictureField({
+            app: this.app,
+            container: commonContainer,
+            currentValue: this.properties.image as string | undefined,
+            folder: `${this.entityManager.getBasePath()}/Evidence`,
+            onChange: (path) => { this.properties.image = path; },
+        });
 
         // Buttons
         const buttonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-modal-buttons' });
@@ -878,6 +907,10 @@ export class FTMEntityCreationModal extends Modal {
             this.createGeocodingSection(contentEl);
         }
 
+        // Every type may have a picture, so this is not part of the schema's property
+        // list -- `image` is ours, not FTM's, and no schema declares it.
+        this.createPictureField(contentEl);
+
         // Buttons
         const buttonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-modal-buttons' });
 
@@ -1287,6 +1320,20 @@ export class FTMEntityCreationModal extends Modal {
 
         this.geocodeStatusEl.style.color = color;
         this.geocodeStatusEl.style.whiteSpace = 'pre-line';
+    }
+
+    /** The picture of this entity, whatever its type. Writes properties.image. */
+    private createPictureField(container: HTMLElement): void {
+        createEntityPictureField({
+            app: this.app,
+            container,
+            currentValue: this.properties[ENTITY_IMAGE_KEY],
+            folder: `${this.entityManager.getBasePath()}/Evidence`,
+            onChange: (path) => {
+                if (path) this.properties[ENTITY_IMAGE_KEY] = path;
+                else delete this.properties[ENTITY_IMAGE_KEY];
+            },
+        });
     }
 
     private createFileUploadField(container: HTMLElement, propertyName: string, entityType: string): void {
@@ -2030,6 +2077,10 @@ export class FTMEntityEditModal extends Modal {
             this.createGeocodingSection(contentEl);
         }
 
+        // Every type may have a picture, so this is not part of the schema's property
+        // list -- `image` is ours, not FTM's, and no schema declares it.
+        this.createPictureField(contentEl);
+
         // Buttons
         const buttonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-modal-buttons' });
 
@@ -2264,6 +2315,21 @@ export class FTMEntityEditModal extends Modal {
         };
     }
 
+    /** The picture of this entity, whatever its type. Writes properties.image. */
+    private createPictureField(container: HTMLElement): void {
+        createEntityPictureField({
+            app: this.app,
+            container,
+            currentValue: this.properties[ENTITY_IMAGE_KEY],
+            folder: `${this.entityManager.getBasePath()}/Evidence`,
+            onChange: (path) => {
+                // '' rather than delete: the property has to reach updateEntity for a
+                // removal to be persisted, and entityImagePath treats blank as absent.
+                this.properties[ENTITY_IMAGE_KEY] = path;
+            },
+        });
+    }
+
     private createFileUploadField(container: HTMLElement, propertyName: string, entityType: string, currentValue: any): void {
         const wrapper = container.createDiv({ cls: 'graph_copilot-file-upload-wrapper' });
         wrapper.style.cssText = `
@@ -2280,10 +2346,11 @@ export class FTMEntityEditModal extends Modal {
             wrapper.style.borderColor = 'var(--interactive-accent)';
             const currentFileEl = wrapper.createDiv({ cls: 'graph_copilot-current-file' });
             currentFileEl.style.marginBottom = '10px';
-            currentFileEl.innerHTML = `
-                <div style="font-weight: bold; margin-bottom: 4px;">Current File:</div>
-                <div style="font-size: 12px; color: var(--text-accent); word-break: break-all;">${currentValue}</div>
-            `;
+            // Built, not interpolated. This used to be an innerHTML template with
+            // ${currentValue} in it -- a stored property value, which the extraction
+            // pipeline can write from a page the model was reading. In a renderer that
+            // has window.api and no CSP, that is a real injection and not a style point.
+            renderFilePathBlock(currentFileEl, 'Current File:', String(currentValue));
 
             // Add preview button or image if possible
             if (entityType === 'Image' || entityType === 'Photo' || entityType === 'Document' || entityType === 'Evidence') {
@@ -2363,10 +2430,8 @@ export class FTMEntityEditModal extends Modal {
                 // Update display
                 const currentDisplay = wrapper.querySelector('.graph_copilot-current-file');
                 if (currentDisplay) {
-                    currentDisplay.innerHTML = `
-                        <div style="font-weight: bold; margin-bottom: 4px;">New File:</div>
-                        <div style="font-size: 12px; color: var(--text-accent); word-break: break-all;">${filePath.replace(/^\//, '')}</div>
-                    `;
+                    renderFilePathBlock(
+                        currentDisplay as HTMLElement, 'New File:', filePath.replace(/^\//, ''));
                 }
 
                 new Notice(`File uploaded: ${filePath}`);

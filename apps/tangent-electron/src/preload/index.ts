@@ -247,6 +247,17 @@ const bridge: WindowApi = {
 			return ipcRenderer.invoke('documentation', 'getRecentChanges')
 		}
 	},
+	license: {
+		status() {
+			return ipcRenderer.invoke('license', 'status')
+		},
+		activate(key) {
+			return ipcRenderer.invoke('license', 'activate', key)
+		},
+		clear() {
+			return ipcRenderer.invoke('license', 'clear')
+		}
+	},
 	dictionary: {
 		getAllWords() {
 			return ipcRenderer.invoke('dictionary', 'getAllWords')

@@ -19,6 +19,7 @@ import ModalStateView from 'app/modal/ModalStateView.svelte'
 import LeftSidebar from './LeftSidebar.svelte'
 import SvgIcon from './smart-icons/SVGIcon.svelte'
 import OsintViewsPill from 'osint/integration/OsintViewsPill.svelte'
+import UpdateButton from './UpdateButton.svelte'
 import OsintNewNoteMenuItems from 'osint/integration/OsintNewNoteMenuItems.svelte'
 import ThreadHistoryListView from './summaries/ThreadHistoryListView.svelte'
 import { createCommandHandler } from 'app/model/commands/Command'
@@ -441,6 +442,8 @@ function onViewContextMenu(event: MouseEvent) {
 		</PopUpButton>
 
 		<div class="spacer"></div>
+
+		<UpdateButton />
 
 		<System bind:detailsOpen={$systemMenuIsOpen}></System>
 	</nav>

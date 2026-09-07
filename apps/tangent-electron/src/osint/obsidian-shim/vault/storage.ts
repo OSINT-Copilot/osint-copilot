@@ -40,6 +40,15 @@ export interface VaultStorage {
     rename(from: string, to: string): Promise<void>;
     onChange(callback: (events: WatchEvent[]) => void): () => void;
     basePath(): string;
+    /**
+     * A URL the renderer can actually load this file from.
+     *
+     * Forwarded rather than built in vault.ts, because the right answer is a fact about
+     * the HOST -- Tangent serves its window from file://, a different shell might not --
+     * and because the encoding is subtle enough that a second copy would drift from it.
+     * See host/impl.tangent.ts for why every path segment is encoded individually.
+     */
+    resourceUrl(path: string): string;
 }
 
 /** In-memory backend used by tests. Mirrors the real backend's error contract exactly. */
@@ -152,6 +161,12 @@ export class MemoryStorage implements VaultStorage {
         return '/memory';
     }
 
+    /** Same shape as the real backend, so getResourcePath is testable without a host. */
+    resourceUrl(path: string): string {
+        const encoded = path.split('/').map(encodeURIComponent).join('/');
+        return `file:///memory/${encoded}`;
+    }
+
     /** Creates missing ancestor folders, matching mkdir -p on the real backend. */
     private ensureParents(path: string): void {
         const segments = path.split('/');
@@ -195,5 +210,6 @@ export function hostStorage(host: { vault: import('../../host/types').VaultHost 
         rename: (f, t) => host.vault.rename(f, t),
         onChange: (cb) => host.vault.onChange(cb),
         basePath: () => host.vault.basePath(),
+        resourceUrl: (p) => host.vault.resourceUrl(p),
     };
 }

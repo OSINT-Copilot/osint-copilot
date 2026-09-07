@@ -98,6 +98,14 @@ export interface VaultAISettings {
 	oidsfModalLayers: OIDSFModalLayers;
 	miroAccessToken: string;
 	miroLastBoardInput: string;
+	/**
+	 * Whether the first-run tour has been shown.
+	 *
+	 * In settings rather than localStorage so it travels with the vault: opening the same
+	 * case on a second machine should not replay the tour, and clearing browser storage
+	 * should not resurrect it.
+	 */
+	hasSeenWelcomeGuide: boolean;
 }
 
 export const DEFAULT_SETTINGS: VaultAISettings = {
@@ -151,4 +159,5 @@ export const DEFAULT_SETTINGS: VaultAISettings = {
 	oidsfModalLayers: { ...DEFAULT_OIDSF_MODAL_LAYERS },
 	miroAccessToken: "",
 	miroLastBoardInput: "",
+	hasSeenWelcomeGuide: false,
 };
