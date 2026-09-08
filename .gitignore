@@ -10,6 +10,7 @@ node_modules/
 **/.tangent/tangents/
 **/.tangent/Temp/
 **/.tangent/Generated/
+**/.tangent/generated/
 .obsidian
 
 # Plugin settings, written into whatever directory is opened as a vault. Ends up in
