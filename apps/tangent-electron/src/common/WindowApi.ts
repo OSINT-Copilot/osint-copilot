@@ -153,6 +153,11 @@ export default interface WindowAPI {
 		status(): Promise<LicenseStatus>
 		/** Verifies and, when good, stores the key. */
 		activate(key: string): Promise<LicenseStatus>
+		/**
+		 * Asks the dashboard again, ignoring the cached answer. For someone who has just
+		 * upgraded or topped up and should not have to restart to see it.
+		 */
+		refresh(): Promise<LicenseStatus>
 		/** Forgets the stored key and returns the resulting (unlicensed) status. */
 		clear(): Promise<LicenseStatus>
 	}

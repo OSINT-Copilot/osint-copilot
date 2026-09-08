@@ -254,6 +254,9 @@ const bridge: WindowApi = {
 		activate(key) {
 			return ipcRenderer.invoke('license', 'activate', key)
 		},
+		refresh() {
+			return ipcRenderer.invoke('license', 'refresh')
+		},
 		clear() {
 			return ipcRenderer.invoke('license', 'clear')
 		}
