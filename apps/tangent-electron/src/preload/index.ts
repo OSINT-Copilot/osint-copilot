@@ -318,6 +318,9 @@ const bridge: WindowApi = {
 			isWatching: () => ipcRenderer.invoke('osint:browse.isWatching'),
 			selectors: () => ipcRenderer.invoke('osint:browse.selectors'),
 			rescan: () => ipcRenderer.invoke('osint:browse.rescan'),
+			pivots: () => ipcRenderer.invoke('osint:browse.pivots'),
+			pivotTargets: selection => ipcRenderer.invoke('osint:browse.pivotTargets', selection),
+			onPivot: handler => on('osint:browse.pivot', handler),
 			release: token => ipcRenderer.invoke('osint:browse.release', token),
 			snapshot: webContentsId => ipcRenderer.invoke('osint:browse.snapshot', webContentsId)
 		},

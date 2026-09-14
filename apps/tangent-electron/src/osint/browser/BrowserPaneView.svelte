@@ -16,6 +16,7 @@
 import { onDestroy, onMount } from 'svelte'
 import { BrowseDocumentStore } from './browse-document'
 import { promoteCapture, promoteHit } from './capture-to-entity'
+import { fanOut } from './browse-commands'
 import { installShortcutRelay } from './shortcut-relay'
 import { vaultFileStore } from '../canvas/canvas-runtime'
 
@@ -82,6 +83,9 @@ let findings: Finding[] | null = null
 let checkError: string | null = null
 let showCheck = false
 
+let openedBy: any = null
+let pivotNote: string | null = null
+
 let watching = false
 let hits: any[] = []
 let hitsTimedOutOn: string | null = null
@@ -113,6 +117,7 @@ onMount(async () => {
 	try {
 		const doc = await store.load()
 		if (doc.profileId) wanted = doc.profileId
+		if (doc.openedBy) openedBy = doc.openedBy
 		if (doc.url) {
 			parkedUrl = doc.url
 			currentTitle = doc.title ?? ''
@@ -153,6 +158,25 @@ onMount(async () => {
 		hits = event.hits ?? []
 		hitsTimedOutOn = event.timedOutOn ?? null
 		promotedHits = new Set()
+	})
+
+	api?.osint?.browse?.onPivot?.(async (event: any) => {
+		// The message goes to the window, so only the pane the selection was made in acts.
+		if (event?.webContentsId !== webContentsId) return
+		try {
+			const { osintRuntime } = await import('../integration/bootstrap')
+			const vault = (osintRuntime() as any)?.plugin?.app?.vault
+			if (!vault) throw new Error('the vault is not ready')
+			const opened = await fanOut(vault, event.value, event.targets, {
+				url: currentUrl,
+				profileId: profile?.id,
+			})
+			pivotNote = `Opened ${opened.length} pane${opened.length === 1 ? '' : 's'} for `
+				+ `“${event.value}” — none of them loaded yet.`
+		}
+		catch (e) {
+			pivotNote = `Could not open the pivot: ${String((e as Error)?.message ?? e)}`
+		}
 	})
 
 	try {
@@ -457,6 +481,17 @@ async function runRealityCheck() {
 		fingerprint{profile?.proxy ? '' : ', and by your IP address'}.
 	</p>
 
+	{#if openedBy}
+		<p class="opened-by" data-testid="browse-opened-by">
+			Opened by a pivot on <strong>{openedBy.value}</strong>, from
+			<span class="from-url">{openedBy.fromUrl}</span>
+		</p>
+	{/if}
+
+	{#if pivotNote}
+		<p class="capture-note" data-testid="browse-pivot-note">{pivotNote}</p>
+	{/if}
+
 	{#if watching && (hits.length || hitsTimedOutOn || rescanSummary)}
 		<div class="hits" data-testid="browse-hits">
 			{#if hitsTimedOutOn}
@@ -608,6 +643,17 @@ async function runRealityCheck() {
 	flex: 1 1 auto;
 	width: 100%;
 	min-height: 0;
+}
+.opened-by {
+	margin: 0;
+	padding: 4px 8px;
+	font-size: 11px;
+	color: var(--deemphasizedTextColor, #888);
+	border-bottom: 1px solid var(--borderColor, rgba(128, 128, 128, 0.2));
+}
+.from-url {
+	font-family: var(--monospaceFontFamily, monospace);
+	word-break: break-all;
 }
 .hits {
 	max-height: 40%;

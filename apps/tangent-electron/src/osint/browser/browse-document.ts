@@ -24,6 +24,19 @@ export interface BrowseDocument {
 	 * worst failure this feature has.
 	 */
 	profileId?: string;
+	/**
+	 * Where this pane came from, when it was opened by a pivot rather than by hand.
+	 *
+	 * Provenance for the pane itself: four steps into an investigation it still says which
+	 * value, on which page, produced it. Without it a fan-out is eight tabs whose reason
+	 * for existing lives only in the analyst's memory.
+	 */
+	openedBy?: {
+		value: string;
+		pivotId: string;
+		fromUrl: string;
+		at: string;
+	};
 	[key: string]: unknown;
 }
 

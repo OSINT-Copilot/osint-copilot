@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { normalizeSourceUrl } from '../services/osint-confidence-engine'
 import { normaliseCaptureUrl } from '../../main/osint/browser/capture-index'
 import { EVIDENCE_FOLDER } from '../../main/osint/browser/capture'
+import { PIVOTS_VAULT_PATH } from '../../main/osint/browser/pivot-runtime'
 import { DEFAULT_EVIDENCE_FOLDER } from '../constants/vault-layout'
 
 /**
@@ -41,5 +42,14 @@ describe('main and the renderer agree on where evidence lives', () => {
         // Main writes captures there; the renderer resolves the Evidence entity's filePath
         // against it. Two spellings would mean an entity pointing at nothing.
         expect(EVIDENCE_FOLDER).toBe(DEFAULT_EVIDENCE_FOLDER)
+    })
+})
+
+describe('main and the registry view agree on where pivot overrides live', () => {
+    it('points the analyst at the file main actually reads', () => {
+        // The view tells the operator where to edit; main decides what it reads. Two
+        // spellings would send someone to write a file nothing loads.
+        const shownInTheView = 'OSINTCopilot/browsing/pivots.json'
+        expect(PIVOTS_VAULT_PATH).toBe(shownInTheView)
     })
 })

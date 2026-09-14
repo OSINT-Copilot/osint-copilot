@@ -6,7 +6,7 @@
  * before trying to navigate to it.
  */
 import { BROWSE_FILE_TYPE } from './browse-file-type';
-import { serializeBrowseDocument } from './browse-document';
+import { serializeBrowseDocument, type BrowseDocument } from './browse-document';
 import { vaultFileStore } from '../canvas/canvas-runtime';
 import { openIndexedVaultNode } from '../integration/open-view';
 import { DEFAULT_BROWSING_FOLDER } from '../constants/vault-layout';
@@ -49,11 +49,46 @@ export interface CreateBrowsePaneResult {
 	opened: boolean;
 }
 
-/** Writes an empty pane and navigates to it. */
+/** Writes a pane and navigates to it. */
 export async function createBrowsePane(
-	vault: MinimalVault, name = 'Browsing',
+	vault: MinimalVault, name = 'Browsing', document: BrowseDocument = {},
 ): Promise<CreateBrowsePaneResult> {
 	const path = await unusedPath(vault, name);
-	await vaultFileStore().write(path, serializeBrowseDocument({}));
+	await vaultFileStore().write(path, serializeBrowseDocument(document));
 	return { path, opened: await openWhenIndexed(path) };
+}
+
+/**
+ * Opens one pane per pivot destination.
+ *
+ * Each carries the address but does NOT load it: a pane whose document has a url comes up
+ * parked. So a fan-out costs nothing until the analyst opens one, and the selected value
+ * has not been handed to any of these sites merely by asking what could be asked.
+ *
+ * `openedBy` records what the pivot came from, so a pane four steps into an investigation
+ * still says which value on which page produced it.
+ */
+export async function fanOut(
+	vault: MinimalVault,
+	value: string,
+	targets: Array<{ pivotId: string, label: string, url: string }>,
+	from: { url: string, profileId?: string },
+): Promise<CreateBrowsePaneResult[]> {
+	const results: CreateBrowsePaneResult[] = [];
+	for (const target of targets) {
+		// Named after the destination rather than the value: a thread of eight panes all
+		// called "ada-lovelace" is unreadable, and the value is in the document anyway.
+		const name = `${target.label} — ${value}`.replace(/[\\/:*?"<>|]/g, '-').slice(0, 80);
+		results.push(await createBrowsePane(vault, name, {
+			url: target.url,
+			profileId: from.profileId,
+			openedBy: {
+				value,
+				pivotId: target.pivotId,
+				fromUrl: from.url,
+				at: new Date().toISOString(),
+			},
+		}));
+	}
+	return results;
 }

@@ -290,6 +290,25 @@ export default interface WindowAPI {
 			setWatching(value: boolean): Promise<boolean>
 			isWatching(): Promise<boolean>
 			selectors(): Promise<unknown[]>
+			/** The pivot directory: bundled entries with the operator's overrides merged in. */
+			pivots(): Promise<unknown[]>
+			pivotTargets(selection: string): Promise<{
+				value: string
+				kind: string
+				targets: Array<{ pivotId: string, label: string, url: string }>
+			}>
+			/**
+			 * A pivot was chosen in a guest's context menu. The destinations arrive here
+			 * unopened: the renderer creates PARKED panes, so nothing is requested until
+			 * the analyst asks for it.
+			 */
+			onPivot(handler: (event: {
+				/** The guest the selection was made in; the message goes to the window. */
+				webContentsId: number
+				value: string
+				kind: string
+				targets: Array<{ pivotId: string, label: string, url: string }>
+			}) => void): void
 			/** Re-runs the current watchlist over everything already captured. */
 			rescan(): Promise<Array<{
 				captureId: string

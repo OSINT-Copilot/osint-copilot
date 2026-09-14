@@ -24,6 +24,7 @@ import { configureProfileSession, findProfile, loadProfiles, partitionFor } from
 import { interpret, REALITY_CHECK_SNIPPET, type RealitySignals } from './reality-check'
 import { captureGuest } from './capture'
 import { isWatching, loadSelectors, rescan, setWatching } from './selector-runtime'
+import { loadPivots, showPivotMenu, targetsFor } from './pivot-runtime'
 import { parseCaptureIndex } from './capture-index'
 import { CAPTURE_INDEX_PATH } from './capture'
 import {
@@ -91,6 +92,12 @@ function hardenGuest(guest: Electron.WebContents, host: Electron.WebContents): v
 
 	// Where capture results are reported back to.
 	rememberGuestHost(guest.id, host)
+
+	// The only reliable source for "what did the analyst just highlight": a <webview>
+	// element takes no listeners, so the renderer never sees a selection inside a guest.
+	guest.on('context-menu', (_event, params) => {
+		void showPivotMenu(guest, host, params.selectionText ?? '')
+	})
 
 	// Downloads are not wired to anywhere yet; a silent write into the user's Downloads
 	// folder from a page they are investigating is not a good default.
@@ -225,6 +232,12 @@ handle('osint:browse.rescan', async () => {
 	}
 	return rescan(captures)
 })
+
+handle('osint:browse.pivots', () => loadPivots())
+
+/** What the menu would offer for a value, for callers that are not the context menu. */
+handle('osint:browse.pivotTargets', (_e, selection: unknown) =>
+	targetsFor(typeof selection === 'string' ? selection : ''))
 
 handle('osint:browse.setBudget', (_e, bytes: unknown) => {
 	if (typeof bytes === 'number') setCaptureBudgetBytes(bytes)
