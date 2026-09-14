@@ -313,6 +313,11 @@ const bridge: WindowApi = {
 			captureNow: webContentsId => ipcRenderer.invoke('osint:browse.captureNow', webContentsId),
 			setBudget: bytes => ipcRenderer.invoke('osint:browse.setBudget', bytes),
 			onCapture: handler => on('osint:browse.capture', handler),
+			onHits: handler => on('osint:browse.hits', handler),
+			setWatching: value => ipcRenderer.invoke('osint:browse.setWatching', value),
+			isWatching: () => ipcRenderer.invoke('osint:browse.isWatching'),
+			selectors: () => ipcRenderer.invoke('osint:browse.selectors'),
+			rescan: () => ipcRenderer.invoke('osint:browse.rescan'),
 			release: token => ipcRenderer.invoke('osint:browse.release', token),
 			snapshot: webContentsId => ipcRenderer.invoke('osint:browse.snapshot', webContentsId)
 		},

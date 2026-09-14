@@ -61,6 +61,8 @@ export interface CaptureRequest {
 	profileId: string
 	/** 0 means no limit. */
 	budgetBytes: number
+	/** The visible text of the page, as the selector matcher saw it. */
+	scanText?: string
 }
 
 async function readIndex(): Promise<CaptureIndex> {
@@ -143,6 +145,9 @@ export async function captureGuest(request: CaptureRequest): Promise<CaptureOutc
 
 	const title = guest.getTitle() ?? ''
 	const markdown = htmlToMarkdown(html, { sourceUrl: url })
+	// Derived from the same archive as everything else, so the text a selector matched is
+	// the text that was captured -- not a separate read of a page that has moved on.
+	const scanText = request.scanText ?? ''
 	const shot = await screenshot(guest)
 
 	const archiveBytes = Buffer.byteLength(mhtml, 'utf8')
@@ -167,6 +172,11 @@ export async function captureGuest(request: CaptureRequest): Promise<CaptureOutc
 	const files: CaptureRecord['files'] = {
 		mhtml: `${EVIDENCE_FOLDER}/${stem}.mhtml`,
 		markdown: `${EVIDENCE_FOLDER}/${stem}.md`,
+		// The exact text the watchlist was run against, kept so a re-scan feeds the matcher
+		// the same shape of input as the live scan did. Without it, adding a selector later
+		// and re-running it over history would silently be a different operation -- and a
+		// hit that appears on re-scan but not live, or the reverse, is not explainable.
+		text: `${EVIDENCE_FOLDER}/${stem}.txt`,
 	}
 
 	await writeStaged(files.mhtml, mhtml)
@@ -183,6 +193,8 @@ export async function captureGuest(request: CaptureRequest): Promise<CaptureOutc
 		'',
 		markdown,
 	].join('\n'))
+
+	await writeStaged(files.text!, scanText)
 
 	if (shot.png) {
 		files.screenshot = `${EVIDENCE_FOLDER}/${stem}.png`

@@ -15,7 +15,7 @@
  */
 import { onDestroy, onMount } from 'svelte'
 import { BrowseDocumentStore } from './browse-document'
-import { promoteCapture } from './capture-to-entity'
+import { promoteCapture, promoteHit } from './capture-to-entity'
 import { installShortcutRelay } from './shortcut-relay'
 import { vaultFileStore } from '../canvas/canvas-runtime'
 
@@ -82,6 +82,13 @@ let findings: Finding[] | null = null
 let checkError: string | null = null
 let showCheck = false
 
+let watching = false
+let hits: any[] = []
+let hitsTimedOutOn: string | null = null
+let promotedHits = new Set<string>()
+let rescanning = false
+let rescanSummary: string | null = null
+
 let armed = false
 let capturing = false
 let lastCapture: any = null
@@ -136,6 +143,24 @@ onMount(async () => {
 		else if (outcome?.status === 'over-budget') captureNote = outcome.reason
 		else captureNote = outcome?.reason ? `Not captured: ${outcome.reason}` : null
 	})
+
+	api?.osint?.browse?.onHits?.((event: any) => {
+		if (event?.webContentsId !== webContentsId) return
+		// A scan outlives the page it started on. Showing a late result under whatever is
+		// on screen now would file the previous page's findings against this address --
+		// the one way this feature could actively mislead an analyst.
+		if (event.url && event.url !== currentUrl) return
+		hits = event.hits ?? []
+		hitsTimedOutOn = event.timedOutOn ?? null
+		promotedHits = new Set()
+	})
+
+	try {
+		watching = await api?.osint?.browse?.isWatching?.() ?? false
+	}
+	catch {
+		watching = false
+	}
 
 	onViewReady?.()
 })
@@ -213,6 +238,11 @@ function onDidNavigate(event: any) {
 	parkedUrl = null
 	hasHistory = true
 	typedAddress = url
+	// Cleared on navigation, not just replaced when the next scan finishes: between the
+	// two, hits from the previous page would be sitting under a different address.
+	hits = []
+	hitsTimedOutOn = null
+	promotedHits = new Set()
 	store.record(url, currentTitle || undefined)
 }
 
@@ -288,6 +318,55 @@ async function promote() {
 	}
 }
 
+async function toggleWatching() {
+	watching = await api?.osint?.browse?.setWatching?.(!watching) ?? false
+}
+
+async function runRescan() {
+	rescanning = true
+	rescanSummary = null
+	try {
+		const results = await api?.osint?.browse?.rescan?.() ?? []
+		const total = results.reduce((sum: number, r: any) => sum + r.hits.length, 0)
+		rescanSummary = results.length
+			? `${total} hit${total === 1 ? '' : 's'} across ${results.length} captured page${results.length === 1 ? '' : 's'}`
+			: 'No hits in anything captured so far'
+	}
+	catch (e) {
+		rescanSummary = `Re-scan failed: ${String((e as Error)?.message ?? e)}`
+	}
+	finally {
+		rescanning = false
+	}
+}
+
+function hitKey(hit: any): string {
+	return `${hit.selectorId}:${hit.index}`
+}
+
+/**
+ * A hit is a proposal. A page can contain anything, including text chosen to put a
+ * plausible entity into someone's case, so nothing reaches the graph without this click.
+ */
+async function addHit(hit: any) {
+	try {
+		const { osintRuntime } = await import('../integration/bootstrap')
+		const entityManager = (osintRuntime() as any)?.plugin?.entityManager
+		if (!entityManager) throw new Error('the OSINT plugin is not ready')
+		await promoteHit(entityManager, {
+			match: hit.match,
+			label: hit.label,
+			context: hit.context,
+			entityType: hit.entityType,
+			page: { url: currentUrl, title: currentTitle },
+		})
+		promotedHits = new Set([...promotedHits, hitKey(hit)])
+	}
+	catch (e) {
+		promoteError = String((e as Error)?.message ?? e)
+	}
+}
+
 async function runRealityCheck() {
 	if (webContentsId == null || !profile) return
 	checking = true
@@ -349,6 +428,14 @@ async function runRealityCheck() {
 			disabled={webContentsId == null || capturing}
 			on:click={captureNow}>Capture</button>
 		<button
+			class="watch"
+			class:watching
+			data-testid="browse-watch"
+			title={watching
+				? 'Watching every page for your selectors. Click to stop.'
+				: 'Check every page against the investigation watchlist'}
+			on:click={toggleWatching}>{watching ? '◉ Watching' : '◎ Watch'}</button>
+		<button
 			class="arm"
 			class:armed
 			data-testid="browse-arm"
@@ -369,6 +456,37 @@ async function runRealityCheck() {
 		<strong>Not anonymity</strong> — sites can still link your profiles by browser
 		fingerprint{profile?.proxy ? '' : ', and by your IP address'}.
 	</p>
+
+	{#if watching && (hits.length || hitsTimedOutOn || rescanSummary)}
+		<div class="hits" data-testid="browse-hits">
+			{#if hitsTimedOutOn}
+				<p class="error">
+					The selector “{hitsTimedOutOn}” did not finish and was stopped. Its pattern
+					is probably backtracking; the rest of the watchlist did not run.
+				</p>
+			{/if}
+			{#each hits as hit (hitKey(hit))}
+				<div class="hit">
+					<div class="hit-head">
+						<span class="hit-label">{hit.label}</span>
+						<code class="hit-match">{hit.match}</code>
+						{#if promotedHits.has(hitKey(hit))}
+							<span class="promoted">Added</span>
+						{:else}
+							<button on:click={() => addHit(hit)}>Add</button>
+						{/if}
+					</div>
+					<p class="hit-context">{hit.context}</p>
+				</div>
+			{/each}
+			<div class="hit-foot">
+				<button disabled={rescanning} on:click={runRescan}>
+					{rescanning ? 'Re-scanning…' : 'Re-scan captured pages'}
+				</button>
+				{#if rescanSummary}<span class="muted">{rescanSummary}</span>{/if}
+			</div>
+		</div>
+	{/if}
 
 	{#if captureNote}
 		<div class="capture-note" data-testid="browse-capture-note">
@@ -491,6 +609,40 @@ async function runRealityCheck() {
 	width: 100%;
 	min-height: 0;
 }
+.hits {
+	max-height: 40%;
+	overflow-y: auto;
+	padding: 6px 8px;
+	font-size: 12px;
+	border-bottom: 1px solid var(--borderColor, rgba(128, 128, 128, 0.3));
+	background: var(--noteBackgroundColor, rgba(128, 128, 128, 0.06));
+}
+.hit { margin-bottom: 6px; }
+.hit-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.hit-label { font-weight: 600; }
+.hit-match {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.hit-context {
+	margin: 2px 0 0;
+	color: var(--deemphasizedTextColor, #888);
+	line-height: 1.35;
+}
+.hit-foot {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding-top: 4px;
+}
+.watch.watching { color: #1971c2; font-weight: 600; }
 .capture-note {
 	display: flex;
 	align-items: center;

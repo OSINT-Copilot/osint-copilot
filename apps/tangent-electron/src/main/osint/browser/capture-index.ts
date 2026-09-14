@@ -26,7 +26,7 @@ export interface CaptureRecord {
 	/** Hash of the document alone, so a page that only changed its subresources dedupes. */
 	domHash: string
 	profileId: string
-	files: { mhtml: string, markdown: string, screenshot?: string }
+	files: { mhtml: string, markdown: string, screenshot?: string, text?: string }
 	bytes: number
 	/** Present when a screenshot could not be taken; recorded rather than silently absent. */
 	screenshotFailure?: string

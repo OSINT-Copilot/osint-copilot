@@ -37,6 +37,21 @@ export interface BrowseProfile {
 	proxy?: string
 }
 
+/**
+ * One thing a watchlist found on a page.
+ *
+ * A PROPOSAL, never a fact: a page can contain anything, including text chosen to put a
+ * plausible entity into someone's case. Nothing reaches the graph without the analyst.
+ */
+export interface SelectorHit {
+	selectorId: string
+	label: string
+	match: string
+	index: number
+	context: string
+	entityType?: string
+}
+
 /** One captured page: the archive, its rendering, and what attests to them. */
 export interface CaptureRecord {
 	id: string
@@ -263,6 +278,25 @@ export default interface WindowAPI {
 			captureNow(webContentsId: number): Promise<CaptureOutcome>
 			setBudget(bytes: number): Promise<number>
 			onCapture(handler: (event: { webContentsId: number, outcome: CaptureOutcome }) => void): void
+			onHits(handler: (event: {
+				webContentsId: number
+				/** The address the text was read from; compare before displaying. */
+				url: string
+				hits: SelectorHit[]
+				/** Names the pattern that had to be killed, so the analyst can fix it. */
+				timedOutOn?: string
+			}) => void): void
+			/** Watching is per investigation, and independent of whether capture is armed. */
+			setWatching(value: boolean): Promise<boolean>
+			isWatching(): Promise<boolean>
+			selectors(): Promise<unknown[]>
+			/** Re-runs the current watchlist over everything already captured. */
+			rescan(): Promise<Array<{
+				captureId: string
+				url: string
+				title: string
+				hits: SelectorHit[]
+			}>>
 			realityCheck(webContentsId: number, profileId: string): Promise<{
 				profile: BrowseProfile
 				findings: Array<{

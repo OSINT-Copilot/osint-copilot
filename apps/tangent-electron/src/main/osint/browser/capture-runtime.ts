@@ -12,6 +12,7 @@ import Logger from 'js-logger'
 import { partitionForToken } from './attach-guard'
 import { captureGuest, type CaptureOutcome } from './capture'
 import { PARTITION_PREFIX } from './profiles'
+import { extractText, isWatching, scanGuest } from './selector-runtime'
 
 /**
  * How long the page must be quiet before it is worth archiving.
@@ -88,30 +89,61 @@ export function cancelCapture(webContentsId: number): void {
  */
 export function scheduleCapture(guest: Electron.WebContents): void {
 	const id = guest.id
-	if (!isArmed(guestProfile(id))) return
+	// The two toggles are independent, and share one settle. Watching without arming is the
+	// common case -- capture is off by default -- and a matcher fed only from captured text
+	// would therefore find nothing almost all of the time.
+	if (!isArmed(guestProfile(id)) && !isWatching()) return
 
 	cancelCapture(id)
 	pending.set(id, setTimeout(() => {
 		pending.delete(id)
-		void runCapture(guest)
+		void runSettledWork(guest)
 	}, SETTLE_MS))
 }
 
-async function runCapture(guest: Electron.WebContents): Promise<void> {
+async function runSettledWork(guest: Electron.WebContents): Promise<void> {
 	if (guest.isDestroyed()) return
 	const id = guest.id
+	const armed = isArmed(guestProfile(id))
+	let scanText = ''
+
+	if (isWatching()) {
+		try {
+			const result = await scanGuest(guest)
+			scanText = result.text
+			// Reported even when EMPTY. Only reporting hits leaves the previous page's
+			// findings on screen, which attributes them to whatever the analyst is looking
+			// at now -- the one way this feature could actively mislead someone.
+			reportHits(id, result.url, result.hits, result.timedOutOn)
+		}
+		catch (e) {
+			Logger.warn('[osint] selector scan failed:', e)
+		}
+	}
+	else if (armed) {
+		// Read even when not watching, so a capture carries the text a LATER watchlist can
+		// be re-run over. Captured evidence with no readable text is evidence you cannot
+		// search once you learn what you were looking for.
+		scanText = await extractText(guest)
+	}
+
+	if (!armed || guest.isDestroyed()) return
+
 	try {
-		const outcome = await captureGuest({
-			guest,
-			profileId: guestProfile(id),
-			budgetBytes,
-		})
-		report(id, outcome)
+		report(id, await captureGuest({ guest, profileId: guestProfile(id), budgetBytes, scanText }))
 	}
 	catch (e) {
 		Logger.warn('[osint] capture failed:', e)
 		report(id, { status: 'skipped', reason: String((e as Error)?.message ?? e) })
 	}
+}
+
+function reportHits(
+	webContentsId: number, url: string, hits: unknown[], timedOutOn?: string,
+): void {
+	const host = guestHosts.get(webContentsId)
+	if (!host || host.isDestroyed()) return
+	host.send('osint:browse.hits', { webContentsId, url, hits, timedOutOn })
 }
 
 function report(webContentsId: number, outcome: CaptureOutcome): void {

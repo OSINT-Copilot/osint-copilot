@@ -88,3 +88,41 @@ export async function promoteCapture(
 		},
 	);
 }
+
+export interface PromotableHit {
+	match: string;
+	label: string;
+	context: string;
+	entityType?: string;
+	page: { url: string, title: string, capturedAt?: string };
+}
+
+/**
+ * Creates an entity from a watchlist hit.
+ *
+ * Marked `inferred: true` and left at `unverified` confidence on purpose. A selector hit
+ * says "this string appeared on this page" and nothing more -- not that it is true, not
+ * that it belongs to the target. The rationale carries the surrounding text so the next
+ * person to read the note can judge it without going back to the page.
+ */
+export async function promoteHit(
+	entityManager: EntityManagerLike, hit: PromotableHit,
+): Promise<Entity> {
+	const capturedAt = hit.page.capturedAt ?? new Date().toISOString();
+	const type = (hit.entityType as EntityType) ?? EntityType.Text;
+	return entityManager.createEntity(
+		type,
+		{ name: hit.match, title: hit.match, description: `Found on ${hit.page.url}` },
+		{
+			skipAutoGeocode: true,
+			osint_captured_at: capturedAt,
+			osint_sources: [{
+				source_url: hit.page.url,
+				inferred: true,
+				rationale: `Watchlist "${hit.label}" matched on a page opened in a browsing pane. `
+					+ `Context: ${hit.context}`,
+				captured_at: capturedAt,
+			}],
+		},
+	);
+}

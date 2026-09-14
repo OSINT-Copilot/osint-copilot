@@ -12,6 +12,7 @@ import { randomUUID } from 'crypto'
 import { app, session, webContents } from 'electron'
 import Logger from 'js-logger'
 
+import * as vaultFs from '../node/vault'
 import { handle } from '../guarded-ipc'
 import {
 	guardAttach,
@@ -22,6 +23,9 @@ import {
 import { configureProfileSession, findProfile, loadProfiles, partitionFor } from './profiles'
 import { interpret, REALITY_CHECK_SNIPPET, type RealitySignals } from './reality-check'
 import { captureGuest } from './capture'
+import { isWatching, loadSelectors, rescan, setWatching } from './selector-runtime'
+import { parseCaptureIndex } from './capture-index'
+import { CAPTURE_INDEX_PATH } from './capture'
 import {
 	armProfile, cancelCapture, captureBudgetBytes, forgetGuest, guestProfile, isArmed,
 	partitionOwner, rememberGuest, rememberGuestHost, scheduleCapture, setCaptureBudgetBytes,
@@ -190,6 +194,38 @@ handle('osint:browse.isArmed', (_e, token: unknown) => {
 })
 
 /** Capture this page now, whether or not the profile is armed. */
+/**
+ * Watching is per investigation, not per profile, and independent of capture.
+ *
+ * Someone can be looking for a phone number across every identity they browse as, without
+ * writing any of those pages down -- and someone recording everything may not yet know
+ * what they are looking for.
+ */
+handle('osint:browse.setWatching', (_e, value: unknown) => {
+	setWatching(value === true)
+	return isWatching()
+})
+
+handle('osint:browse.isWatching', () => isWatching())
+handle('osint:browse.selectors', () => loadSelectors())
+
+/**
+ * Re-runs the current watchlist over everything already captured.
+ *
+ * The point of a watchlist is that you learn what matters partway through; one that only
+ * looked forward would be the less useful half of the feature.
+ */
+handle('osint:browse.rescan', async () => {
+	let captures: any[] = []
+	try {
+		captures = parseCaptureIndex(await vaultFs.read(CAPTURE_INDEX_PATH)).captures
+	}
+	catch {
+		return []
+	}
+	return rescan(captures)
+})
+
 handle('osint:browse.setBudget', (_e, bytes: unknown) => {
 	if (typeof bytes === 'number') setCaptureBudgetBytes(bytes)
 	return captureBudgetBytes()
