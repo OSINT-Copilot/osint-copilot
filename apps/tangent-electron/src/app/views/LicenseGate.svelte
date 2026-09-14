@@ -6,6 +6,10 @@
  * yet -- no vault is opened, no OSINT plugin starts, no file is read. The check itself
  * happens in main (src/main/license.ts); this only collects a key and reports what main
  * says about it.
+ *
+ * One field takes both kinds of key -- a subscription key from the dashboard, or an
+ * offline `OSINT-...` key -- because asking the user which one they have would be asking
+ * them to know something we can see for ourselves. main tells them apart by shape.
  */
 import type WindowApi from 'common/WindowApi'
 import type { LicenseStatus } from 'common/license'
@@ -73,7 +77,7 @@ function onKeydown(event: KeyboardEvent) {
 			class:invalid={isRefusal}
 			bind:value={key}
 			on:keydown={onKeydown}
-			placeholder="OSINT-…"
+			placeholder="Paste your licence key"
 			spellcheck="false"
 			autocapitalize="off"
 			autocorrect="off"
@@ -94,8 +98,10 @@ function onKeydown(event: KeyboardEvent) {
 		</button>
 
 		<p class="help">
-			Your key was sent with your purchase. It works offline and is stored on this
-			computer only.
+			Find your key on your dashboard at
+			<a href="https://osint-copilot.com/dashboard/" target="_blank" rel="noreferrer noopener"
+				>osint-copilot.com</a>, under Licence. Offline keys beginning
+			<code>OSINT-</code> go in the same box.
 		</p>
 	</div>
 </main>
@@ -178,5 +184,13 @@ h1 {
 	font-size: .75em;
 	line-height: 1.5;
 	color: var(--heavilyDeemphasizedTextColor, var(--deemphasizedTextColor));
+
+	a {
+		color: var(--accentTextColor);
+	}
+
+	code {
+		font-family: var(--codeFontFamily, monospace);
+	}
 }
 </style>

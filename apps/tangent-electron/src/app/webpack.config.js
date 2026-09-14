@@ -114,7 +114,12 @@ module.exports = {
 		})
 	],
 	// Good source maps in prod, faster-ish maps in dev: https://webpack.js.org/configuration/devtool/#devtool
-	devtool: prod ? 'nosources-source-map' : 'eval-source-map',
+	//
+	// NOT an `eval-*` devtool in dev. This is the renderer bundle, and the page now carries
+	// a Content-Security-Policy without 'unsafe-eval' -- eval-based source maps wrap every
+	// module in eval() and the whole app fails to start. Rebuilds are a little slower;
+	// running dev under a policy that does not match production is worse.
+	devtool: prod ? 'nosources-source-map' : 'cheap-module-source-map',
 	devServer: {
 		hot: true
 	}

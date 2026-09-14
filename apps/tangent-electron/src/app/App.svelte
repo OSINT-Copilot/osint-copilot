@@ -17,6 +17,7 @@ import { mediaQueryStore } from './utils/svelte'
 import SvgIcon from './views/smart-icons/SVGIcon.svelte'
 import LicenseGate from './views/LicenseGate.svelte'
 import type { LicenseStatus } from 'common/license'
+import { setLicenseStatus } from './model/license'
 
 import { dropAllTooltips, tooltips } from './utils/tooltips'
 import Tooltip from './utils/Tooltip.svelte'
@@ -203,21 +204,30 @@ let licenseStatus: LicenseStatus = null
 $: licensed = licenseStatus?.valid === true
 
 api.license.status().then(status => {
-	licenseStatus = status
+	applyLicense(status)
 	if (status.valid) loadDefaultWorkspace()
 })
 .catch(e => {
 	console.error('Could not check the licence', e)
 	// Fail closed. A check that cannot run must not become a way past the gate.
-	licenseStatus = {
+	applyLicense({
 		valid: false,
 		reason: 'missing',
 		message: 'The licence could not be checked. Please restart OSINT Copilot.'
-	}
+	})
 })
 
-function onLicensed(status: LicenseStatus) {
+/**
+ * One place that sets both, so the store and the gate can never disagree about whether
+ * the app is licensed -- which would show the workspace with every feature switched off.
+ */
+function applyLicense(status: LicenseStatus) {
 	licenseStatus = status
+	setLicenseStatus(status)
+}
+
+function onLicensed(status: LicenseStatus) {
+	applyLicense(status)
 	loadDefaultWorkspace()
 }
 

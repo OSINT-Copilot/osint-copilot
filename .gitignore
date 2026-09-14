@@ -10,6 +10,7 @@ node_modules/
 **/.tangent/tangents/
 **/.tangent/Temp/
 **/.tangent/Generated/
+**/.tangent/generated/
 .obsidian
 
 # Plugin settings, written into whatever directory is opened as a vault. Ends up in
@@ -19,3 +20,7 @@ node_modules/
 # Licence signing key. NEVER commit: anyone holding it can mint valid licence keys.
 .license-signing-key.pem
 *.license-signing-key.pem
+
+# Playwright failure artifacts (screenshots, traces, error context).
+# Only ever appear when the e2e suite actually runs, which on Linux it now can.
+test-results/

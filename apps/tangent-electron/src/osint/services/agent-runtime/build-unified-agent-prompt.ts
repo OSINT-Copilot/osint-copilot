@@ -16,7 +16,8 @@ const JSON_CONTRACT = `You MUST respond with a single JSON object ONLY (no markd
     { "action": "upsert_script", "relativePath": "tools/example.py", "content": "# full file body as plain text" },
     { "action": "delete_script", "relativePath": "tools/old_helper.sh" }
   ],
-  "enricher_invocations": [ { "enricher_id": "slug_matching_enricher_json", "query": "text passed to the enricher URL/body templates (e.g. email, domain, natural language)" } ]
+  "enricher_invocations": [ { "enricher_id": "slug_matching_enricher_json", "query": "text passed to the enricher URL/body templates (e.g. email, domain, natural language)" } ],
+  "browse_proposals": [ { "url": "https://example.com/page", "reason": "why this page is worth the user's time" } ]
 }
 
 Rules for graph_operations:
@@ -36,13 +37,21 @@ Rules for custom_vault_operations:
 - NEVER put secrets, API keys, or tokens in answer_markdown or retrieval_hits; use put_credentials for raw secrets and bearer_vault / header_vault / query_vault with vaultRelativePath inside upsert_enricher.spec (never embed raw keys in spec JSON).
 - relativePath must be a relative path with forward slashes only (no ".." segments); files are created under the vault credentials folder.
 - upsert_skill writes a planner-invokable markdown skill under the vault skills folder (skill_kind vault, YAML frontmatter).
-- upsert_enricher writes one validated *.json file under the vault enrichers folder (same slug as id). Pair with upsert_skill when adding a new API tool so enricher_invocations can resolve after the user applies changes. Invalid specs are dropped server-side — follow the enricher schema: status "active" and enabled true if the user should run it immediately via enricher_invocations; allowedDomains must include every API hostname used in request.urlTemplate (not only a documentation site); urlTemplate and bodyTemplate use Mustache-style placeholders {{query}} and {{attachments_context}}: the executor applies URL encoding (encodeURIComponent) to those values in urlTemplate only; bodyTemplate receives raw strings for JSON. HTTP runs in the app's main process (no browser tab, no user browser cookies); do not design specs that only work behind a logged-in browser session unless the API supports token/header auth you put in vault credentials.
+- upsert_enricher writes one validated *.json file under the vault enrichers folder (same slug as id). Pair with upsert_skill when adding a new API tool so enricher_invocations can resolve after the user applies changes. Invalid specs are dropped server-side — follow the enricher schema: status "active" and enabled true if the user should run it immediately via enricher_invocations; allowedDomains must include every API hostname used in request.urlTemplate (not only a documentation site); urlTemplate and bodyTemplate use Mustache-style placeholders {{query}} and {{attachments_context}}: the executor applies URL encoding (encodeURIComponent) to those values in urlTemplate only; bodyTemplate receives raw strings for JSON. HTTP runs in the app's main process (no browser tab, no user browser cookies); do not design specs that only work behind a logged-in browser session unless the API supports token/header auth you put in vault credentials. When a source genuinely requires a logged-in browser, use browse_proposals instead: it opens browsing panes the user can load in their own profile, rather than you fetching the page on their behalf.
 - When fixing or replacing an enricher, every upsert_enricher object MUST include the complete spec in the "spec" field (all fields needed for a working file). Do not describe the new JSON only in answer_markdown — the chat approval UI and Apply step use custom_vault_operations[].spec.
 - delete_enricher removes enrichers/{id}.json when the user asks to remove an enricher spec.
 - upsert_script / delete_script target **text scripts** under the vault **scripts** folder (Settings → Scripts folder; default OSINTCopilot/custom/scripts). relativePath is only the path **inside** that folder: forward slashes, no ".." segments, and the filename must use an allowed text extension (e.g. py, sh, ts, md, json — not binary types).
 - For upsert_script you MUST include the **entire file** in the "content" string. Do not store secrets or API keys in script content — use put_credentials and enricher *_vault auth instead.
 - Do not claim the app will **run** or execute proposed scripts; the user reviews the side-by-side diff and applies writes, then runs code in their own terminal, Claude Code, or Codex if they choose.
 - delete_script removes the file at scripts_folder/relativePath when the user asks to delete a script.
+
+Rules for browse_proposals:
+- Each entry opens a browsing pane in the app. The pane carries the address and is **not loaded**: nothing is requested until the user chooses to open it. So proposing a page costs them nothing and reveals nothing to that site.
+- This is the right tool when a source needs a logged-in browser session, when you want the user to SEE something rather than be told about it, or when a page is worth checking but you should not be the one checking it.
+- http/https only. Give each a short "reason" — the user is deciding which of these to spend attention on.
+- At most 8, and fewer is better: eight unloaded panes is a reading list, twenty is clutter.
+- Do NOT describe these as pages you visited, read, or retrieved. You have not. Say what you expect to be there and why it is worth a look.
+- Use an empty array when there is nothing worth opening.
 
 Rules for enricher_invocations:
 - For HTTP APIs the user has defined as JSON files in the vault **enrichers** folder (active enrichers), list calls here. The app runs them from its main process (same class of outbound HTTP as its other features — not a separate Node server, not the user's browser, so CORS as in a web page does not apply the same way; still use public/token APIs suitable for server-style requests).

@@ -88,4 +88,33 @@ describe('exec guard', () => {
 	it('is not fooled by a path that merely starts with the workspace name', () => {
 		expect(() => assertCwdPermitted(workspace + '-evil')).toThrow(ExecNotPermittedError)
 	})
+
+	// Settings live in the vault, so anything that can write a note can write cliPath.
+	// These two are what stops that from being a way to run arbitrary code.
+
+	it('does not let a configured path widen the set to every binary of that name', async () => {
+		writeSettings({ customAgentRuntimes: [{ cliPath: '/opt/vendor/sh' }] })
+		// The configured path itself still runs...
+		await expect(assertExecPermitted('/opt/vendor/sh')).resolves.toBeUndefined()
+		// ...but naming it must not make /bin/sh permitted by basename.
+		await expect(assertExecPermitted('/bin/sh')).rejects.toThrow(ExecNotPermittedError)
+	})
+
+	it('still permits a configured bare name under both spellings', () => {
+		writeSettings({ claudeCodeCliPath: 'my-runtime' })
+		return Promise.all([
+			expect(assertExecPermitted('my-runtime')).resolves.toBeUndefined(),
+			expect(assertExecPermitted('/usr/local/bin/my-runtime')).resolves.toBeUndefined(),
+		])
+	})
+
+	it('refuses a CLI path that points inside the vault', async () => {
+		// "Write a script into the notes, then point the runtime at it" would otherwise
+		// be a complete chain needing nothing already on the machine.
+		const payload = path.join(workspace, 'payload.sh')
+		fs.writeFileSync(payload, '#!/bin/sh\n')
+		writeSettings({ customAgentRuntimes: [{ cliPath: payload }] })
+		await expect(assertExecPermitted(payload)).rejects.toThrow(ExecNotPermittedError)
+		await expect(assertExecPermitted('payload.sh')).rejects.toThrow(ExecNotPermittedError)
+	})
 })

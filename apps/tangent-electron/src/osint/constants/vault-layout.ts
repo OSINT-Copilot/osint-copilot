@@ -33,6 +33,23 @@ export const GRAPH_NODE_POSITIONS_FILE = `${OSINT_COPILOT_VAULT_ROOT}/graph-posi
 export const DEFAULT_CANVAS_FOLDER = `${OSINT_COPILOT_VAULT_ROOT}/boards`;
 
 /**
+ * Browsing panes (`.osintbrowse`). One file per tab, so a thread can hold several and each
+ * restores with the session. Visible for the same reason boards are: it is analyst
+ * content, and an analyst should be able to see and delete what their tabs remember.
+ */
+export const DEFAULT_BROWSING_FOLDER = `${OSINT_COPILOT_VAULT_ROOT}/browsing`;
+
+/**
+ * Captured pages: the MHTML archive, a screenshot, and a markdown rendering of each.
+ *
+ * Already used as a literal by chat-view for pasted attachments; named here because
+ * capture writes to it from the main process too. Main keeps its own copy of the string
+ * (EVIDENCE_FOLDER in main/osint/browser/capture.ts) because common/ and main/ cannot
+ * resolve `osint/*`; a test pins the two together.
+ */
+export const DEFAULT_EVIDENCE_FOLDER = `${OSINT_COPILOT_VAULT_ROOT}/Evidence`;
+
+/**
  * FollowTheMoney-style parallel export: one `.yaml` per entity/connection, synced from notes.
  * Lives under the configured entity base path, e.g. `OSINTCopilot/graph-yaml/`.
  */

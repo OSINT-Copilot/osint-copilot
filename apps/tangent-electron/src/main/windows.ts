@@ -30,7 +30,14 @@ export function createWindow(assignedWorkspace?: string) {
 		minWidth: 100,
 		minHeight: 100,
 		webPreferences: {
-			preload: path.join(__dirname, 'preload.js')
+			preload: path.join(__dirname, 'preload.js'),
+			// Browsing panes render live web pages in <webview> guests. Enabling the tag
+			// is only safe because main refuses every attach it did not sanction: see
+			// main/osint/browser/attach-guard.ts, which overwrites the guest's
+			// preferences and assigns its partition, and rejects unknown session tokens.
+			// The two must stay together -- the flag without the guard would let anything
+			// running in this renderer create a guest with a preload of its choosing.
+			webviewTag: true
 		},
 		show: false,
 		autoHideMenuBar: getTitleBarStyle() == 'default',
