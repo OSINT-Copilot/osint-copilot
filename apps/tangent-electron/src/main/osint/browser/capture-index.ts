@@ -30,6 +30,11 @@ export interface CaptureRecord {
 	bytes: number
 	/** Present when a screenshot could not be taken; recorded rather than silently absent. */
 	screenshotFailure?: string
+	/**
+	 * True when the image covers the whole document, false when only the visible viewport
+	 * could be captured. Those are different pieces of evidence and the record says which.
+	 */
+	screenshotFullPage?: boolean
 }
 
 export interface CaptureIndex {

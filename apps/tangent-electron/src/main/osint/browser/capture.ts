@@ -12,10 +12,14 @@
  * as one.
  */
 import { createHash, randomUUID } from 'crypto'
+import * as fs from 'fs/promises'
+import * as os from 'os'
+import * as nodePath from 'path'
 
 import * as vaultFs from '../node/vault'
 import { extractMainDocument } from './mhtml'
 import { htmlToMarkdown } from './html-to-markdown-node'
+import { renderArchive } from './capture-surface'
 import {
 	addCapture, checkBudget, isDuplicate, normaliseCaptureUrl,
 	parseCaptureIndex, serialiseCaptureIndex,
@@ -100,6 +104,46 @@ async function writeStaged(path: string, data: string | Uint8Array): Promise<voi
 interface ScreenshotResult {
 	png?: Buffer
 	reason?: string
+	/** False when only the visible viewport could be captured. Recorded, not assumed. */
+	fullPage?: boolean
+}
+
+/**
+ * The page as an image.
+ *
+ * Preferred: the whole document, rendered off-screen from the archive that was just taken,
+ * so the image and the sha256 describe the same instant and the site is not asked for
+ * anything a second time.
+ *
+ * Fallback: the visible viewport of the live pane. Worse evidence -- it stops where the
+ * window stopped -- but better than a capture with no image at all, and the record says
+ * which of the two it got.
+ */
+async function pageImage(guest: Electron.WebContents, mhtml: string): Promise<ScreenshotResult> {
+	// The archive has to be a file for the renderer to load it, and it must not be the
+	// vault copy: the budget has not been checked yet, and nothing should land in the
+	// vault that might then be refused.
+	let staging: string | null = null
+	try {
+		staging = nodePath.join(await fs.mkdtemp(nodePath.join(os.tmpdir(), 'osint-render-')), 'page.mhtml')
+		await fs.writeFile(staging, mhtml, 'utf8')
+		const rendered = await renderArchive(staging)
+		if (rendered.png) return { png: rendered.png, fullPage: true }
+
+		const viewport = await screenshot(guest)
+		return viewport.png
+			? { ...viewport, fullPage: false }
+			: { reason: `full page: ${rendered.reason}; viewport: ${viewport.reason}` }
+	}
+	catch (e) {
+		return { reason: String((e as Error)?.message ?? e) }
+	}
+	finally {
+		if (staging) {
+			await fs.rm(nodePath.dirname(staging), { recursive: true, force: true })
+				.catch(() => { /* a temp directory that outlives us is not worth failing over */ })
+		}
+	}
 }
 
 async function screenshot(guest: Electron.WebContents): Promise<ScreenshotResult> {
@@ -148,7 +192,7 @@ export async function captureGuest(request: CaptureRequest): Promise<CaptureOutc
 	// Derived from the same archive as everything else, so the text a selector matched is
 	// the text that was captured -- not a separate read of a page that has moved on.
 	const scanText = request.scanText ?? ''
-	const shot = await screenshot(guest)
+	const shot = await pageImage(guest, mhtml)
 
 	const archiveBytes = Buffer.byteLength(mhtml, 'utf8')
 	const markdownBytes = Buffer.byteLength(markdown, 'utf8')
@@ -216,6 +260,10 @@ export async function captureGuest(request: CaptureRequest): Promise<CaptureOutc
 	// Recorded, not omitted: a capture with no screenshot should say why, or the gap reads
 	// as a page that looked blank.
 	if (shot.reason) record.screenshotFailure = shot.reason
+	// Recorded either way: evidence that stops where the window stopped is a different
+	// thing from evidence of the whole page, and the difference should not be guessed at
+	// later from the image's dimensions.
+	if (shot.png) record.screenshotFullPage = shot.fullPage === true
 
 	await writeStaged(CAPTURE_INDEX_PATH, serialiseCaptureIndex(addCapture(index, record)))
 	return { status: 'captured', record }

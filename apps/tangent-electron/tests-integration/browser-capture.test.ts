@@ -106,6 +106,20 @@ test('a captured page becomes an archive, a reading, and a hash that all describ
 		// A relative link in captured evidence is a dangling reference.
 		expect(markdown).toContain(`${server.base}/relative/link`)
 
+		// --- the image is the whole page, not the window ---------------------------------
+		// Rendered off-screen from the archive rather than from the live pane: a full-page
+		// capture needs a device-metrics override, and running that on the analyst's own
+		// pane visibly reflows what they are reading. Rendering the archive also means the
+		// site is not asked for anything twice, and the image and the hash describe the
+		// same instant.
+		const screenshot = files.find(f => f.endsWith('.png'))
+		expect(screenshot, 'no screenshot was written').toBeTruthy()
+
+		const indexPathEarly = path.join(workspace, 'OSINTCopilot', 'browsing', 'captures.json')
+		const early = JSON.parse(fs.readFileSync(indexPathEarly, 'utf8')).captures[0]
+		expect(early.screenshotFailure).toBeUndefined()
+		expect(early.screenshotFullPage, 'fell back to a viewport-only screenshot').toBe(true)
+
 		// --- and the index knows about it ----------------------------------------------
 		const indexPath = path.join(workspace, 'OSINTCopilot', 'browsing', 'captures.json')
 		const index = JSON.parse(fs.readFileSync(indexPath, 'utf8'))
