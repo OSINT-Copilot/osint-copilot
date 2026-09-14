@@ -2,6 +2,7 @@ import type { AIOperation, OsintSourceInput } from '../../entities/types';
 import { normalizeCustomVaultOperations } from '../custom-vault-operations';
 import {
     AGENT_TURN_SCHEMA_VERSION,
+    type AgentBrowseProposal,
     type AgentEnricherInvocation,
     type AgentRetrievalHit,
     type AgentTurnDiagnostics,
@@ -147,6 +148,36 @@ function normalizeHits(raw: unknown): AgentRetrievalHit[] {
  */
 export function parseAgentTurnResult(raw: string, provider: AgentRuntimeId): AgentTurnResult {
     const excerpt = raw.length > 2000 ? raw.slice(0, 2000) + '…' : raw;
+/**
+ * Pages the assistant proposed opening.
+ *
+ * http(s) only, and capped. These become parked panes, so a bad entry costs a file rather
+ * than a request -- but a model that emitted forty would still fill the thread, and a
+ * `file:` or `javascript:` url has no business being proposed at all.
+ */
+const MAX_BROWSE_PROPOSALS = 8;
+
+function normalizeBrowseProposals(value: unknown): AgentBrowseProposal[] {
+    if (!Array.isArray(value)) return [];
+    const proposals: AgentBrowseProposal[] = [];
+    const seen = new Set<string>();
+    for (const entry of value) {
+        if (!entry || typeof entry !== 'object') continue;
+        const record = entry as Record<string, unknown>;
+        const url = typeof record.url === 'string' ? record.url.trim() : '';
+        if (!/^https?:\/\//i.test(url) || seen.has(url)) continue;
+        seen.add(url);
+        proposals.push({
+            url,
+            reason: typeof record.reason === 'string' && record.reason.trim()
+                ? record.reason.trim().slice(0, 300)
+                : undefined,
+        });
+        if (proposals.length >= MAX_BROWSE_PROPOSALS) break;
+    }
+    return proposals;
+}
+
     const jsonStr = extractJsonObject(raw);
     if (!jsonStr) {
         return {
@@ -180,6 +211,9 @@ export function parseAgentTurnResult(raw: string, provider: AgentRuntimeId): Age
         const enricherInvocations = normalizeEnricherInvocations(
             data.enricher_invocations ?? data.enricherInvocations,
         );
+        const browseProposals = normalizeBrowseProposals(
+            data.browse_proposals ?? data.browseProposals,
+        );
         const diag: AgentTurnDiagnostics = {
             provider,
             raw_excerpt: excerpt,
@@ -194,6 +228,7 @@ export function parseAgentTurnResult(raw: string, provider: AgentRuntimeId): Age
             graph_operations: graphOps,
             custom_vault_operations: customVaultOps,
             enricher_invocations: enricherInvocations,
+            browse_proposals: browseProposals,
             diagnostics: diag,
         };
     } catch (e) {
