@@ -181,10 +181,15 @@
 	// This value is baked into resources/app-update.yml at package time, so an artifact
 	// looks for updates wherever this pointed WHEN IT WAS BUILT. Changing it requires
 	// repackaging, not just re-uploading.
+	//
+	// The organisation was renamed Probe-Point-Analytics-LLC -> OSINT-Copilot. Builds
+	// already in the wild still ask for the old name and reach the repo through GitHub's
+	// rename redirect, which is why updates have kept working; this points future builds
+	// at the real name so they do not depend on that redirect outliving the rename.
 	"publish": [
 		{
 			"provider": "github",
-			"owner": "Probe-Point-Analytics-LLC",
+			"owner": "OSINT-Copilot",
 			"repo": "osint-copilot-releases",
 			"releaseType": "draft"
 		}
