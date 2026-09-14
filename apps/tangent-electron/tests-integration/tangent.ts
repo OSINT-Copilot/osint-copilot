@@ -47,9 +47,28 @@ export const test = base.extend<TangentFixtures & TangentOptions>({
 			await fs.promises.mkdir(workspace, { recursive: true })
 		}
 
+		// Playwright REPLACES the environment when `env` is given rather than merging,
+		// so passing only the two test variables left the child with no DISPLAY -- and on
+		// Linux Electron then exits with "Missing X server or $DISPLAY" before any test
+		// runs. CI never saw it because the e2e job runs on macOS.
+		const childEnv: Record<string, string> = {}
+		for (const [key, value] of Object.entries(process.env)) {
+			if (value !== undefined) childEnv[key] = value
+		}
+		// ...and inheriting the environment means inheriting this, which silently turns
+		// the Electron binary into plain Node, so no window ever opens. The README warns
+		// developers not to export it; the harness should not depend on them reading it.
+		delete childEnv.ELECTRON_RUN_AS_NODE
+
+		// The packaged Linux app passes this too (electron-builder.json
+		// `linux.executableArgs`): without it Electron's Wayland path segfaults the
+		// moment a window opens, which the README documents for `npm run dev` as well.
+		const platformArgs = process.platform === 'linux' ? ['--ozone-platform=x11'] : []
+
 		const electronApp = await electron.launch({
-			args: ['.', workspace],
+			args: ['.', workspace, ...platformArgs],
 			env: {
+				...childEnv,
 				INTEGRATION_TEST: '1',
 				WORKSPACE_NAME: workspaceInfoName
 			}
