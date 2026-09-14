@@ -15,6 +15,8 @@
 import OsintViewHost from './OsintViewHost.svelte';
 import CanvasView from '../canvas/CanvasView.svelte';
 import { CANVAS_FILE_TYPE } from '../canvas/canvas-file-type';
+import BrowserPaneView from '../browser/BrowserPaneView.svelte';
+import { BROWSE_FILE_TYPE } from '../browser/browse-file-type';
 import { leafForViewType } from './osint-views';
 import { viewForFileType } from './osint-view-types';
 import type { WorkspaceLeaf } from '../obsidian-shim/workspace/layout';
@@ -98,12 +100,34 @@ export class CanvasNodeViewState {
 }
 
 /**
+ * A browsing pane, like a canvas, is a document rather than a singleton view: a thread can
+ * hold several at once, which is the point of tiling them.
+ */
+export class BrowseNodeViewState {
+    readonly node: MinimalNode;
+    readonly currentLens: ReturnType<typeof constant<unknown>>;
+
+    constructor(node: MinimalNode) {
+        this.node = node;
+        this.currentLens = constant({
+            parent: this,
+            viewComponent: BrowserPaneView,
+            browseNode: node,
+        });
+    }
+
+    /** The guest's session is released in the component's onDestroy. */
+    dispose(): void { /* see above */ }
+}
+
+/**
  * Registered into ViewStateContext.creators. Returns undefined for anything that is not
  * one of ours, which is how Tangent's creator chain expects a decline.
  */
 export function osintViewStateCreator(_context: unknown, node: MinimalNode): unknown {
     if (!node?.fileType) return undefined;
     if (node.fileType === CANVAS_FILE_TYPE) return new CanvasNodeViewState(node);
+    if (node.fileType === BROWSE_FILE_TYPE) return new BrowseNodeViewState(node);
     const view = viewForFileType(node.fileType);
     if (!view) return undefined;
     return new OsintNodeViewState(node, view.viewType);

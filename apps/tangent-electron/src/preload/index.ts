@@ -300,6 +300,12 @@ const bridge: WindowApi = {
 		// Fetched once, before the page loads. See the note on 'osint:platform' in main.
 		platform: () => platformSnapshot,
 
+		browse: {
+			claim: profileId => ipcRenderer.invoke('osint:browse.claim', profileId),
+			release: token => ipcRenderer.invoke('osint:browse.release', token),
+			snapshot: webContentsId => ipcRenderer.invoke('osint:browse.snapshot', webContentsId)
+		},
+
 		secrets: {
 			has: ref => ipcRenderer.invoke('osint:secrets.has', ref),
 			setKeychain: (name, value) => ipcRenderer.invoke('osint:secrets.setKeychain', name, value),

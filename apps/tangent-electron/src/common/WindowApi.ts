@@ -181,6 +181,18 @@ export default interface WindowAPI {
 		/** Synchronous snapshot, fetched once in preload. Read at seven sites. */
 		platform(): PlatformInfo
 
+		/**
+		 * Browsing panes. The renderer never names a partition: `claim` returns an opaque
+		 * token, main maps it to a cookie jar, and a <webview> carrying an unrecognised
+		 * token is refused at attach time.
+		 */
+		browse: {
+			claim(profileId?: string): Promise<string>
+			release(token: string): Promise<void>
+			/** MHTML for a guest, captured through CDP so one instant yields one snapshot. */
+			snapshot(webContentsId: number): Promise<string>
+		}
+
 		secrets: {
 			has(ref: SecretRef): Promise<boolean>
 			setKeychain(name: string, value: string): Promise<void>
