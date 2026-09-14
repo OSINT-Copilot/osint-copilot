@@ -123,6 +123,11 @@ export function applyGuestPreferences(webPreferences: Record<string, unknown>): 
 	webPreferences.nodeIntegrationInSubFrames = false
 	webPreferences.contextIsolation = true
 	webPreferences.sandbox = true
+	// The HOST has webviewTag on, and a guest can inherit it -- which would let a page
+	// under investigation nest guests of its own. decideAttach would refuse them for want
+	// of a session token, but relying on that means relying on the second line of defence
+	// for something the first line can simply state.
+	webPreferences.webviewTag = false
 	// NOT inherited from the host: Electron computes this from the `disablewebsecurity`
 	// attribute, which the renderer controls. Turning it off would drop the same-origin
 	// policy for every site in that guest.

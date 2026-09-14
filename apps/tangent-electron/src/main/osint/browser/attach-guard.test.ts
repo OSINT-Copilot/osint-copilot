@@ -84,6 +84,14 @@ describe('what the guest ends up with, whatever it asked for', () => {
 		expect(prefs.allowRunningInsecureContent).toBe(false)
 	})
 
+	it('does not let a guest nest guests of its own', () => {
+		// The host has webviewTag on, and a guest can inherit it. decideAttach would
+		// refuse a nested attach for want of a token, but that is the second line.
+		const prefs: Record<string, unknown> = { webviewTag: true }
+		applyGuestPreferences(prefs)
+		expect(prefs.webviewTag).toBe(false)
+	})
+
 	it('rewrites the live params on a permitted attach', () => {
 		registerSession('tok-1', 'alpha')
 		const params: Record<string, string> = {
