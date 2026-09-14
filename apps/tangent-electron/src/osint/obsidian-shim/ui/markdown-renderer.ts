@@ -14,7 +14,7 @@
  * let the two disagree.
  */
 import MarkdownIt from 'markdown-it';
-import DOMPurify from 'dompurify';
+import DOMPurify, { type Config } from 'dompurify';
 import type { Component } from '../core/component';
 
 const md = new MarkdownIt({
@@ -69,6 +69,24 @@ function linkifyWikilinks(root: HTMLElement): void {
     }
 }
 
+/**
+ * The second layer. `html: false` above is the first and does most of the work -- raw
+ * tags in untrusted markdown are escaped into visible text, never parsed -- so this
+ * only matters if that setting is ever relaxed, or if a future call site sanitises HTML
+ * from somewhere else. Exported so both are testable without reaching into the renderer.
+ *
+ * `webview` is named because the app enables `webviewTag` for the browser panes, and a
+ * <webview> reaching the DOM would be a page of the attacker's choosing running inside
+ * the app window. It is belt-and-braces, not a gap being closed: DOMPurify works from an
+ * allowlist of known-safe elements, so a non-standard tag is already dropped by default.
+ * Naming it states the intent, and it keeps holding if anyone later adds an `ADD_TAGS`
+ * -- FORBID_TAGS wins over ADD_TAGS, which is what the test pins.
+ */
+export const SANITIZE_OPTIONS = {
+    FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form', 'webview'],
+    FORBID_ATTR: ['style', 'srcset', 'formaction'],
+} satisfies Config;
+
 export const MarkdownRenderer = {
     /**
      * @param component owns the rendered subtree's lifecycle. Obsidian uses it to tear
@@ -83,12 +101,7 @@ export const MarkdownRenderer = {
         _component: Component | unknown,
     ): Promise<void> {
         const html = md.render(markdown ?? '');
-        el.innerHTML = DOMPurify.sanitize(html, {
-            // Block anything that could execute or phone home; the CSP is the backstop,
-            // not the only line.
-            FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form'],
-            FORBID_ATTR: ['style', 'srcset', 'formaction'],
-        });
+        el.innerHTML = DOMPurify.sanitize(html, SANITIZE_OPTIONS);
         linkifyWikilinks(el);
     },
 

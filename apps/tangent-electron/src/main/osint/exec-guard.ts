@@ -48,14 +48,42 @@ export function setWorkspaceRootsProvider(provider: () => string[]): void {
 	workspaceRootsProvider = provider
 }
 
+/**
+ * True when `candidate` names a file inside one of the open workspaces.
+ *
+ * Settings live in the vault, so whoever can write a note can write `cliPath`. If that
+ * path may also *point* into the vault, "write a script and run it" is self-contained:
+ * no binary has to already exist on the machine. Refusing vault-resident interpreters
+ * costs nothing real -- a CLI runtime lives in /usr/bin or ~/.local/bin, not in the
+ * notes you are investigating with.
+ */
+function isInsideAWorkspace(candidate: string): boolean {
+	if (!path.isAbsolute(candidate)) return false
+	const resolved = path.resolve(candidate)
+	return workspaceRootsProvider().some(root => {
+		const rel = path.relative(path.resolve(root), resolved)
+		return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel)
+	})
+}
+
 function addCandidate(into: Set<string>, value: unknown): void {
 	if (typeof value !== 'string') return
 	const trimmed = value.trim()
 	if (!trimmed) return
+	if (isInsideAWorkspace(trimmed)) {
+		Logger.warn('[osint] ignoring a configured CLI path inside the vault:', trimmed)
+		return
+	}
 	into.add(trimmed)
 	// A bare name ("claude") is resolved to an absolute path before exec, so permit both
 	// spellings; the absolute form is verified against this set by basename below.
-	into.add(path.basename(trimmed))
+	//
+	// Only for a bare name. Adding the basename of a *path* would widen the set far past
+	// what was configured: settings naming /opt/vendor/sh would permit /bin/sh, which is
+	// the difference between "run the runtime the user chose" and "run anything". The
+	// resolver's own output is recorded by noteResolved() instead, so the path spelling
+	// still round-trips.
+	if (trimmed === path.basename(trimmed)) into.add(trimmed)
 }
 
 /**

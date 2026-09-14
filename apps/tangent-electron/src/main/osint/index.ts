@@ -14,10 +14,10 @@
  *   - HTTP is checked against the per-enricher domain allowlist and refuses private,
  *     loopback, link-local, CGNAT and cloud-metadata addresses after DNS resolution
  */
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, dialog, safeStorage, shell } from 'electron'
 import Logger from 'js-logger'
 
-import { workspaceMap } from 'main/workspaces'
+import { contentsMap, workspaceMap } from 'main/workspaces'
 import { host } from './impl'
 import * as vaultFs from './node/vault'
 import * as basemap from './node/basemap'
@@ -29,9 +29,21 @@ import {
 	noteResolved,
 	setWorkspaceRootsProvider,
 } from './exec-guard'
+import { handle, on } from './guarded-ipc'
+import { setApplicationWindowPredicate } from './sender-guard'
 import type { ExecOptions, HttpRequest, PlatformInfo, SecretRef } from '../../osint/host/types'
 
 setWorkspaceRootsProvider(() => [...workspaceMap.keys()])
+
+/**
+ * Who may speak to the `osint:*` channels. Wired here rather than in guarded-ipc.ts
+ * because `contentsMap` lives in Tangent's tree, and this file is already excluded from
+ * `typecheck:osint` for exactly that reason.
+ *
+ * `contentsMap` is populated in createWindow() before the page loads, so a window's first
+ * message -- the preload's sendSync -- is already attributable.
+ */
+setApplicationWindowPredicate(contents => contentsMap.has(contents as Electron.WebContents))
 
 // safeStorage is only usable after the app is ready; until then the keychain source is
 // inert and secrets fall back to env / vault files.
@@ -54,20 +66,20 @@ function platformSnapshot(): PlatformInfo {
  * exactly once, from preload, before the page loads — unlike a per-lookup sendSync it
  * costs nothing measurable.
  */
-ipcMain.on('osint:platform', event => {
+on('osint:platform', event => {
 	event.returnValue = platformSnapshot()
 })
 
 // ------------------------------------------------------------------------ secrets
 // Deliberately no 'osint:secrets.get'. No channel returns a secret value.
-ipcMain.handle('osint:secrets.has', (_e, ref: SecretRef) => host.secrets.has(ref))
-ipcMain.handle('osint:secrets.setKeychain', (_e, name: string, value: string) =>
+handle('osint:secrets.has', (_e, ref: SecretRef) => host.secrets.has(ref))
+handle('osint:secrets.setKeychain', (_e, name: string, value: string) =>
 	host.secrets.setKeychain(name, value))
-ipcMain.handle('osint:secrets.deleteKeychain', (_e, name: string) => host.secrets.deleteKeychain(name))
-ipcMain.handle('osint:secrets.listKeychain', () => host.secrets.listKeychain())
+handle('osint:secrets.deleteKeychain', (_e, name: string) => host.secrets.deleteKeychain(name))
+handle('osint:secrets.listKeychain', () => host.secrets.listKeychain())
 
 // ---------------------------------------------------------------------------- cli
-ipcMain.handle('osint:cli.resolve', async (
+handle('osint:cli.resolve', async (
 	_e, configured: string | undefined, fallback: string, extras?: string[], timeout?: number,
 ) => {
 	// Resolution is a read-only probe, but its *result* is only useful if exec accepts it,
@@ -78,7 +90,7 @@ ipcMain.handle('osint:cli.resolve', async (
 	return resolved
 })
 
-ipcMain.handle('osint:cli.exec', async (
+handle('osint:cli.exec', async (
 	_e, execId: string, binary: string, args: string[], options?: ExecOptions,
 ) => {
 	await assertExecPermitted(binary)
@@ -89,14 +101,14 @@ ipcMain.handle('osint:cli.exec', async (
 	})
 })
 
-ipcMain.on('osint:cli.kill', (_e, execId: string) => host.cli.kill(execId))
+on('osint:cli.kill', (_e, execId: string) => host.cli.kill(execId))
 
 // --------------------------------------------------------------------------- net
-ipcMain.handle('osint:net.request', (_e, request: HttpRequest) => host.net.request(request))
+handle('osint:net.request', (_e, request: HttpRequest) => host.net.request(request))
 
 // ----------------------------------------------------------------------- extract
-ipcMain.handle('osint:extract.pdfText', (_e, data: ArrayBuffer) => host.extract.pdfText(data))
-ipcMain.handle('osint:extract.docxText', (_e, data: ArrayBuffer) => host.extract.docxText(data))
+handle('osint:extract.pdfText', (_e, data: ArrayBuffer) => host.extract.pdfText(data))
+handle('osint:extract.docxText', (_e, data: ArrayBuffer) => host.extract.docxText(data))
 
 // --------------------------------------------------------------------------- vault
 /**
@@ -123,23 +135,23 @@ function assertIsOpenWorkspace(dir: string): void {
 	}
 }
 
-ipcMain.handle('osint:vault.open', (_e, dir: string) => {
+handle('osint:vault.open', (_e, dir: string) => {
 	assertIsOpenWorkspace(dir)
 	return vaultFs.open(dir, { watch: false })
 })
 
-ipcMain.handle('osint:vault.read', (_e, p: string) => vaultFs.read(p))
-ipcMain.handle('osint:vault.readBinary', (_e, p: string) => vaultFs.readBinary(p))
-ipcMain.handle('osint:vault.write', (_e, p: string, d: string) => vaultFs.write(p, d))
-ipcMain.handle('osint:vault.writeBinary', (_e, p: string, d: Uint8Array) => vaultFs.writeBinary(p, d))
-ipcMain.handle('osint:vault.create', (_e, p: string, d: string) => vaultFs.create(p, d))
-ipcMain.handle('osint:vault.mkdir', (_e, p: string) => vaultFs.mkdir(p))
-ipcMain.handle('osint:vault.remove', (_e, p: string) => vaultFs.remove(p))
-ipcMain.handle('osint:vault.rename', (_e, from: string, to: string) => vaultFs.rename(from, to))
-ipcMain.handle('osint:vault.stat', (_e, p: string) => vaultFs.stat(p))
+handle('osint:vault.read', (_e, p: string) => vaultFs.read(p))
+handle('osint:vault.readBinary', (_e, p: string) => vaultFs.readBinary(p))
+handle('osint:vault.write', (_e, p: string, d: string) => vaultFs.write(p, d))
+handle('osint:vault.writeBinary', (_e, p: string, d: Uint8Array) => vaultFs.writeBinary(p, d))
+handle('osint:vault.create', (_e, p: string, d: string) => vaultFs.create(p, d))
+handle('osint:vault.mkdir', (_e, p: string) => vaultFs.mkdir(p))
+handle('osint:vault.remove', (_e, p: string) => vaultFs.remove(p))
+handle('osint:vault.rename', (_e, from: string, to: string) => vaultFs.rename(from, to))
+handle('osint:vault.stat', (_e, p: string) => vaultFs.stat(p))
 
 /** Real OS trash, not unlink: four fileManager.trashFile call sites depend on it. */
-ipcMain.handle('osint:vault.trash', async (_e, p: string) => {
+handle('osint:vault.trash', async (_e, p: string) => {
 	await shell.trashItem(vaultFs.absolutePathOf(p))
 })
 
@@ -180,11 +192,11 @@ function trackBasemapOwner(event: Electron.IpcMainInvokeEvent): void {
 	})
 }
 
-ipcMain.handle('osint:basemap.pick', (e) => { trackBasemapOwner(e); return basemap.pick() })
-ipcMain.handle('osint:basemap.open', (e) => { trackBasemapOwner(e); return basemap.open() })
-ipcMain.handle('osint:basemap.forget', () => basemap.forget())
-ipcMain.handle('osint:basemap.read', (_e, handleId: string, offset: number, length: number) =>
+handle('osint:basemap.pick', (e) => { trackBasemapOwner(e); return basemap.pick() })
+handle('osint:basemap.open', (e) => { trackBasemapOwner(e); return basemap.open() })
+handle('osint:basemap.forget', () => basemap.forget())
+handle('osint:basemap.read', (_e, handleId: string, offset: number, length: number) =>
 	basemap.read(handleId, offset, length))
-ipcMain.handle('osint:basemap.close', (_e, handleId: string) => basemap.close(handleId))
+handle('osint:basemap.close', (_e, handleId: string) => basemap.close(handleId))
 
 Logger.info('[osint] main-process handlers registered')
