@@ -301,6 +301,7 @@ const bridge: WindowApi = {
 		platform: () => platformSnapshot,
 
 		browse: {
+			onShortcut: handler => on('osint:browse.shortcut', handler),
 			claim: profileId => ipcRenderer.invoke('osint:browse.claim', profileId),
 			release: token => ipcRenderer.invoke('osint:browse.release', token),
 			snapshot: webContentsId => ipcRenderer.invoke('osint:browse.snapshot', webContentsId)

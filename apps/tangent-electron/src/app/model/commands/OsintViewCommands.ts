@@ -195,6 +195,47 @@ export class OpenOsintCanvasCommand extends WorkspaceCommand {
 	}
 }
 
+/**
+ * Creates a browsing pane and opens it.
+ *
+ * A document rather than a view, like a board: a thread can hold several browsing panes at
+ * once, which is the point of tiling live pages beside the notes about them. So it lives
+ * next to the canvas commands rather than in the views pill.
+ *
+ * Mod+Alt+8 continues the strip's "shortcut digit = position" rule -- six views, then
+ * boards at 7, then this.
+ */
+export class NewOsintBrowseCommand extends WorkspaceCommand {
+	constructor(workspace: Workspace) {
+		super(workspace, { shortcut: 'Mod+Alt+8' })
+		osintPluginState.subscribe(() => this.alertDirty())
+	}
+
+	canExecute(_context?: CommandContext) {
+		// createBrowsePane needs the plugin's vault adapter, which exists once it is up.
+		return osintPluginState.value.ready
+	}
+
+	async execute(_context?: CommandContext) {
+		const { osintRuntime } = await import('osint/integration/bootstrap')
+		const plugin = osintRuntime()?.plugin
+		if (!plugin) {
+			// canExecute gates on ready, so this is a real fault, not a race; say so.
+			console.error('[osint] New Browsing Pane: the plugin is not available')
+			return
+		}
+		await plugin.createBrowsePane()
+	}
+
+	getLabel(_context?: CommandContext) {
+		return 'OSINT: New Browsing Pane'
+	}
+
+	getTooltip(_context?: CommandContext) {
+		return 'Open a web page in a pane beside your notes.'
+	}
+}
+
 /** Keyed by the descriptor's commandKey, ready to spread into the command registry. */
 export function createOsintViewCommands(workspace: Workspace) {
 	const commands: Record<string, WorkspaceCommand> = {}
@@ -203,6 +244,7 @@ export function createOsintViewCommands(workspace: Workspace) {
 	}
 	commands.osintNewCanvas = new NewOsintCanvasCommand(workspace)
 	commands.osintOpenCanvas = new OpenOsintCanvasCommand(workspace)
+	commands.osintNewBrowse = new NewOsintBrowseCommand(workspace)
 	// The plugin's own commands only exist after its async startup, so they are added
 	// later. CommandPalette reads Object.keys(workspace.commands) each time it opens.
 	void attachPluginCommandsWhenReady(workspace)

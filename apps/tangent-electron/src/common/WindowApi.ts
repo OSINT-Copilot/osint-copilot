@@ -22,6 +22,16 @@ export interface SelectPathOptions {
 	selectMultiple?: boolean
 }
 
+/** A keyboard chord that was pressed inside a browsing guest and handed back to the app. */
+export interface BrowseShortcut {
+	key: string
+	code: string
+	control: boolean
+	meta: boolean
+	alt: boolean
+	shift: boolean
+}
+
 export interface UserMessage {
 	type: string
 	title?: string
@@ -187,6 +197,12 @@ export default interface WindowAPI {
 		 * token is refused at attach time.
 		 */
 		browse: {
+			/**
+			 * App chords pressed while a page had focus. Keyboard events do not escape a
+			 * guest, so without this the app's own shortcuts are dead whenever the user is
+			 * reading something.
+			 */
+			onShortcut(handler: (input: BrowseShortcut) => void): void
 			claim(profileId?: string): Promise<string>
 			release(token: string): Promise<void>
 			/** MHTML for a guest, captured through CDP so one instant yields one snapshot. */

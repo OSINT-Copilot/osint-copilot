@@ -13,6 +13,7 @@ import { app, session, webContents } from 'electron'
 import Logger from 'js-logger'
 
 import { handle } from '../guarded-ipc'
+import { isRequestAddressPermitted } from './browser-net-guard'
 import {
 	BROWSE_PARTITION_PREFIX,
 	guardAttach,
@@ -33,7 +34,7 @@ app.on('web-contents-created', (_event, contents) => {
 		}
 	})
 
-	contents.on('did-attach-webview', (_e, guest) => hardenGuest(guest))
+	contents.on('did-attach-webview', (_e, guest) => hardenGuest(guest, contents))
 })
 
 /**
@@ -42,7 +43,7 @@ app.on('web-contents-created', (_event, contents) => {
  * Separate from the preferences overwrite because these are behaviours rather than
  * settings: they need the live webContents.
  */
-function hardenGuest(guest: Electron.WebContents): void {
+function hardenGuest(guest: Electron.WebContents, host: Electron.WebContents): void {
 	// A page may not navigate the guest anywhere the pane would not have taken it.
 	guest.on('will-navigate', (event, url) => {
 		if (!isBrowseUrlPermitted(url)) {
@@ -69,6 +70,38 @@ function hardenGuest(guest: Electron.WebContents): void {
 		Logger.info('[osint] blocked a download from a browsing guest')
 		event.preventDefault()
 	})
+
+	// Keyboard events inside a guest never reach the host document, so while the page has
+	// focus the app's own shortcuts are simply dead. Listeners cannot be attached to the
+	// <webview> element either, so this is the only place to catch them.
+	guest.on('before-input-event', (event, input) => {
+		if (!isApplicationChord(input)) return
+		event.preventDefault()
+		host.send('osint:browse.shortcut', {
+			key: input.key,
+			code: input.code,
+			control: input.control,
+			meta: input.meta,
+			alt: input.alt,
+			shift: input.shift,
+		})
+	})
+}
+
+/**
+ * Which chords are taken from the page and given back to the app.
+ *
+ * Deliberately narrow: Ctrl/Cmd **and** Alt together. That is the family the OSINT views
+ * use (Mod+Alt+1..8) and essentially nothing a web page or a text field wants.
+ *
+ * The tempting rule -- forward every Ctrl/Cmd chord -- would break copy, paste,
+ * select-all and find inside the page, which an investigator needs far more than they
+ * need Mod+N to open a note while they are reading a profile. Claiming the rest properly
+ * means consulting Tangent's shortcut registry, which lives in the renderer; until then,
+ * taking less is the safer error.
+ */
+function isApplicationChord(input: Electron.Input): boolean {
+	return input.type === 'keyDown' && (input.control || input.meta) && input.alt
 }
 
 /**
@@ -85,6 +118,20 @@ function configurePartition(partition: string): void {
 		callback(false)
 	})
 	ses.setPermissionCheckHandler(() => false)
+
+	// The integration suite serves its fixture page from 127.0.0.1. Pointing it at the
+	// live internet instead would make a test of our own rendering depend on someone
+	// else's uptime, so loopback is permitted only under the harness's own flag.
+	const allowLoopback = process.env.INTEGRATION_TEST === '1'
+
+	ses.webRequest.onBeforeRequest((details, callback) => {
+		if (isRequestAddressPermitted(details.url, { allowLoopback })) {
+			callback({ cancel: false })
+			return
+		}
+		Logger.warn('[osint] blocked a guest request to a local address:', details.url)
+		callback({ cancel: true })
+	})
 }
 
 /** The renderer asks for a session; it never learns the partition behind the token. */

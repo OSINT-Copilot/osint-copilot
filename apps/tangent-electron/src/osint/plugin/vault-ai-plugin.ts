@@ -1003,6 +1003,19 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
     }
   }
 
+  async createBrowsePane(): Promise<void> {
+    try {
+      const { createBrowsePane } = await import("../browser/browse-commands");
+      const result = await createBrowsePane(this.app.vault);
+      if (!result.opened) {
+        new Notice(`Created ${result.path}, but it could not be opened yet.`);
+      }
+    } catch (e) {
+      console.error("[osint] could not create a browsing pane", e);
+      new Notice(`Could not create the browsing pane: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   /** Keys whose change can alter which agent runtimes exist, are selected, or respond. */
   private static readonly RUNTIME_SETTING_KEYS = [
     'apiProvider', 'agentRuntimeProvider',

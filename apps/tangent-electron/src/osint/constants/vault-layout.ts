@@ -33,6 +33,13 @@ export const GRAPH_NODE_POSITIONS_FILE = `${OSINT_COPILOT_VAULT_ROOT}/graph-posi
 export const DEFAULT_CANVAS_FOLDER = `${OSINT_COPILOT_VAULT_ROOT}/boards`;
 
 /**
+ * Browsing panes (`.osintbrowse`). One file per tab, so a thread can hold several and each
+ * restores with the session. Visible for the same reason boards are: it is analyst
+ * content, and an analyst should be able to see and delete what their tabs remember.
+ */
+export const DEFAULT_BROWSING_FOLDER = `${OSINT_COPILOT_VAULT_ROOT}/browsing`;
+
+/**
  * FollowTheMoney-style parallel export: one `.yaml` per entity/connection, synced from notes.
  * Lives under the configured entity base path, e.g. `OSINTCopilot/graph-yaml/`.
  */
