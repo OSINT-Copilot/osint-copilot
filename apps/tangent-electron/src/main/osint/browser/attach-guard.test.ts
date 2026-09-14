@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
 	applyGuestPreferences,
-	BROWSE_PARTITION_PREFIX,
 	clearSessions,
 	decideAttach,
 	guardAttach,
@@ -25,14 +24,14 @@ describe('which <webview> attaches are allowed', () => {
 	})
 
 	it('translates a known token into the partition main chose', () => {
-		registerSession('tok-1', 'alpha')
+		registerSession('tok-1', 'persist:osint-browse-alpha')
 		const decision = decideAttach({ partition: 'tok-1' })
 		expect(decision.allowed).toBe(true)
-		expect(decision.partition).toBe(`${BROWSE_PARTITION_PREFIX}alpha`)
+		expect(decision.partition).toBe('persist:osint-browse-alpha')
 	})
 
 	it('stops honouring a released token', () => {
-		registerSession('tok-1', 'alpha')
+		registerSession('tok-1', 'persist:osint-browse-alpha')
 		releaseSession('tok-1')
 		expect(decideAttach({ partition: 'tok-1' }).allowed).toBe(false)
 	})
@@ -53,7 +52,7 @@ describe('which <webview> attaches are allowed', () => {
 	})
 
 	it('refuses a valid token pointed at a scheme it may not open', () => {
-		registerSession('tok-1', 'alpha')
+		registerSession('tok-1', 'persist:osint-browse-alpha')
 		expect(decideAttach({ partition: 'tok-1', src: 'file:///etc/passwd' }).allowed).toBe(false)
 	})
 })
@@ -93,7 +92,7 @@ describe('what the guest ends up with, whatever it asked for', () => {
 	})
 
 	it('rewrites the live params on a permitted attach', () => {
-		registerSession('tok-1', 'alpha')
+		registerSession('tok-1', 'persist:osint-browse-alpha')
 		const params: Record<string, string> = {
 			partition: 'tok-1',
 			src: 'https://example.com/',
@@ -102,8 +101,8 @@ describe('what the guest ends up with, whatever it asked for', () => {
 		}
 		const prefs: Record<string, unknown> = { sandbox: false }
 
-		expect(guardAttach(params, prefs)).toBe(true)
-		expect(params.partition).toBe(`${BROWSE_PARTITION_PREFIX}alpha`)
+		expect(guardAttach(params, prefs)).toBe('persist:osint-browse-alpha')
+		expect(params.partition).toBe('persist:osint-browse-alpha')
 		expect(params.preload).toBeUndefined()
 		expect(params.disablewebsecurity).toBe('')
 		expect(prefs.sandbox).toBe(true)
@@ -111,7 +110,7 @@ describe('what the guest ends up with, whatever it asked for', () => {
 
 	it('leaves the params alone when it refuses, and says no', () => {
 		const params: Record<string, string> = { partition: 'unknown', src: 'https://example.com/' }
-		expect(guardAttach(params, {})).toBe(false)
+		expect(guardAttach(params, {})).toBeNull()
 		expect(params.partition).toBe('unknown')
 	})
 })

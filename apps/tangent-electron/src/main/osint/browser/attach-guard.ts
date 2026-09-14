@@ -20,15 +20,6 @@
  */
 import Logger from 'js-logger'
 
-/**
- * Partitions are namespaced so nothing here can collide with a Tangent session.
- *
- * No `persist:` prefix, so the jar lives in memory and dies with the app. Phase 2 adds
- * named profiles backed by `Session.fromPath` under userData -- deliberately not in the
- * vault, where the workspace watchers would churn on Chromium's LevelDB files and the
- * jar would sit unencrypted inside the artifact analysts sync to each other.
- */
-export const BROWSE_PARTITION_PREFIX = 'osint-browse-'
 
 /** Schemes a guest may be pointed at. Everything else -- file:, data:, blob: -- is refused. */
 const PERMITTED_SCHEMES = ['http:', 'https:']
@@ -57,10 +48,11 @@ const sessionsByToken = new Map<string, string>()
  * Registers a browsing session and returns the token the renderer should hand back.
  *
  * The token is deliberately not the partition: it is meaningless outside this map, so a
- * renderer that leaks or confuses one cannot address another profile's jar.
+ * renderer that leaks or confuses one cannot address another profile's jar. Which
+ * partition a profile gets is decided in profiles.ts; this only remembers the mapping.
  */
-export function registerSession(token: string, profileId: string): void {
-	sessionsByToken.set(token, BROWSE_PARTITION_PREFIX + profileId)
+export function registerSession(token: string, partition: string): void {
+	sessionsByToken.set(token, partition)
 }
 
 export function releaseSession(token: string): void {
@@ -139,21 +131,30 @@ export function applyGuestPreferences(webPreferences: Record<string, unknown>): 
 	webPreferences.spellcheck = false
 }
 
-/** Applies the decision to the live params object, and says whether to proceed. */
+/**
+ * Applies the decision to the live params object, and returns the partition main chose
+ * (or null to refuse).
+ *
+ * The caller must ALSO put the corresponding Session on `webPreferences.session`.
+ * Rewriting `params.partition` here is not enough on its own -- Electron resolves a
+ * guest's partition from the element's own attribute, so the rewrite is cosmetic and a
+ * guest would silently end up in a jar of the renderer's choosing. That was found by
+ * asking main for the named partition's cookies after browsing and getting zero.
+ */
 export function guardAttach(
 	params: AttachRequest,
 	webPreferences: Record<string, unknown>,
-): boolean {
+): string | null {
 	const decision = decideAttach(params)
 	if (!decision.allowed) {
 		Logger.warn('[osint] refused a <webview> attach:', decision.reason)
-		return false
+		return null
 	}
-	params.partition = decision.partition
+	params.partition = decision.partition!
 	// Refuse any preload the element named, at the params level too: Electron reads it
 	// from here as well as from webPreferences depending on version.
 	delete params.preload
 	params.disablewebsecurity = ''
 	applyGuestPreferences(webPreferences)
-	return true
+	return decision.partition!
 }

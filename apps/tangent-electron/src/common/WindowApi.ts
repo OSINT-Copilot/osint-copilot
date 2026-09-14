@@ -22,6 +22,21 @@ export interface SelectPathOptions {
 	selectMultiple?: boolean
 }
 
+/**
+ * An identity to browse as: its own cookie jar, egress and user-agent string.
+ *
+ * Compartmentalisation, not anonymity -- across every profile a site still sees one
+ * machine's fingerprint, timezone and GPU. The UI must not say otherwise.
+ */
+export interface BrowseProfile {
+	id: string
+	name: string
+	colour: string
+	userAgent?: string
+	acceptLanguages?: string
+	proxy?: string
+}
+
 /** A keyboard chord that was pressed inside a browsing guest and handed back to the app. */
 export interface BrowseShortcut {
 	key: string
@@ -203,7 +218,25 @@ export default interface WindowAPI {
 			 * reading something.
 			 */
 			onShortcut(handler: (input: BrowseShortcut) => void): void
-			claim(profileId?: string): Promise<string>
+			/**
+			 * Prepares a profile's session and returns a token for its <webview>. Rejects
+			 * rather than degrading if the profile asks for a proxy that cannot be honoured.
+			 */
+			claim(profileId?: string): Promise<{ token: string, profile: BrowseProfile }>
+			profiles(): Promise<BrowseProfile[]>
+			/**
+			 * What this profile is actually exposing, measured in the profile itself.
+			 * Contacts nothing: the public address is deliberately not covered.
+			 */
+			realityCheck(webContentsId: number, profileId: string): Promise<{
+				profile: BrowseProfile
+				findings: Array<{
+					label: string
+					value: string
+					verdict: 'ok' | 'warn' | 'leak'
+					note: string
+				}>
+			}>
 			release(token: string): Promise<void>
 			/** MHTML for a guest, captured through CDP so one instant yields one snapshot. */
 			snapshot(webContentsId: number): Promise<string>

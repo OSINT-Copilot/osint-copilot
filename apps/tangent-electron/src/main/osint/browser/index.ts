@@ -13,14 +13,14 @@ import { app, session, webContents } from 'electron'
 import Logger from 'js-logger'
 
 import { handle } from '../guarded-ipc'
-import { isRequestAddressPermitted } from './browser-net-guard'
 import {
-	BROWSE_PARTITION_PREFIX,
 	guardAttach,
 	isBrowseUrlPermitted,
 	registerSession,
 	releaseSession,
 } from './attach-guard'
+import { configureProfileSession, findProfile, loadProfiles, partitionFor } from './profiles'
+import { interpret, REALITY_CHECK_SNIPPET, type RealitySignals } from './reality-check'
 
 /**
  * Installed on every webContents rather than in createWindow(), so a window added later
@@ -29,9 +29,18 @@ import {
  */
 app.on('web-contents-created', (_event, contents) => {
 	contents.on('will-attach-webview', (event, webPreferences, params) => {
-		if (!guardAttach(params as Record<string, string>, webPreferences as Record<string, unknown>)) {
+		const partition = guardAttach(
+			params as Record<string, string>, webPreferences as Record<string, unknown>)
+		if (!partition) {
 			event.preventDefault()
+			return
 		}
+		// The load-bearing line. Electron resolves a guest's partition from the element's
+		// own attribute, so rewriting params.partition alone leaves the guest in whatever
+		// jar the renderer named -- which, with an opaque per-claim token there, meant a
+		// fresh empty jar every mount and profiles that never persisted anything.
+		// Handing over the Session object is what actually binds the guest to the profile.
+		;(webPreferences as Record<string, unknown>).session = session.fromPartition(partition)
 	})
 
 	contents.on('did-attach-webview', (_e, guest) => hardenGuest(guest, contents))
@@ -63,6 +72,13 @@ function hardenGuest(guest: Electron.WebContents, host: Electron.WebContents): v
 	// App chords must not be swallowed by the page, and the page must not reach the
 	// application menu's accelerators.
 	guest.setIgnoreMenuShortcuts?.(true)
+
+	// WebRTC will happily hand a page the machine's real local and public addresses over
+	// UDP, going around any proxy the profile set -- the classic way a "proxied" browser
+	// deanonymises its user. This is a WebContents method, not a session one, so it has to
+	// be applied to every guest individually; it runs here because a pane mounts at
+	// about:blank and its first real navigation comes later, through loadURL.
+	guest.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')
 
 	// Downloads are not wired to anywhere yet; a silent write into the user's Downloads
 	// folder from a page they are investigating is not a good default.
@@ -104,49 +120,43 @@ function isApplicationChord(input: Electron.Input): boolean {
 	return input.type === 'keyDown' && (input.control || input.meta) && input.alt
 }
 
-/**
- * Locks a browsing partition down before anything loads in it.
- *
- * Permissions are denied wholesale rather than prompted: every one of these is a way for
- * a page to learn something about the operator, and an investigator clicking through a
- * prompt on a hostile page is exactly the mistake this tool should not offer them.
- */
-function configurePartition(partition: string): void {
-	const ses = session.fromPartition(partition)
-	ses.setPermissionRequestHandler((_contents, permission, callback) => {
-		Logger.info('[osint] denied a guest permission request:', permission)
-		callback(false)
-	})
-	ses.setPermissionCheckHandler(() => false)
-
-	// The integration suite serves its fixture page from 127.0.0.1. Pointing it at the
-	// live internet instead would make a test of our own rendering depend on someone
-	// else's uptime, so loopback is permitted only under the harness's own flag.
-	const allowLoopback = process.env.INTEGRATION_TEST === '1'
-
-	ses.webRequest.onBeforeRequest((details, callback) => {
-		if (isRequestAddressPermitted(details.url, { allowLoopback })) {
-			callback({ cancel: false })
-			return
-		}
-		Logger.warn('[osint] blocked a guest request to a local address:', details.url)
-		callback({ cancel: true })
-	})
-}
-
 /** The renderer asks for a session; it never learns the partition behind the token. */
-handle('osint:browse.claim', (_e, profileId: unknown) => {
-	const id = typeof profileId === 'string' && /^[a-z0-9-]{1,64}$/i.test(profileId)
-		? profileId
-		: 'default'
+handle('osint:browse.claim', async (_e, profileId: unknown) => {
+	const profile = await findProfile(typeof profileId === 'string' ? profileId : 'default')
+	// Before the token exists: a guest must never attach to a session whose proxy or
+	// permissions have not been applied yet, and configureProfileSession throws rather
+	// than degrading to a direct connection.
+	await configureProfileSession(profile)
 	const token = randomUUID()
-	registerSession(token, id)
-	configurePartition(BROWSE_PARTITION_PREFIX + id)
-	return token
+	registerSession(token, partitionFor(profile.id))
+	return { token, profile }
 })
+
+/** The profiles the operator has defined, for the pane's picker. */
+handle('osint:browse.profiles', () => loadProfiles())
 
 handle('osint:browse.release', (_e, token: unknown) => {
 	if (typeof token === 'string') releaseSession(token)
+})
+
+/**
+ * Measures what a profile is actually exposing, in the profile itself.
+ *
+ * Run from MAIN against a fixed snippet in the guest's ISOLATED world: the page cannot
+ * read the probe, tamper with its result, or tell that it ran. There is no guest preload
+ * and no channel a page could reach -- the string goes in, a value comes back.
+ */
+handle('osint:browse.realityCheck', async (_e, webContentsId: unknown, profileId: unknown) => {
+	if (typeof webContentsId !== 'number') throw new Error('realityCheck: expected a webContents id')
+	const guest = webContents.fromId(webContentsId)
+	if (!guest) throw new Error(`realityCheck: no webContents ${webContentsId}`)
+
+	const profile = await findProfile(typeof profileId === 'string' ? profileId : 'default')
+	// World 1: not the page's main world, and not a world anything else here uses.
+	const signals = await guest.executeJavaScriptInIsolatedWorld(
+		1, [{ code: REALITY_CHECK_SNIPPET }]) as RealitySignals
+
+	return { profile, signals, findings: interpret(signals, profile) }
 })
 
 /**

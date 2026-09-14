@@ -15,6 +15,15 @@ import type { CanvasFileStore } from '../canvas/canvas-document';
 export interface BrowseDocument {
 	url?: string;
 	title?: string;
+	/**
+	 * Which identity this pane browses as.
+	 *
+	 * Kept in the file so a restored pane comes back as the same profile it was. A pane
+	 * that reopened as "default" after being used as a puppet would send that puppet's
+	 * site a request from the operator's own jar -- a silent identity swap, which is the
+	 * worst failure this feature has.
+	 */
+	profileId?: string;
 	[key: string]: unknown;
 }
 
@@ -73,6 +82,14 @@ export class BrowseDocumentStore {
 		const nextUrl = url && url !== 'about:blank' ? url : undefined;
 		if (this.doc.url === nextUrl && this.doc.title === title) return;
 		this.doc = { ...this.doc, url: nextUrl, title };
+		this.dirty = true;
+		this.schedule();
+	}
+
+	/** Binds the pane to an identity. */
+	recordProfile(profileId: string): void {
+		if (this.doc.profileId === profileId) return;
+		this.doc = { ...this.doc, profileId };
 		this.dirty = true;
 		this.schedule();
 	}
