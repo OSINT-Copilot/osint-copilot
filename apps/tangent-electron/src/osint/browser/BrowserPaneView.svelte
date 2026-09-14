@@ -15,6 +15,7 @@
  */
 import { onDestroy, onMount } from 'svelte'
 import { BrowseDocumentStore } from './browse-document'
+import { promoteCapture } from './capture-to-entity'
 import { installShortcutRelay } from './shortcut-relay'
 import { vaultFileStore } from '../canvas/canvas-runtime'
 
@@ -81,6 +82,13 @@ let findings: Finding[] | null = null
 let checkError: string | null = null
 let showCheck = false
 
+let armed = false
+let capturing = false
+let lastCapture: any = null
+let captureNote: string | null = null
+let promoted = false
+let promoteError: string | null = null
+
 $: colour = profile?.colour ?? '#6b7280'
 
 onMount(async () => {
@@ -110,6 +118,25 @@ onMount(async () => {
 	}
 
 	await claim(wanted)
+
+	// Capture results are pushed to the window, so each pane filters to its own guest.
+	api?.osint?.browse?.onCapture?.((event: any) => {
+		if (event?.webContentsId !== webContentsId) return
+		capturing = false
+		const outcome = event.outcome
+		if (outcome?.status === 'captured') {
+			lastCapture = outcome.record
+			promoted = false
+			promoteError = null
+			captureNote = outcome.record.screenshotFailure
+				? `Captured — no screenshot: ${outcome.record.screenshotFailure}`
+				: 'Captured'
+		}
+		else if (outcome?.status === 'duplicate') captureNote = 'Unchanged since the last capture'
+		else if (outcome?.status === 'over-budget') captureNote = outcome.reason
+		else captureNote = outcome?.reason ? `Not captured: ${outcome.reason}` : null
+	})
+
 	onViewReady?.()
 })
 
@@ -158,6 +185,14 @@ function onDomReady() {
 	catch {
 		webContentsId = null
 	}
+	// Main learns which identity this guest belongs to from the token it issued, not from
+	// a name the renderer supplies -- so a pane cannot claim to be a profile it never
+	// claimed. Re-sent on every dom-ready because a guest gets a new id when it remounts.
+	if (webContentsId != null && token) {
+		void api?.osint?.browse?.bindGuest?.(webContentsId, token)
+			.then(() => api?.osint?.browse?.isArmed?.(token))
+			.then((value: boolean) => { armed = !!value })
+	}
 }
 
 /** A guest that goes away must stop being addressable, or main is asked about a dead id. */
@@ -200,6 +235,57 @@ function loadParked() {
 	const target = parkedUrl
 	parkedUrl = null
 	guest?.loadURL?.(target)
+}
+
+async function toggleArmed() {
+	if (!token) return
+	armed = await api?.osint?.browse?.setArmed?.(token, !armed) ?? false
+	captureNote = armed
+		? 'Every page you load as this identity will be written to the vault.'
+		: 'Automatic capture is off.'
+}
+
+async function captureNow() {
+	if (webContentsId == null) return
+	capturing = true
+	captureNote = 'Capturing…'
+	try {
+		const outcome = await api?.osint?.browse?.captureNow?.(webContentsId)
+		if (outcome?.status === 'captured') {
+			lastCapture = outcome.record
+			promoted = false
+			captureNote = outcome.record.screenshotFailure
+				? `Captured — no screenshot: ${outcome.record.screenshotFailure}`
+				: 'Captured'
+		}
+		else if (outcome?.status === 'duplicate') captureNote = 'Unchanged since the last capture'
+		else captureNote = outcome?.reason ?? 'Not captured'
+	}
+	catch (e) {
+		captureNote = `Capture failed: ${String((e as Error)?.message ?? e)}`
+	}
+	finally {
+		capturing = false
+	}
+}
+
+/**
+ * Promotion is an act, not a side effect of capturing. An armed profile writes archives
+ * and stops; one entity per capture makes the graph unreadable within an hour.
+ */
+async function promote() {
+	if (!lastCapture) return
+	promoteError = null
+	try {
+		const { osintRuntime } = await import('../integration/bootstrap')
+		const entityManager = (osintRuntime() as any)?.plugin?.entityManager
+		if (!entityManager) throw new Error('the OSINT plugin is not ready')
+		await promoteCapture(entityManager, lastCapture)
+		promoted = true
+	}
+	catch (e) {
+		promoteError = String((e as Error)?.message ?? e)
+	}
 }
 
 async function runRealityCheck() {
@@ -257,6 +343,20 @@ async function runRealityCheck() {
 			title="Measure what this identity is actually exposing"
 			disabled={webContentsId == null}
 			on:click={runRealityCheck}>Check</button>
+		<button
+			class="capture"
+			title="Archive this page now"
+			disabled={webContentsId == null || capturing}
+			on:click={captureNow}>Capture</button>
+		<button
+			class="arm"
+			class:armed
+			data-testid="browse-arm"
+			title={armed
+				? 'Automatic capture is ON for this identity. Click to stop.'
+				: 'Capture every page loaded as this identity'}
+			disabled={!token}
+			on:click={toggleArmed}>{armed ? '● Recording' : '○ Record'}</button>
 	</div>
 
 	<!--
@@ -269,6 +369,18 @@ async function runRealityCheck() {
 		<strong>Not anonymity</strong> — sites can still link your profiles by browser
 		fingerprint{profile?.proxy ? '' : ', and by your IP address'}.
 	</p>
+
+	{#if captureNote}
+		<div class="capture-note" data-testid="browse-capture-note">
+			<span>{captureNote}</span>
+			{#if lastCapture && !promoted}
+				<button on:click={promote} data-testid="browse-promote">Add to graph</button>
+			{:else if promoted}
+				<span class="promoted">Added as evidence</span>
+			{/if}
+		</div>
+		{#if promoteError}<p class="error">{promoteError}</p>{/if}
+	{/if}
 
 	{#if parkedUrl}
 		<div class="parked" data-testid="browse-parked">
@@ -378,6 +490,23 @@ async function runRealityCheck() {
 	flex: 1 1 auto;
 	width: 100%;
 	min-height: 0;
+}
+.capture-note {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 8px;
+	font-size: 11px;
+	background: var(--noteBackgroundColor, rgba(128, 128, 128, 0.08));
+	border-bottom: 1px solid var(--borderColor, rgba(128, 128, 128, 0.2));
+	span:first-child { flex: 1; min-width: 0; }
+}
+.promoted { color: #2f9e44; }
+.arm.armed {
+	// Recording must be unmistakable at a glance: this writes every page the operator
+	// looks at, as this identity, to disk.
+	color: #e03131;
+	font-weight: 600;
 }
 .parked {
 	display: flex;

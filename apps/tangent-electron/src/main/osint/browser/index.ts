@@ -21,6 +21,11 @@ import {
 } from './attach-guard'
 import { configureProfileSession, findProfile, loadProfiles, partitionFor } from './profiles'
 import { interpret, REALITY_CHECK_SNIPPET, type RealitySignals } from './reality-check'
+import { captureGuest } from './capture'
+import {
+	armProfile, cancelCapture, captureBudgetBytes, forgetGuest, guestProfile, isArmed,
+	partitionOwner, rememberGuest, rememberGuestHost, scheduleCapture, setCaptureBudgetBytes,
+} from './capture-runtime'
 
 /**
  * Installed on every webContents rather than in createWindow(), so a window added later
@@ -80,12 +85,25 @@ function hardenGuest(guest: Electron.WebContents, host: Electron.WebContents): v
 	// about:blank and its first real navigation comes later, through loadURL.
 	guest.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')
 
+	// Where capture results are reported back to.
+	rememberGuestHost(guest.id, host)
+
 	// Downloads are not wired to anywhere yet; a silent write into the user's Downloads
 	// folder from a page they are investigating is not a good default.
 	guest.session.on('will-download', (event) => {
 		Logger.info('[osint] blocked a download from a browsing guest')
 		event.preventDefault()
 	})
+
+	// Capture triggers.
+	//
+	// NOT on navigation commit: MHTML serialises the CURRENT DOM, so a commit-time capture
+	// records a near-empty document. And `did-navigate` is not emitted at all for in-page
+	// navigation, which is how every large social site moves between profiles -- capturing
+	// only on it would mean capturing nothing on exactly the sites that matter.
+	guest.on('did-stop-loading', () => scheduleCapture(guest))
+	guest.on('did-navigate-in-page', () => scheduleCapture(guest))
+	guest.on('destroyed', () => { cancelCapture(guest.id); forgetGuest(guest.id) })
 
 	// Keyboard events inside a guest never reach the host document, so while the page has
 	// focus the app's own shortcuts are simply dead. Listeners cannot be attached to the
@@ -134,6 +152,55 @@ handle('osint:browse.claim', async (_e, profileId: unknown) => {
 
 /** The profiles the operator has defined, for the pane's picker. */
 handle('osint:browse.profiles', () => loadProfiles())
+
+/**
+ * Binds a guest to the profile whose session it was given.
+ *
+ * The renderer supplies its own session token rather than a profile name, so it cannot
+ * claim a guest belongs to an identity it never claimed: the token is main-issued and is
+ * resolved here through the same map the attach guard uses.
+ */
+handle('osint:browse.bindGuest', (_e, webContentsId: unknown, token: unknown) => {
+	if (typeof webContentsId !== 'number' || typeof token !== 'string') return false
+	const profileId = partitionOwner(token)
+	if (!profileId) return false
+	rememberGuest(webContentsId, profileId)
+	return true
+})
+
+/**
+ * Arms or disarms automatic capture for a profile.
+ *
+ * Per profile rather than per pane, and off by default: arming is a decision about an
+ * identity's whole session, and it is the moment the operator accepts that everything
+ * they look at as this identity is written down.
+ */
+handle('osint:browse.setArmed', (_e, token: unknown, armed: unknown) => {
+	if (typeof token !== 'string') return false
+	const profileId = partitionOwner(token)
+	if (!profileId) return false
+	armProfile(profileId, armed === true)
+	return isArmed(profileId)
+})
+
+handle('osint:browse.isArmed', (_e, token: unknown) => {
+	if (typeof token !== 'string') return false
+	const profileId = partitionOwner(token)
+	return profileId ? isArmed(profileId) : false
+})
+
+/** Capture this page now, whether or not the profile is armed. */
+handle('osint:browse.setBudget', (_e, bytes: unknown) => {
+	if (typeof bytes === 'number') setCaptureBudgetBytes(bytes)
+	return captureBudgetBytes()
+})
+
+handle('osint:browse.captureNow', async (_e, webContentsId: unknown) => {
+	if (typeof webContentsId !== 'number') throw new Error('captureNow: expected a webContents id')
+	const guest = webContents.fromId(webContentsId)
+	if (!guest) throw new Error(`captureNow: no webContents ${webContentsId}`)
+	return captureGuest({ guest, profileId: guestProfile(webContentsId), budgetBytes: captureBudgetBytes() })
+})
 
 handle('osint:browse.release', (_e, token: unknown) => {
 	if (typeof token === 'string') releaseSession(token)

@@ -37,6 +37,33 @@ export interface BrowseProfile {
 	proxy?: string
 }
 
+/** One captured page: the archive, its rendering, and what attests to them. */
+export interface CaptureRecord {
+	id: string
+	url: string
+	normalisedUrl: string
+	title: string
+	capturedAt: string
+	/**
+	 * sha256 of the MHTML archive.
+	 *
+	 * Tamper-evidence AFTER capture, over a locally re-serialised post-JavaScript DOM.
+	 * NOT a record of what the server sent, and must never be presented as one.
+	 */
+	sha256: string
+	domHash: string
+	profileId: string
+	files: { mhtml: string, markdown: string, screenshot?: string }
+	bytes: number
+	screenshotFailure?: string
+}
+
+export type CaptureOutcome =
+	| { status: 'captured', record: CaptureRecord }
+	| { status: 'duplicate', url: string }
+	| { status: 'over-budget', reason: string, usedBytes: number, budgetBytes: number }
+	| { status: 'skipped', reason: string }
+
 /** A keyboard chord that was pressed inside a browsing guest and handed back to the app. */
 export interface BrowseShortcut {
 	key: string
@@ -228,6 +255,14 @@ export default interface WindowAPI {
 			 * What this profile is actually exposing, measured in the profile itself.
 			 * Contacts nothing: the public address is deliberately not covered.
 			 */
+			/** Tells main which profile a guest belongs to, proven by its own session token. */
+			bindGuest(webContentsId: number, token: string): Promise<boolean>
+			/** Automatic capture, per profile. Off by default; arming is a deliberate act. */
+			setArmed(token: string, armed: boolean): Promise<boolean>
+			isArmed(token: string): Promise<boolean>
+			captureNow(webContentsId: number): Promise<CaptureOutcome>
+			setBudget(bytes: number): Promise<number>
+			onCapture(handler: (event: { webContentsId: number, outcome: CaptureOutcome }) => void): void
 			realityCheck(webContentsId: number, profileId: string): Promise<{
 				profile: BrowseProfile
 				findings: Array<{

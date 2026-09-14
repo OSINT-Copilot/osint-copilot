@@ -306,6 +306,13 @@ const bridge: WindowApi = {
 			profiles: () => ipcRenderer.invoke('osint:browse.profiles'),
 			realityCheck: (webContentsId, profileId) =>
 				ipcRenderer.invoke('osint:browse.realityCheck', webContentsId, profileId),
+			bindGuest: (webContentsId, token) =>
+				ipcRenderer.invoke('osint:browse.bindGuest', webContentsId, token),
+			setArmed: (token, armed) => ipcRenderer.invoke('osint:browse.setArmed', token, armed),
+			isArmed: token => ipcRenderer.invoke('osint:browse.isArmed', token),
+			captureNow: webContentsId => ipcRenderer.invoke('osint:browse.captureNow', webContentsId),
+			setBudget: bytes => ipcRenderer.invoke('osint:browse.setBudget', bytes),
+			onCapture: handler => on('osint:browse.capture', handler),
 			release: token => ipcRenderer.invoke('osint:browse.release', token),
 			snapshot: webContentsId => ipcRenderer.invoke('osint:browse.snapshot', webContentsId)
 		},

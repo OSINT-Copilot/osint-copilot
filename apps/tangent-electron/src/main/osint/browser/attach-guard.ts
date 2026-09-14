@@ -55,6 +55,11 @@ export function registerSession(token: string, partition: string): void {
 	sessionsByToken.set(token, partition)
 }
 
+/** The partition a token was issued for, or null if it is not one of ours. */
+export function partitionForToken(token: string): string | null {
+	return sessionsByToken.get(token) ?? null
+}
+
 export function releaseSession(token: string): void {
 	sessionsByToken.delete(token)
 }
