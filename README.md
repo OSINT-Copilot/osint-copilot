@@ -56,6 +56,14 @@ Git submodules.
 3. `npm run build` at the root (or `npm run build:tangent-electron` for just the app).
 4. `npm run dev` in `./apps/tangent-electron` (`dev:win` on Windows).
 
+### Linux
+
+See [Running on Linux](./Documentation/Running%20on%20Linux.md) for installing and running
+the released AppImage or .deb, and for the three things that reliably go wrong: the Wayland
+crash, FUSE, and Chromium's sandbox under AppArmor.
+
+`npm run start` handles all three for you while developing. The notes below cover the rest.
+
 ### Linux: blank window or an immediate crash
 
 If the app dies the moment it opens a window, your system's Wayland backend may not work with
