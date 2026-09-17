@@ -117,3 +117,27 @@ test('a pane remembers where it was, and does not go back there on its own', asy
 		await server.close()
 	}
 })
+
+test('the toolbar has a button that opens a browsing pane', async ({ tangent }) => {
+	test.setTimeout(120_000)
+	const window = await tangent.firstWindow()
+
+	// Until this existed, a browsing pane could only be opened by knowing Mod+Alt+8 --
+	// which, from the outside, is indistinguishable from the feature not being there.
+	const button = window.page.locator('.OsintViewsPill button[aria-label="Browse"]')
+	await expect(button).toBeVisible({ timeout: 20_000 })
+
+	// It carries an icon, not an empty box.
+	await expect(button.locator('svg')).toBeVisible()
+
+	// Disabled until the OSINT plugin is up, then live -- the same gate every other
+	// button in the strip uses, via use:command.
+	await expect(button).toBeEnabled({ timeout: 30_000 })
+
+	await button.evaluate((el: HTMLButtonElement) => el.click())
+
+	// A pane, with its address bar, actually opens.
+	await expect(window.page.locator('.BrowserPaneView .address')).toBeVisible({ timeout: 30_000 })
+	await expect(window.page.locator('[data-testid="browse-status"]'))
+		.toContainText('Ready · guest', { timeout: 30_000 })
+})
