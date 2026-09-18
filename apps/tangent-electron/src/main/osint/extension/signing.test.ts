@@ -87,6 +87,18 @@ describe('protocol vectors', () => {
 		expect(verifyMac(K, r.stringToSign, r.signature)).toBe(true)
 	})
 
+	it.each(vectors.octetRequests.map(r => [r.pathWithQuery, r] as const))('octet-stream upload %s', (_name, r) => {
+		// Raw bytes that are not UTF-8: the digest and the length are of the bytes as sent.
+		const body = Buffer.from(r.bodyHex, 'hex')
+		expect(body.subarray(0, 4).toString('latin1')).toBe('\x89PNG')
+		expect(r.contentType).toBe('application/octet-stream')
+		expect(String(body.length)).toBe(r.contentLength)
+		expect(sha256Hex(body)).toBe(r.bodySha256)
+		const parts = { ...r, bodySha256: sha256Hex(body) }
+		expect(requestStringToSign(parts)).toBe(r.stringToSign)
+		expect(signRequest(K, parts)).toBe(r.signature)
+	})
+
 	it.each(vectors.responses.map(r => [String(r.status), r] as const))('response %s', (_name, r) => {
 		expect(responseStringToSign(r.endpoint, r.status, r.requestNonce, r.bodySha256)).toBe(r.stringToSign)
 		expect(signResponse(K, r.endpoint, r.status, r.requestNonce, Buffer.from(r.body, 'utf8'))).toBe(r.signature)

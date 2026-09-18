@@ -26,6 +26,7 @@ import type { AddressInfo } from 'net';
 import { randomBytes as nodeRandomBytes } from 'crypto';
 import {
     B64URL_16,
+    CAPTURE_FILE_CAPS,
     ERROR_STATUS,
     EXTENSION_ORIGIN,
     HEADER,
@@ -39,7 +40,10 @@ import {
     REPLAY_WINDOW_MS,
     SHA256_HEX,
     type BundleResponse,
+    type CaptureCreatedResponse,
+    type CaptureFileName,
     type ErrorCode,
+    type FileReceivedResponse,
     type HelloResponse,
     type Manifest,
     type StatusResponse,
@@ -72,12 +76,39 @@ export interface BundleContext {
 
 export type BundleOutcome =
     | BundleResponse
+    | CaptureCreatedResponse
     | { error: 'unknown_workspace' | 'unlicensed' | 'budget_exceeded' | 'invalid'; detail?: string };
+
+/** One file of a capture, as POST /v1/bundles/<id>/files/<name> delivers it. */
+export interface FileUpload {
+    bundleId: string;
+    name: CaptureFileName;
+    /** The declared Content-Length, which the signature covers. */
+    size: number;
+    /** The declared X-OC-Body-Sha256, which the signature covers. */
+    sha256: string;
+    /** The body, unread. Whoever takes it reads at most `size` bytes of it. */
+    body: AsyncIterable<Buffer>;
+}
+
+export type FileOutcome =
+    | FileReceivedResponse
+    | {
+        error: 'unknown_bundle' | 'unlicensed' | 'invalid' | 'hash_mismatch' | 'too_large' | 'conflict';
+        detail?: string;
+    };
+
+export type CommitOutcome =
+    | BundleResponse
+    | { error: 'unknown_bundle' | 'unlicensed' | 'conflict'; detail?: string }
+    | { error: 'incomplete'; detail: string[] };
 
 export interface InboxBackend {
     status(): Promise<StatusResponse>;
     listWorkspaces(): Promise<WorkspaceInfo[]>;
     acceptBundle(manifest: Manifest, ctx: BundleContext): Promise<BundleOutcome>;
+    receiveFile(upload: FileUpload, ctx: BundleContext): Promise<FileOutcome>;
+    commitBundle(bundleId: string, ctx: BundleContext): Promise<CommitOutcome>;
 }
 
 export interface ServerDeps {
@@ -140,9 +171,20 @@ class ReplayCache {
 }
 
 class RequestError extends Error {
-    constructor(readonly code: ErrorCode, readonly detail?: string) {
+    constructor(readonly code: ErrorCode, readonly detail?: string | string[]) {
         super(code);
     }
+}
+
+/** Lowercase UUID v4, as the app stores bundle ids. */
+const BUNDLE_ID = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+const FILE_ROUTE = new RegExp(`^/v1/bundles/(${BUNDLE_ID})/files/([^/?]+)$`);
+const COMMIT_ROUTE = new RegExp(`^/v1/bundles/(${BUNDLE_ID})/commit$`);
+/** Anything under /v1/bundles/ that is shaped like a file upload, well-formed or not. */
+const FILE_ROUTE_LIKE = /^\/v1\/bundles\/[^/]*\/files\//;
+
+function isCaptureFileName(name: string): name is CaptureFileName {
+    return Object.prototype.hasOwnProperty.call(CAPTURE_FILE_CAPS, name);
 }
 
 function header(req: http.IncomingMessage, name: string): string | undefined {
@@ -150,8 +192,8 @@ function header(req: http.IncomingMessage, name: string): string | undefined {
     return typeof value === 'string' ? value : undefined;
 }
 
-function isJsonContentType(value: string | undefined): boolean {
-    return !!value && value.split(';')[0].trim().toLowerCase() === 'application/json';
+function mediaType(value: string | undefined): string {
+    return value ? value.split(';')[0].trim().toLowerCase() : '';
 }
 
 /**
@@ -203,11 +245,18 @@ interface Signer {
     endpoint: string;
 }
 
-interface Authenticated {
+/** A request whose signature, freshness and nonce have checked out; its body is unread. */
+interface Verified {
     record: ClientRecord;
     key: Buffer;
-    body: Buffer;
+    /** The declared Content-Length, which the signature covers. */
+    declared: number;
+    /** The declared X-OC-Body-Sha256, which the signature covers. */
     bodySha256: string;
+}
+
+interface Authenticated extends Verified {
+    body: Buffer;
 }
 
 // --- the server ----------------------------------------------------------------------
@@ -224,6 +273,7 @@ export class ExtensionServer {
     private readonly pairLimit: RateLimiter;
     private readonly helloLimit: RateLimiter;
     private readonly bundleLimit: RateLimiter;
+    private readonly uploadLimit: RateLimiter;
 
     constructor(private readonly deps: ServerDeps) {
         this.now = deps.now ?? Date.now;
@@ -233,6 +283,7 @@ export class ExtensionServer {
         this.pairLimit = new RateLimiter(RATE.pairPerMinute, 60_000, this.now);
         this.helloLimit = new RateLimiter(RATE.helloPerMinutePerClient, 60_000, this.now);
         this.bundleLimit = new RateLimiter(RATE.bundlesPerMinutePerClient, 60_000, this.now);
+        this.uploadLimit = new RateLimiter(RATE.uploadsPerMinutePerClient, 60_000, this.now);
     }
 
     get port(): number | null {
@@ -335,15 +386,15 @@ export class ExtensionServer {
             'X-Content-Type-Options': 'nosniff',
         };
         if (signer) headers['X-OC-Sig'] = signResponse(signer.key, signer.endpoint, status, signer.nonce, bytes);
-        if (status >= 400) {
-            // An error may leave body bytes unread. Close rather than parse them as the
-            // next request, and drain (discarding) so the close is graceful and the reply
-            // is not lost to a TCP reset.
-            headers['Connection'] = 'close';
-        }
+        // An error, or a reply that did not need the body (a file already received), may
+        // leave body bytes unread. Close rather than parse them as the next request, and
+        // drain (discarding) so the close is graceful and the reply is not lost to a TCP
+        // reset.
+        const unread = !req.complete;
+        if (status >= 400 || unread) headers['Connection'] = 'close';
         res.writeHead(status, headers);
         res.end(bytes);
-        if (status >= 400 && !req.complete) {
+        if (unread) {
             req.removeAllListeners('data');
             req.resume();
             res.once('finish', () => setTimeout(() => req.socket.destroy(), 2_000).unref());
@@ -388,16 +439,18 @@ export class ExtensionServer {
         if (!this.overall.hit('*')) throw new RequestError('rate_limited');
         // (3)
         if (header(req, HEADER.proto) !== String(PROTO)) throw new RequestError('bad_proto');
-        // (4) application/json is not a CORS-safelisted type: a page cannot send it
-        // without a preflight, and the preflight fails at (2).
-        if (method === 'POST' && !isJsonContentType(header(req, 'content-type'))) {
+        // (4) Neither application/json nor application/octet-stream is a CORS-safelisted
+        // type: a page cannot send them without a preflight, and the preflight fails at
+        // (2). File uploads are octet-stream; everything else is JSON.
+        const path = target.split('?')[0];
+        const wantType = FILE_ROUTE_LIKE.test(path) ? 'application/octet-stream' : 'application/json';
+        if (method === 'POST' && mediaType(header(req, 'content-type')) !== wantType) {
             throw new RequestError('bad_content_type');
         }
         // (5) Defence in depth only; the per-client match is checked once the client is known.
         const origin = header(req, 'origin');
         if (method === 'POST' && (!origin || !EXTENSION_ORIGIN.test(origin))) throw new RequestError('bad_origin');
 
-        const path = target.split('?')[0];
         if (path === '/v1/pair') {
             if (method !== 'POST') throw new RequestError('method_not_allowed');
             return this.pair(req, res, origin!);
@@ -408,9 +461,24 @@ export class ExtensionServer {
         }
 
         const routes: Record<string, string> = { '/v1/status': 'GET', '/v1/workspaces': 'GET', '/v1/bundles': 'POST' };
-        const auth = await this.authenticate(req, method, target, origin, endpoint, identify);
-        const signer = { key: auth.key, nonce: header(req, HEADER.nonce)!, endpoint };
-        void this.deps.pairing.touch(auth.record.clientId).catch(() => undefined);
+        const verified = await this.verify(req, method, target, origin, endpoint, identify);
+        const signer = { key: verified.key, nonce: header(req, HEADER.nonce)!, endpoint };
+        void this.deps.pairing.touch(verified.record.clientId).catch(() => undefined);
+
+        // A file upload's body is streamed by the backend, never buffered here.
+        const file = FILE_ROUTE.exec(path);
+        if (file && method === 'POST') {
+            if (!this.uploadLimit.hit(verified.record.clientId)) throw new RequestError('rate_limited');
+            return this.file(req, res, verified, signer, file[1], file[2]);
+        }
+
+        const auth = await this.readVerifiedBody(req, verified, method === 'POST' ? MAX_CONTROL_BODY : 0);
+        const commit = COMMIT_ROUTE.exec(path);
+        if (file || commit) {
+            if (method !== 'POST') throw new RequestError('method_not_allowed');
+            if (!this.uploadLimit.hit(verified.record.clientId)) throw new RequestError('rate_limited');
+            return this.commit(req, res, auth, signer, commit![1]);
+        }
 
         if (!(path in routes)) throw new RequestError('not_found');
         if (routes[path] !== method) throw new RequestError('method_not_allowed');
@@ -425,18 +493,18 @@ export class ExtensionServer {
     }
 
     /**
-     * Identifies the client and checks the signature from headers alone, then reads the
-     * body under the declared length. Returns only for a request that is authentic, fresh,
-     * first-seen and whose body matches what was signed.
+     * Identifies the client and checks the signature from headers alone, reading nothing.
+     * Returns only for a request that is authentic, fresh and first-seen; the body is the
+     * caller's to read, under a cap that depends on the route.
      */
-    private async authenticate(
+    private async verify(
         req: http.IncomingMessage,
         method: string,
         target: string,
         origin: string | undefined,
         endpoint: string,
         identify: (signer: Signer) => void,
-    ): Promise<Authenticated> {
+    ): Promise<Verified> {
         const clientId = header(req, HEADER.client);
         const ts = header(req, HEADER.ts);
         const nonce = header(req, HEADER.nonce);
@@ -476,14 +544,26 @@ export class ExtensionServer {
         identify({ key: client.key, nonce, endpoint });
         if (Math.abs(this.now() - Number(ts)) > MAX_SKEW_MS) throw new RequestError('clock_skew');
         if (!this.replay.add(clientId, nonce)) throw new RequestError('replay');
+        return { ...client, declared: Number(contentLength), bodySha256 };
+    }
 
-        const cap = method === 'POST' ? MAX_CONTROL_BODY : 0;
-        const declared = Number(contentLength);
-        if (declared > cap) throw new RequestError('too_large');
-        const body = await readBody(req, declared);
+    /** Reads a verified request's body (at most `cap`, and exactly what was declared) and checks its digest. */
+    private async readVerifiedBody(req: http.IncomingMessage, verified: Verified, cap: number): Promise<Authenticated> {
+        if (verified.declared > cap) throw new RequestError('too_large');
+        const body = await readBody(req, verified.declared);
         const digest = sha256Hex(body);
-        if (digest !== bodySha256) throw new RequestError('hash_mismatch');
-        return { ...client, body, bodySha256: digest };
+        if (digest !== verified.bodySha256) throw new RequestError('hash_mismatch');
+        return { ...verified, body, bodySha256: digest };
+    }
+
+    private context(verified: Verified, bodySha256: string): BundleContext {
+        return {
+            clientId: verified.record.clientId,
+            origin: verified.record.origin,
+            extVersion: verified.record.extVersion,
+            receivedAt: new Date(this.now()).toISOString(),
+            bodySha256,
+        };
     }
 
     /** The handshake endpoints are unsigned, so they read small bodies only. */
@@ -547,13 +627,48 @@ export class ExtensionServer {
         const checked = validateManifest(parseJson(auth.body));
         if (checked.ok === false) throw new RequestError('invalid', checked.detail);
 
-        const outcome = await this.deps.backend.acceptBundle(checked.value, {
-            clientId: auth.record.clientId,
-            origin: auth.record.origin,
-            extVersion: auth.record.extVersion,
-            receivedAt: new Date(this.now()).toISOString(),
-            bodySha256: auth.bodySha256,
-        });
+        const outcome = await this.deps.backend.acceptBundle(checked.value, this.context(auth, auth.bodySha256));
+        if ('error' in outcome) throw new RequestError(outcome.error, outcome.detail);
+        this.send(req, res, 200, outcome, signer);
+    }
+
+    /**
+     * One file of a capture. Everything that can be refused from the headers is refused
+     * before a byte is read: the name, the cap for that name, and (in the backend) whether
+     * the length and digest are the ones the manifest declared. The backend then streams
+     * the body to disk, hashing as it goes.
+     */
+    private async file(
+        req: http.IncomingMessage,
+        res: http.ServerResponse,
+        verified: Verified,
+        signer: Signer,
+        bundleId: string,
+        name: string,
+    ): Promise<void> {
+        if (!isCaptureFileName(name)) throw new RequestError('invalid', 'file name: not one a capture carries');
+        if (verified.declared > CAPTURE_FILE_CAPS[name]) throw new RequestError('too_large');
+        const outcome = await this.deps.backend.receiveFile({
+            bundleId,
+            name,
+            size: verified.declared,
+            sha256: verified.bodySha256,
+            body: req,
+        }, this.context(verified, verified.bodySha256));
+        if ('error' in outcome) throw new RequestError(outcome.error, outcome.detail);
+        this.send(req, res, 200, outcome, signer);
+    }
+
+    private async commit(
+        req: http.IncomingMessage,
+        res: http.ServerResponse,
+        auth: Authenticated,
+        signer: Signer,
+        bundleId: string,
+    ): Promise<void> {
+        const body = parseJson(auth.body);
+        if (!isRecord(body) || Object.keys(body).length > 0) throw new RequestError('invalid', 'body must be {}');
+        const outcome = await this.deps.backend.commitBundle(bundleId, this.context(auth, auth.bodySha256));
         if ('error' in outcome) throw new RequestError(outcome.error, outcome.detail);
         this.send(req, res, 200, outcome, signer);
     }

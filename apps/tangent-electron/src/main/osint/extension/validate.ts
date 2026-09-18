@@ -25,10 +25,16 @@ import * as net from 'net';
 import { domainToASCII } from 'url';
 import {
     ALL_KINDS,
+    CAPTURE_FILE_CAPS,
+    CAPTURE_FILE_NAMES,
     ENTITY_KINDS,
+    REQUIRED_CAPTURE_FILE,
+    SHA256_HEX,
     LIMITS,
     SUPPORTED_KINDS,
     WALLET_CHAINS,
+    type CaptureFileDecl,
+    type CaptureFiles,
     type EntityKind,
     type EntityPayload,
     type Manifest,
@@ -215,6 +221,40 @@ function entity(value: unknown): EntityPayload {
     return out;
 }
 
+// --- captures ------------------------------------------------------------------------
+
+function captureFile(value: unknown, path: string, cap: number): CaptureFileDecl {
+    if (!isRecord(value)) fail(path, 'must be an object');
+    onlyKeys(value, path, ['size', 'sha256']);
+    const size = value.size;
+    if (typeof size !== 'number' || !Number.isSafeInteger(size) || size < 1) fail(`${path}.size`, 'must be a whole number of bytes, at least 1');
+    if (size > cap) fail(`${path}.size`, `larger than ${cap} bytes`);
+    if (typeof value.sha256 !== 'string' || !SHA256_HEX.test(value.sha256)) fail(`${path}.sha256`, 'must be 64 lowercase hex characters');
+    return { size, sha256: value.sha256 };
+}
+
+/**
+ * The files a capture declares up front. Declaring them is what lets the server reserve
+ * their bytes against the budget before any arrive, and refuse an upload whose length or
+ * digest differs from what was promised without reading it.
+ */
+function capture(value: unknown): { files: CaptureFiles } {
+    if (!isRecord(value)) fail('capture', 'must be an object');
+    onlyKeys(value, 'capture', ['files']);
+    const files = value.files;
+    if (!isRecord(files)) fail('capture.files', 'must be an object');
+    onlyKeys(files, 'capture.files', CAPTURE_FILE_NAMES);
+    if (files[REQUIRED_CAPTURE_FILE] === undefined) fail(`capture.files.${REQUIRED_CAPTURE_FILE}`, 'required');
+    const out: Partial<CaptureFiles> = {};
+    // In the fixed order, so the cleaned form (and its canonical JSON) does not depend on
+    // the order the extension wrote them in.
+    for (const name of CAPTURE_FILE_NAMES) {
+        if (files[name] === undefined) continue;
+        out[name] = captureFile(files[name], `capture.files.${name}`, CAPTURE_FILE_CAPS[name]);
+    }
+    return { files: out as CaptureFiles };
+}
+
 // --- manifest ------------------------------------------------------------------------
 
 /** An ISO 8601 date-time with a zone, as toISOString writes it; Date.parse alone takes '1' or 'March 7'. */
@@ -269,6 +309,7 @@ function manifest(value: unknown): Manifest {
         onlyKeys(note, 'note', ['text']);
         return { ...base, kind, note: { text: text(note.text, 'note.text', LIMITS.noteText, { multiline: true }) } };
     }
+    if (kind === 'capture') return { ...base, kind, capture: capture(value.capture) };
     return { ...base, kind, entity: entity(value.entity) };
 }
 

@@ -2,7 +2,7 @@
 
 This is the contract between the OSINT Copilot browser extension and the desktop app. It is normative: the app's implementation lives beside this file (`protocol.ts`, `signing.ts`, `validate.ts`, `pairing.ts`, `server.ts`), and the extension is built against this text. Two files of shared test vectors pin every construction:
 
-- `vectors/protocol-vectors.json`: the strings each side signs and the MACs expected for them. A separate Python implementation of this document (`vectors/generate-protocol-vectors.py`) produced them, not the app.
+- `vectors/protocol-vectors.json`: the strings each side signs and the MACs expected for them, including a file upload whose body is raw bytes (`octetRequests`, body given as `bodyHex`). A separate Python implementation of this document (`vectors/generate-protocol-vectors.py`) produced them, not the app.
 - `vectors/entity-vectors.json`: manifest and entity inputs, each with the expected accept or reject. Where a vector gives the cleaned result (`value`, `url`, `text`, `bundleId`) or, for a manifest reject, the exact `detail`, both implementations must produce it.
 
 Both implementations must reproduce every vector exactly. If you change anything in this document, bump `PROTO` and regenerate the vectors.
@@ -42,7 +42,7 @@ The server applies these checks before any routing:
 2. **OPTIONS.** An `OPTIONS` request gets `403 {"error":"forbidden"}`. **No response ever carries an `Access-Control-*` header.** A CORS preflight therefore always fails, and a web page cannot read any response.
 3. *(Overall rate limit: 60 requests a second across all callers, otherwise `429 {"error":"rate_limited"}`.)*
 4. **Protocol.** `X-OC-Proto` must be exactly `1`. Otherwise the reply is `400 {"error":"bad_proto"}`.
-5. **Content type.** A `POST` must have `Content-Type: application/json`. Parameters such as `; charset=utf-8` are allowed. Otherwise the reply is `400 {"error":"bad_content_type"}`.
+5. **Content type.** A `POST` to a path under `/v1/bundles/<anything>/files/` must have `Content-Type: application/octet-stream`; every other `POST` must have `Content-Type: application/json`. Parameters such as `; charset=utf-8` are allowed. Otherwise the reply is `400 {"error":"bad_content_type"}`. Neither type is CORS-safelisted, so a web page cannot send either without a preflight, and the preflight fails at step 2.
 6. **Origin.** A `POST` must carry an `Origin` matching `^chrome-extension://[a-p]{32}$`. Otherwise the reply is `403 {"error":"bad_origin"}`. Once the client is known (§6, and §7.2 for hello), the Origin must also equal exactly the one recorded at pairing, or the reply is again `403 bad_origin`. A `GET` needs no Origin, because Chrome omits it. Origin is defence in depth, **not** authentication.
 
 ## 5. Pairing: `POST /v1/pair`
@@ -125,7 +125,7 @@ Every endpoint except `/v1/pair` and `/v1/hello` is signed.
 | `X-OC-Nonce` | 16 fresh random bytes, base64url. Never reuse one. |
 | `X-OC-Body-Sha256` | hex SHA-256 of the exact body bytes. With no body, this is the SHA-256 of the empty string: `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`. |
 | `X-OC-Sig` | see below |
-| `Content-Type` | `application/json` (POST) |
+| `Content-Type` | `application/json` (POST), or `application/octet-stream` for a file upload (§7.5). It is not part of the string to sign. |
 | `Content-Length` | the body's length in **bytes** (POST) |
 
 ### 6.2 String to sign
@@ -142,7 +142,7 @@ Every endpoint except `/v1/pair` and `/v1/hello` is signed.
 
 Send bodies with a `Content-Length`: a string or `Uint8Array` body to `fetch` does this. A chunked body has no `Content-Length`, is therefore signed as `0`, and is rejected (`413`) as soon as it carries a byte. A `GET` has no body.
 
-Vector: `requests` (a POST with multi-byte UTF-8, and a GET).
+Vectors: `requests` (a POST with multi-byte UTF-8, and a GET) and `octetRequests` (a file upload whose body is bytes that are not UTF-8; signed exactly the same way).
 
 ### 6.3 Server verification order
 
@@ -157,11 +157,13 @@ The signature is verified **before any body byte is read**, using the declared `
 | | *From here on, every reply is signed (§6.4).* | |
 | 5 | `abs(now - ts) > 60 000 ms` | `401 clock_skew` |
 | 6 | Nonce already seen for this client in the last 120 s | `401 replay` |
-| 7 | Declared length over the cap: 256 KB for POST, 0 for GET | `413 too_large`, with nothing read |
+| 7 | Declared length over the cap: 256 KB for a JSON POST, 0 for GET, and for a file upload the cap for that file name (§8.3) | `413 too_large`, with nothing read |
 | 8 | The body is read up to the declared length. More bytes than declared means an overrun: what was read is discarded. | `413 too_large` |
 | 9 | SHA-256 of the body differs from `X-OC-Body-Sha256` | `422 hash_mismatch` |
 
 Only after all of these does routing run: `404 not_found` for an unknown path, and `405 method_not_allowed` for a known path with the wrong method.
+
+A file upload (§7.5) is the one exception to reading the whole body before routing: after step 7 its remaining checks are made from the headers, and only then is the body streamed to disk, hashed as it arrives (steps 8 and 9 happen during the stream). The signature is still verified before any body byte is read.
 
 ### 6.4 Response signatures
 
@@ -222,21 +224,58 @@ Vector: `workspaceId`.
 
 ### 7.4 `POST /v1/bundles` (signed)
 
-The body is a manifest (§8) of at most 256 KB. In this version the kinds `note` and `entity` commit within this one request.
+The body is a manifest (§8) of at most 256 KB. The kinds `note` and `entity` commit within this one request. A `capture` is created here and completed by §7.5 and §7.6.
 
 | Result | Reply |
 |---|---|
 | Stored | `200 {"status":"accepted","bundleId":"...","receivedAt":"<ISO 8601>"}` |
+| A capture, staged and waiting for its files | `200 {"status":"created","bundleId":"...","missing":["page.mhtml", ...]}`. `missing` lists the declared files not yet received, in the order `page.mhtml`, `viewport.png`, `page.pdf`. |
 | This `bundleId` was already received; nothing new is stored | `200 {"status":"duplicate","bundleId":"...","receivedAt":"<ISO 8601 of the first>"}` |
 | Malformed JSON | `400 bad_json` |
 | Fails validation | `422 {"error":"invalid","detail":"<field path>: <reason>"}` |
 | Any other kind | `422 {"error":"invalid","detail":"kind not supported by this app version"}` |
+| A capture `bundleId` that is staged with other files, another page, or by another client | `422 {"error":"invalid","detail":"bundleId: already used for a different capture"}` |
 | Unknown `workspaceId` | `404 unknown_workspace` |
 | Unlicensed | `403 unlicensed` |
-| The workspace's inbox budget is full | `507 budget_exceeded` |
+| The workspace's inbox budget is full. For a capture, the sum of the declared file sizes is **reserved** at this point and counts against the budget until the capture is committed or its staging is swept, so the reply comes before any file is sent. | `507 budget_exceeded` |
 | More than 20 a minute for this client | `429 rate_limited` |
 
 `bundleId` is the idempotency key. Retrying a bundle, for example after a network error or an unverifiable response, must reuse its `bundleId`.
+
+Sending a capture's manifest again while it is still staged (for example after the extension or the app restarted mid-upload) is how the extension resumes: the reply is `created` again, with the files still `missing`. Once the capture is committed, the reply is `duplicate`.
+
+### 7.5 `POST /v1/bundles/<bundleId>/files/<name>` (signed, octet-stream)
+
+Sends one declared file of a staged capture. `<bundleId>` is the lowercase UUID from the manifest and `<name>` is `page.mhtml`, `viewport.png` or `page.pdf`. The body is the file's bytes, `Content-Type: application/octet-stream`, and the request is signed exactly as in §6: `Content-Length` and `X-OC-Body-Sha256` are the file's size and hex SHA-256, and the signature covers them.
+
+The app refuses from the headers alone, reading nothing, in this order: a `<name>` that is not one of the three (`422 invalid`); a length over that name's cap (`413 too_large`); no staged capture with this id from this client (`404 unknown_bundle`; one already committed is `409 conflict`); a `<name>` the manifest did not declare (`422 invalid`); a `Content-Length` other than the declared `size`, or an `X-OC-Body-Sha256` other than the declared `sha256` (`422 invalid`).
+
+It then streams the body to `<name>.part` (created exclusively), hashing as it goes, and renames it to `<name>` only if all of these hold. Otherwise the partial file is deleted.
+
+| Result | Reply |
+|---|---|
+| Stored | `200 {"received":true}` |
+| This file was already received (the same declared size and digest) | `200 {"received":true}`, without reading the body again |
+| More bytes than declared | `413 too_large` |
+| The bytes hash to something else | `422 hash_mismatch` |
+| The content is not what the name says: `page.mhtml` must begin with MIME headers whose `Content-Type` is `multipart/related` with a `boundary`; `viewport.png` must begin with the PNG signature; `page.pdf` with `%PDF-` | `422 invalid` |
+| The same file is being received on another connection | `409 conflict` |
+| Unlicensed | `403 unlicensed` |
+
+### 7.6 `POST /v1/bundles/<bundleId>/commit` (signed)
+
+The body is JSON `{}`. The app hashes every declared file again (a file changed on disk since it was received is deleted and counts as missing), writes the stored manifest last, and moves the capture from staging to `pending/` in one step.
+
+| Result | Reply |
+|---|---|
+| Committed | `200 {"status":"accepted","bundleId":"...","receivedAt":"<ISO 8601 of the create>"}` |
+| Already committed | `200 {"status":"duplicate","bundleId":"...","receivedAt":"..."}` |
+| A declared file is missing | `409 {"error":"incomplete","detail":["viewport.png", ...]}` |
+| A file is still being received | `409 conflict` |
+| No staged capture with this id from this client | `404 unknown_bundle` |
+| Unlicensed | `403 unlicensed` |
+
+File uploads and commits share a limit of 120 a minute per client, apart from the 20 a minute for `/v1/bundles`.
 
 ## 8. Manifest v1
 
@@ -245,17 +284,18 @@ The body is a manifest (§8) of at most 256 KB. In this version the kinds `note`
   "v": 1,
   "bundleId": "<UUID v4>",
   "workspaceId": "<id from /v1/workspaces>",
-  "kind": "note" | "entity",
+  "kind": "note" | "entity" | "capture",
   "page": {"url": "https://...", "title": "..."},
   "clientTime": "<ISO 8601 date-time, advisory only>",
   "note": {"text": "..."},
-  "entity": {"kind": "...", "value": "...", "chain": "...", "platform": "...", "context": "..."}
+  "entity": {"kind": "...", "value": "...", "chain": "...", "platform": "...", "context": "..."},
+  "capture": {"files": {"page.mhtml": {"size": 123, "sha256": "..."}, "viewport.png": {...}, "page.pdf": {...}}}
 }
 ```
 
-- `note` is present exactly when `kind` is `note`, and `entity` exactly when it is `entity`.
+- `note` is present exactly when `kind` is `note`, `entity` exactly when it is `entity`, and `capture` exactly when it is `capture`.
 - Unknown fields are rejected at every level.
-- Later versions add the kinds `capture`, `highlight`, `highlight.update` and `highlight.delete`. This app version rejects them with the detail shown in §7.4.
+- Later versions add the kinds `highlight`, `highlight.update` and `highlight.delete`. This app version rejects them with the detail shown in §7.4.
 
 ### 8.1 Cleaning and limits
 
@@ -298,6 +338,18 @@ These are acceptance checks only. The app computes identifier keys itself, so th
 
 Vectors: `entity-vectors.json`.
 
+### 8.3 Captures
+
+`capture.files` declares the files that will follow (§7.5). The names are fixed; the app never takes a filename from the extension.
+
+| File | Required | Cap | Content |
+|---|---|---|---|
+| `page.mhtml` | yes | 50 MB (52 428 800 bytes) | the page as `chrome.pageCapture.saveAsMHTML` wrote it |
+| `viewport.png` | no | 25 MB (26 214 400 bytes) | what the analyst saw (`captureVisibleTab`) |
+| `page.pdf` | no | 50 MB | the original bytes of a PDF tab |
+
+Each entry is `{"size": <whole number of bytes, at least 1, at most the cap>, "sha256": "<64 lowercase hex>"}` and has no other fields. Violations are `422 invalid` with the field path, for example `capture.files.viewport.png.size: larger than 26214400 bytes`.
+
 ## 9. Errors
 
 Every error body is JSON `{"error": "<code>", "detail"?: "<text>"}`.
@@ -307,8 +359,9 @@ Every error body is JSON `{"error": "<code>", "detail"?: "<text>"}`.
 | 400 | `bad_proto`, `bad_content_type`, `bad_json` |
 | 401 | `unauthenticated`, `bad_signature`, `clock_skew`, `replay` |
 | 403 | `forbidden`, `bad_origin`, `pair_expired`, `pair_denied`, `unlicensed` |
-| 404 | `not_found`, `unknown_workspace` |
+| 404 | `not_found`, `unknown_workspace`, `unknown_bundle` |
 | 405 | `method_not_allowed` |
+| 409 | `conflict`, `incomplete` (whose `detail` is an array of file names) |
 | 413 | `too_large` |
 | 421 | `bad_host` |
 | 422 | `invalid`, `hash_mismatch` |
@@ -324,6 +377,7 @@ Every error body is JSON `{"error": "<code>", "detail"?: "<text>"}`.
 | `/v1/pair` | 10 a minute (counted only while a pairing is active) |
 | `/v1/hello` | 10 a minute per `clientId` |
 | `/v1/bundles` | 20 a minute per `clientId` |
+| `/v1/bundles/<id>/files/<name>` and `/v1/bundles/<id>/commit`, together | 120 a minute per `clientId` |
 
 ## 11. What the app stores
 
@@ -348,3 +402,17 @@ The stored manifest is the cleaned manifest plus `server: {receivedAt, clientId,
 A bundle then moves to `done/`, `rejected/` or `removed/`. A `bundleId` found in any of `pending/`, `done/`, `rejected/` or `removed/` is a duplicate. The budget is 2 GB of files under `.osint-inbox/` per workspace; the app never deletes a bundle to make room.
 
 The app's own file APIs for the investigation (`osint:vault.*`) refuse every path under `.osint-inbox/`, whatever its case, so the app's renderer cannot forge a bundle or edit its journal.
+
+### 12.1 Captures
+
+A capture is created in `.osint-inbox/.staging/<bundleId>/` as `upload.json`: the cleaned manifest and the stamp, sealed like a stored manifest. It records who may add files and reserves the declared bytes against the budget; a staging folder counts at its declared size, not at what has arrived, so two captures cannot both be promised the same free space. Each file arrives beside it (§7.5). Staging untouched for an hour is swept like any other.
+
+At commit, `manifest.json` is written last. Its `server` stamp gains `files: {<name>: {size, sha256}}`, computed by the app from the stored bytes, and the MAC covers it with everything else, so a file swapped afterwards no longer matches the sealed digest. The folder is then renamed into `pending/`.
+
+After the commit the app derives, one capture at a time, into the same `pending/<bundleId>/` folder. It first re-hashes `page.mhtml`; an archive that no longer matches the sealed digest is moved to `rejected/` and not derived.
+
+- `page.markdown`: the archive's first `text/html` part, converted to markdown in a separate process that is killed after 60 seconds. The markdown is inert: images become plain links (`[image: alt](url)`), any `![` is escaped, every `://` except in a link target the converter wrote is escaped as `:\/\/` (so no bare URL is left for the app to embed, alone on a line or after `!`), anything that could open an HTML tag is written as `&lt;`, only `http(s)`, `mailto` and relative links are kept, and scripts, styles, frames, objects, embeds and SVG are dropped. It is never named `.md` inside the inbox.
+- `fullpage.png`: the archive rendered off-screen with JavaScript off, in a throwaway session that cancels every request except the archive's own `file://` URL and its `cid:` and `data:` parts, with navigation, redirects and new windows refused.
+- `derived.json`: `{v: 1, bundleId, status: "done" | "failed", archiveSha256, markdown?: {file, sha256}, fullpage: {file, sha256} | {error}, contentLocation, urlMismatch, title, errors, derivedAt, mac}`. `archiveSha256` is the digest of the `page.mhtml` it was derived from. `contentLocation` is the archive's `Snapshot-Content-Location` (else the document part's `Content-Location`), or null; `urlMismatch` is true when it is not `page.url` (ignoring the fragment and credentials) or is unknown. `mac = b64url(HMAC(manifestKey, "OCDERIVED1\n" + canonicalJSON(everything but mac)))`. A failure is recorded here, never thrown; `status` is `failed` when no markdown could be made.
+
+A pending capture is handed to the renderer only once its `derived.json` verifies, and with it. This version of the app does not yet place captures: the renderer leaves them in `pending/`, neither applied nor rejected. One committed but never derived (the app stopped in between), or whose `derived.json` does not verify, is derived again when the server starts and whenever the inbox is listed.

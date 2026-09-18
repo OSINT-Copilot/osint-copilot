@@ -563,7 +563,7 @@ export class InboxService {
             try {
                 const result = await this.apply(bundle);
                 if (result === 'done') applied++;
-                else dropped++;
+                else if (result === 'rejected') dropped++;
             } catch (e) {
                 // Left pending, to be tried again on the next change or the next start.
                 console.warn(`[osint] could not apply browser extension item ${bundle.bundleId}:`, e);
@@ -573,8 +573,12 @@ export class InboxService {
     }
 
     /** Applies one bundle, resuming from its journal. */
-    private async apply(bundle: InboxBundle): Promise<'done' | 'rejected'> {
+    private async apply(bundle: InboxBundle): Promise<'done' | 'rejected' | 'held'> {
         const { bundleId, manifest, server } = bundle;
+        // Main accepts and derives captures, but nothing here places them yet. Rejecting one
+        // would move the evidence to rejected/, which is for good; left pending, the build
+        // that can place it finds it there.
+        if (manifest.kind === 'capture') return 'held';
         const journal = new Map((bundle.state?.steps ?? []).map((s) => [s.step, s.data]));
         const step = async (name: string, data: unknown) => {
             await this.deps.inbox.step(bundleId, name, data);

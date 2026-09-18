@@ -7,7 +7,11 @@ const prod = mode === 'production';
 
 module.exports = {
 	entry: {
-		'bundle/main': ['./src/main/index.ts']
+		'bundle/main': ['./src/main/index.ts'],
+		// The capture parser's utility process (src/main/osint/capture/utility-runner.ts
+		// forks it by this name, beside main.js). Its own entry so that 50 MB of hostile
+		// MHTML is parsed off main's thread, in a process main can kill.
+		'bundle/osint-capture-worker': ['./src/main/osint/capture/derive-worker.ts']
 	},
 	resolve: {
 		extensions: ['.mjs', '.js', '.ts', '.cjs'],

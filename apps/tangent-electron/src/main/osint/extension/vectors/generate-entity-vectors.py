@@ -110,7 +110,7 @@ manifests = [
       {"kind": "note", "note": {"text": "one\r\ntwo\u0007\u2029three"}}, text="one\ntwothree"),
     m("uppercase bundleId is lowercased", A,
       {**note, "bundleId": "0B7E7C1E-3F7A-4C56-9A3E-2D4F5B6C7D8E"}, bundleId="0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e"),
-    m("capture is a later-phase kind", R, {"kind": "capture"}, detail="kind not supported by this app version"),
+    m("highlight is a later-phase kind", R, {"kind": "highlight"}, detail="kind not supported by this app version"),
     m("unknown kind", R, {"kind": "bogus"},
       detail="kind: must be one of note, entity, capture, highlight, highlight.update, highlight.delete"),
     m("wrong version", R, {**note, "v": 2}, detail="v: must be 1"),

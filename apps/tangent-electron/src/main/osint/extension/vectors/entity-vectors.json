@@ -618,7 +618,7 @@
 			"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e"
 		},
 		{
-			"note": "capture is a later-phase kind",
+			"note": "highlight is a later-phase kind",
 			"manifest": {
 				"v": 1,
 				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
@@ -628,7 +628,7 @@
 					"title": "Example"
 				},
 				"clientTime": "2025-10-09T08:53:20.000Z",
-				"kind": "capture"
+				"kind": "highlight"
 			},
 			"expect": "reject",
 			"detail": "kind not supported by this app version"

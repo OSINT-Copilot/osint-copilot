@@ -5,7 +5,7 @@ import * as net from 'net'
 import * as os from 'os'
 import * as path from 'path'
 import { randomBytes, randomUUID } from 'crypto'
-import { ExtensionServer, type BundleContext, type InboxBackend } from './server'
+import { ExtensionServer, type BundleContext, type FileUpload, type InboxBackend } from './server'
 import { PairingManager } from './pairing'
 import { ExtensionSecretStore } from './secret-store'
 import { MAX_CONTROL_BODY, type Manifest } from './protocol'
@@ -65,6 +65,22 @@ class FakeBackend implements InboxBackend {
 		this.calls.push('acceptBundle')
 		this.bundles.push({ manifest, ctx })
 		return this.next ?? { status: 'accepted' as const, bundleId: manifest.bundleId, receivedAt: ctx.receivedAt }
+	}
+
+	files: { upload: Omit<FileUpload, 'body'>; bytes: Buffer }[] = []
+
+	async receiveFile(upload: FileUpload, _ctx: BundleContext) {
+		this.calls.push('receiveFile')
+		const chunks: Buffer[] = []
+		for await (const chunk of upload.body) chunks.push(chunk)
+		const { body: _body, ...rest } = upload
+		this.files.push({ upload: rest, bytes: Buffer.concat(chunks) })
+		return { received: true as const }
+	}
+
+	async commitBundle(bundleId: string, ctx: BundleContext) {
+		this.calls.push('commitBundle')
+		return { status: 'accepted' as const, bundleId, receivedAt: ctx.receivedAt }
 	}
 }
 
@@ -730,9 +746,9 @@ describe('body handling', () => {
 		expect(res.status).toBe(422)
 		expect(res.json).toEqual({ error: 'invalid', detail: 'page.url: must be an http(s) URL' })
 
-		const capture = await signed(client, 'POST', '/v1/bundles', manifest({ kind: 'capture', note: undefined }))
-		expect(capture.res.status).toBe(422)
-		expect(capture.res.json).toEqual({ error: 'invalid', detail: 'kind not supported by this app version' })
+		const highlight = await signed(client, 'POST', '/v1/bundles', manifest({ kind: 'highlight', note: undefined }))
+		expect(highlight.res.status).toBe(422)
+		expect(highlight.res.json).toEqual({ error: 'invalid', detail: 'kind not supported by this app version' })
 		expect(ctx.backend.calls).toEqual([])
 	})
 })
@@ -888,4 +904,96 @@ describe('rate limits', () => {
 		expect(statuses.slice(0, 60).every(s => s === 400)).toBe(true)
 		expect(statuses[60]).toBe(429)
 	})
+})
+
+describe('capture uploads', () => {
+	const id = '0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e'
+
+	async function upload(client: Client, name: string, body: Buffer, over: Parameters<typeof signedHeaders>[4] = {}, type = 'application/octet-stream') {
+		const target = `/v1/bundles/${id}/files/${name}`
+		const headers = signedHeaders(client, 'POST', target, body, over)
+		return request({ method: 'POST', path: target, headers: baseHeaders({ 'Content-Type': type, Origin: client.origin, ...headers }), body })
+	}
+
+	it('streams a signed octet-stream body to the backend, and signs the reply', async () => {
+		const client = await pair()
+		const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), randomBytes(1000)])
+		const target = `/v1/bundles/${id}/files/viewport.png`
+		const headers = signedHeaders(client, 'POST', target, png)
+		const res = await request({ method: 'POST', path: target, headers: baseHeaders({ 'Content-Type': 'application/octet-stream', Origin: client.origin, ...headers }), body: png })
+		expect(res.status, res.raw.toString()).toBe(200)
+		expect(res.json).toEqual({ received: true })
+		expect(responseSigOk(client, res, headers['X-OC-Nonce'])).toBe(true)
+		expect(ctx.backend.files).toHaveLength(1)
+		expect(ctx.backend.files[0].upload).toEqual({ bundleId: id, name: 'viewport.png', size: png.length, sha256: sha256Hex(png) })
+		expect(ctx.backend.files[0].bytes.equals(png)).toBe(true)
+	})
+
+	it('wants octet-stream for a file and JSON for the commit', async () => {
+		const client = await pair()
+		const body = Buffer.from('x')
+		expect((await upload(client, 'viewport.png', body, {}, 'application/json')).json).toEqual({ error: 'bad_content_type' })
+		expect((await upload(client, 'viewport.png', body, {}, 'text/plain')).json).toEqual({ error: 'bad_content_type' })
+		const commit = await signed(client, 'POST', `/v1/bundles/${id}/commit`, {})
+		expect(commit.res.status).toBe(200)
+		expect(commit.res.json.status).toBe('accepted')
+		const raw = Buffer.from('{}')
+		const target = `/v1/bundles/${id}/commit`
+		const wrong = await request({ method: 'POST', path: target, headers: baseHeaders({ 'Content-Type': 'application/octet-stream', Origin: client.origin, ...signedHeaders(client, 'POST', target, raw) }), body: raw })
+		expect(wrong.json).toEqual({ error: 'bad_content_type' })
+		expect(ctx.backend.files).toHaveLength(0)
+	})
+
+	it('refuses a name no capture carries, and a declared length over that name\'s cap, reading nothing', async () => {
+		const client = await pair()
+		const bad = await upload(client, 'evil.exe', Buffer.from('x'))
+		expect(bad.status).toBe(422)
+		expect(bad.json.error).toBe('invalid')
+		const dotdot = await upload(client, '..%2F..%2Fx', Buffer.from('x'))
+		expect(dotdot.status).toBe(422)
+		// 25 MB + 1 declared for the PNG; nothing is sent past the headers.
+		const over = await rawSigned(client, `/v1/bundles/${id}/files/viewport.png`, 25 * 1024 * 1024 + 1)
+		expect(over?.status).toBe(413)
+		expect(ctx.backend.calls).not.toContain('receiveFile')
+	})
+
+	it('checks the signature before reading a byte: a 40 MB body that is never sent gets 401 at once', async () => {
+		const client = await pair()
+		const started = Date.now()
+		const reply = await rawSigned(client, `/v1/bundles/${id}/files/page.mhtml`, 40 * 1024 * 1024, { sig: b64url(randomBytes(32)) })
+		expect(reply?.status).toBe(401)
+		expect(JSON.parse(reply!.body)).toEqual({ error: 'bad_signature' })
+		expect(reply!.headers['x-oc-sig']).toBeUndefined()
+		expect(Date.now() - started).toBeLessThan(1500)
+		expect(ctx.backend.calls).not.toContain('receiveFile')
+	})
+
+	it('an upload with a malformed bundle id is not found, and GET on an upload path is not allowed', async () => {
+		const client = await pair()
+		const target = '/v1/bundles/not-an-id/files/page.mhtml'
+		const body = Buffer.from('x')
+		const res = await request({ method: 'POST', path: target, headers: baseHeaders({ 'Content-Type': 'application/octet-stream', Origin: client.origin, ...signedHeaders(client, 'POST', target, body) }), body })
+		expect(res.status).toBe(404)
+		const get = await signed(client, 'GET', `/v1/bundles/${id}/commit`)
+		expect(get.res.status).toBe(405)
+	})
+
+	/** Headers only, declaring `length` bytes that never follow; the reply or null. */
+	function rawSigned(client: Client, target: string, length: number, over: { sig?: string } = {}) {
+		const headers = signedHeaders(client, 'POST', target, Buffer.alloc(0), {
+			contentLength: String(length),
+			bodySha256: sha256Hex('something else'),
+			...over,
+		})
+		const lines = [
+			`POST ${target} HTTP/1.1`,
+			`Host: 127.0.0.1:${ctx.port}`,
+			'X-OC-Proto: 1',
+			'Content-Type: application/octet-stream',
+			`Origin: ${client.origin}`,
+			`Content-Length: ${length}`,
+			...Object.entries(headers).map(([k, v]) => `${k}: ${v}`),
+		]
+		return rawExchange(lines.join('\r\n') + '\r\n\r\n', 3000)
+	}
 })

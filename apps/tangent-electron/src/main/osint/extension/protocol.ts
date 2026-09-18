@@ -37,6 +37,8 @@ export const RATE = {
     pairPerMinute: 10,
     helloPerMinutePerClient: 10,
     bundlesPerMinutePerClient: 20,
+    /** File uploads and commits of captures; one capture is up to four of these. */
+    uploadsPerMinutePerClient: 120,
     requestsPerSecond: 60,
 } as const;
 
@@ -70,6 +72,9 @@ export type ErrorCode =
     | 'bad_host'
     | 'invalid'
     | 'hash_mismatch'
+    | 'unknown_bundle'
+    | 'conflict'
+    | 'incomplete'
     | 'rate_limited'
     | 'budget_exceeded'
     | 'internal';
@@ -89,7 +94,10 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
     unlicensed: 403,
     not_found: 404,
     unknown_workspace: 404,
+    unknown_bundle: 404,
     method_not_allowed: 405,
+    conflict: 409,
+    incomplete: 409,
     too_large: 413,
     bad_host: 421,
     invalid: 422,
@@ -101,7 +109,8 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
 
 export interface ErrorBody {
     error: ErrorCode;
-    detail?: string;
+    /** A field path and reason; for `incomplete`, the names of the files still missing. */
+    detail?: string | string[];
 }
 
 // --- handshake -----------------------------------------------------------------------
@@ -159,12 +168,25 @@ export interface BundleResponse {
     receivedAt: string;
 }
 
+/** POST /v1/bundles for a capture: staged, waiting for its files. */
+export interface CaptureCreatedResponse {
+    status: 'created';
+    bundleId: string;
+    /** Declared files not yet received, in CAPTURE_FILE_NAMES order. */
+    missing: CaptureFileName[];
+}
+
+/** POST /v1/bundles/<id>/files/<name>. */
+export interface FileReceivedResponse {
+    received: true;
+}
+
 // --- manifest ------------------------------------------------------------------------
 
 /** Every kind the protocol names; later phases add the rest to SUPPORTED_KINDS. */
 export const ALL_KINDS = ['note', 'entity', 'capture', 'highlight', 'highlight.update', 'highlight.delete'] as const;
 export type BundleKind = typeof ALL_KINDS[number];
-export const SUPPORTED_KINDS = ['note', 'entity'] as const;
+export const SUPPORTED_KINDS = ['note', 'entity', 'capture'] as const;
 export type SupportedKind = typeof SUPPORTED_KINDS[number];
 
 export const ENTITY_KINDS = ['email', 'phone', 'username', 'domain', 'url', 'ip', 'wallet'] as const;
@@ -215,4 +237,33 @@ export interface EntityManifest extends ManifestBase {
     entity: EntityPayload;
 }
 
-export type Manifest = NoteManifest | EntityManifest;
+/**
+ * The files a capture may carry, and each one's cap in bytes. The names are fixed: the
+ * app never takes a filename from the extension, and these are the only ones a capture
+ * folder holds besides what main writes itself.
+ */
+export const CAPTURE_FILE_CAPS = {
+    'page.mhtml': 50 * 1024 * 1024,
+    'viewport.png': 25 * 1024 * 1024,
+    'page.pdf': 50 * 1024 * 1024,
+} as const;
+export type CaptureFileName = keyof typeof CAPTURE_FILE_CAPS;
+export const CAPTURE_FILE_NAMES = Object.keys(CAPTURE_FILE_CAPS) as CaptureFileName[];
+/** Every capture has its archive; the viewport image and the PDF are optional. */
+export const REQUIRED_CAPTURE_FILE: CaptureFileName = 'page.mhtml';
+
+export interface CaptureFileDecl {
+    /** Bytes. */
+    size: number;
+    /** Lowercase hex sha256 of the file's bytes. */
+    sha256: string;
+}
+
+export type CaptureFiles = { 'page.mhtml': CaptureFileDecl } & Partial<Record<CaptureFileName, CaptureFileDecl>>;
+
+export interface CaptureManifest extends ManifestBase {
+    kind: 'capture';
+    capture: { files: CaptureFiles };
+}
+
+export type Manifest = NoteManifest | EntityManifest | CaptureManifest;

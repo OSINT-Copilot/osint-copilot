@@ -15,6 +15,7 @@ import { ExtensionSecretStore, type Encryptor } from './secret-store';
 import { PairingManager, type ConfirmPairing } from './pairing';
 import { ExtensionServer, type StartOptions } from './server';
 import { InboxWriter, type InboxHost } from '../inbox/inbox-writer';
+import { CaptureDeriver, type CaptureDeriverDeps } from '../capture/deriver';
 import type { ExtensionPairing, ExtensionStatus } from '../../../osint/host/types';
 
 export interface ControllerDeps {
@@ -30,6 +31,12 @@ export interface ControllerDeps {
     ports?: StartOptions['ports'];
     now?: () => number;
     log?: { info(...args: unknown[]): void; warn(...args: unknown[]): void };
+    /**
+     * How captures are derived: the utility-process parser and renderArchive in the app,
+     * an in-process parser and a fake renderer in tests. Without it captures are received
+     * and committed but never derived, so never listed.
+     */
+    capture?: Pick<CaptureDeriverDeps, 'runParser' | 'renderArchive' | 'parseTimeoutMs'>;
 }
 
 export class ExtensionController {
@@ -44,6 +51,7 @@ export class ExtensionController {
         readonly pairing: PairingManager,
         readonly inbox: InboxWriter,
         readonly server: ExtensionServer,
+        readonly deriver: CaptureDeriver | null,
     ) {}
 
     static async open(deps: ControllerDeps): Promise<ExtensionController> {
@@ -54,14 +62,17 @@ export class ExtensionController {
             confirm: deps.confirm,
             now: deps.now,
         });
+        let deriver: CaptureDeriver | null = null;
         const inbox = new InboxWriter({
             host: deps.host,
             keys: secrets,
             licensed: () => deps.licensed(),
             now: deps.now,
+            derive: (root, bundleId) => deriver?.enqueue(root, bundleId),
         });
+        if (deps.capture) deriver = new CaptureDeriver({ ...deps.capture, store: inbox, log: deps.log });
         const server = new ExtensionServer({ pairing, backend: inbox, appVersion: deps.appVersion, now: deps.now });
-        return new ExtensionController(deps, secrets, pairing, inbox, server);
+        return new ExtensionController(deps, secrets, pairing, inbox, server, deriver);
     }
 
     private async licensed(): Promise<boolean> {
@@ -92,7 +103,8 @@ export class ExtensionController {
                 this.lastStartError = err instanceof Error ? err.message : String(err);
                 throw err;
             }
-            // Writes that died with a previous run leave staging behind; clear them now.
+            // Writes that died with a previous run leave staging behind; clear them now,
+            // and derive any capture that committed but was never derived.
             await this.inbox.sweepAll();
         } else if (!want && this.server.port !== null) {
             // A pairing string on screen must not outlive the port it names.

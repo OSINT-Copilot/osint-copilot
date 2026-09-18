@@ -7,6 +7,12 @@
  *     pending/<bundleId>/    manifest.json (main's MAC on it), state.json (the journal)
  *     done/ rejected/ removed/
  *
+ * A capture is staged across several requests: created (upload.json, sealed, reserving
+ * its declared bytes against the budget), then each file streamed in, then committed
+ * (manifest.json written last, naming each file's server-computed sha256 under the MAC)
+ * and renamed into pending/ whole. main then derives page.markdown, fullpage.png and
+ * derived.json into the pending folder (capture/deriver.ts), and only then lists it.
+ *
  * The server hands a validated manifest to acceptBundle(), which writes it into staging
  * and renames the folder into pending/ in one step, so the renderer never sees half a
  * bundle. The renderer then applies pending bundles through inbox/ipc.ts, which re-checks
@@ -24,17 +30,41 @@
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as nodePath from 'path';
-import { randomBytes } from 'crypto';
-import { B64URL_16 } from '../extension/protocol';
-import type { StatusResponse, WorkspaceInfo, Manifest } from '../extension/protocol';
+import { createHash, randomBytes } from 'crypto';
+import { B64URL_16, CAPTURE_FILE_NAMES } from '../extension/protocol';
+import type {
+    CaptureFileName,
+    CaptureFiles,
+    CaptureManifest,
+    Manifest,
+    StatusResponse,
+    WorkspaceInfo,
+} from '../extension/protocol';
 import { safeEqualText, workspaceIdFor } from '../extension/signing';
 import { validateManifest } from '../extension/validate';
-import type { BundleContext, BundleOutcome, InboxBackend } from '../extension/server';
+import type {
+    BundleContext,
+    BundleOutcome,
+    CommitOutcome,
+    FileOutcome,
+    FileUpload,
+    InboxBackend,
+} from '../extension/server';
 import { INBOX_FOLDER } from '../node/vault';
-import { canonicalJson, sealManifest, verifySealedManifest, type ServerStamp } from './manifest-mac';
+import type { DeriveResults, DeriveStore, DeriveTarget } from '../capture/deriver';
+import { hashFile, receiveToFile } from './capture-files';
+import {
+    canonicalJson,
+    sealDerived,
+    sealManifest,
+    verifySealedDerived,
+    verifySealedManifest,
+    type ServerStamp,
+} from './manifest-mac';
 import type {
     InboxAppliedBundle,
     InboxBundle,
+    InboxCaptureDerived,
     InboxOutcome,
     InboxServerStamp,
     InboxState,
@@ -66,6 +96,13 @@ const SIZE_RESCAN_MS = 10 * 60 * 1000;
 const MANIFEST_FILE = 'manifest.json';
 const STATE_FILE = 'state.json';
 const REASON_FILE = 'reason.json';
+/** A capture's create-time record: the sealed manifest and stamp, before any file. */
+export const UPLOAD_FILE = 'upload.json';
+export const DERIVED_FILE = 'derived.json';
+/** Never .md inside the inbox: the renderer's indexer must not pick page text up from here. */
+export const MARKDOWN_FILE = 'page.markdown';
+export const FULLPAGE_FILE = 'fullpage.png';
+const MAX_DERIVED_BYTES = 64 * 1024;
 /** A stored manifest is a validated one plus a stamp; four times the body cap is ample. */
 const MAX_STORED_MANIFEST = 1024 * 1024;
 const MAX_STATE_BYTES = 256 * 1024;
@@ -101,6 +138,11 @@ export interface InboxWriterDeps {
     now?: () => number;
     /** fsp.rename. A seam for simulating a crash between staging and commit. */
     rename?: (from: string, to: string) => Promise<void>;
+    /**
+     * Asks for a pending capture to be derived (CaptureDeriver.enqueue in the app). Called
+     * at commit, and for any pending capture found without derived.json.
+     */
+    derive?: (root: string, bundleId: string) => void;
 }
 
 interface Investigation {
@@ -135,9 +177,15 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function isServerStamp(value: unknown): value is InboxServerStamp {
     const v = value as InboxServerStamp;
-    return isPlainObject(v) && Object.keys(v).length === 4
+    if (!isPlainObject(v)) return false;
+    const keys = Object.keys(v).length;
+    return (keys === 4 || (keys === 5 && isPlainObject(v.files)))
         && typeof v.receivedAt === 'string' && typeof v.clientId === 'string'
         && typeof v.origin === 'string' && typeof v.extVersion === 'string';
+}
+
+function declaredTotal(files: CaptureFiles): number {
+    return CAPTURE_FILE_NAMES.reduce((sum, name) => sum + (files[name]?.size ?? 0), 0);
 }
 
 function isState(value: unknown): value is InboxState {
@@ -168,8 +216,8 @@ async function isRealDir(p: string): Promise<boolean> {
     return !!stats && stats.isDirectory();
 }
 
-/** Total bytes of regular files beneath `dir`, not following symlinks. */
-async function treeSize(dir: string): Promise<number> {
+/** Total bytes of regular files beneath `dir`, not following symlinks, less the folder `skip`. */
+async function treeSize(dir: string, skip?: string): Promise<number> {
     let total = 0;
     let entries: fs.Dirent[];
     try {
@@ -179,6 +227,7 @@ async function treeSize(dir: string): Promise<number> {
     }
     for (const entry of entries) {
         const p = nodePath.join(dir, entry.name);
+        if (entry.name === skip) continue;
         if (entry.isDirectory()) total += await treeSize(p);
         else {
             const stats = await lstatOrNull(p);
@@ -238,9 +287,16 @@ async function syncDir(dir: string): Promise<void> {
     }
 }
 
+/** One sealed upload.json, read back. */
+interface Upload {
+    manifest: CaptureManifest;
+    server: ServerStamp;
+    bytes: number;
+}
+
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
-export class InboxWriter implements InboxBackend {
+export class InboxWriter implements InboxBackend, DeriveStore {
     private readonly now: () => number;
     private readonly renameFn: (from: string, to: string) => Promise<void>;
     private readonly budget: number;
@@ -254,6 +310,8 @@ export class InboxWriter implements InboxBackend {
      * send cost more as the inbox fills; see withinBudget.
      */
     private readonly sizes = new Map<string, { bytes: number; scannedAt: number }>();
+    /** `<bundleId>/<file name>` for every file being streamed in right now. */
+    private readonly receiving = new Set<string>();
 
     constructor(private readonly deps: InboxWriterDeps) {
         this.now = deps.now ?? Date.now;
@@ -347,6 +405,7 @@ export class InboxWriter implements InboxBackend {
         if (!(await this.deps.licensed())) return { error: 'unlicensed' };
         const root = await this.resolveInboxTarget(value.workspaceId);
         if (!root) return { error: 'unknown_workspace' };
+        if (value.kind === 'capture') return this.createCapture(root, value, ctx);
 
         const outcome = await this.serialized(root, async (): Promise<BundleOutcome> => {
             const inbox = await this.ensureLayout(root);
@@ -376,17 +435,41 @@ export class InboxWriter implements InboxBackend {
     }
 
     /**
-     * Whether `adding` more bytes fits. The running total drifts: journals grow, sweeps and
-     * the user's own deletions shrink the tree. It is rescanned when it is old, and always
-     * before a refusal, so the drift can only make the budget a little soft, never refuse
-     * a send there is room for.
+     * Whether `adding` more bytes fits. Committed bytes are a running total that drifts:
+     * journals grow, derived files appear, sweeps and the user's own deletions shrink the
+     * tree. It is rescanned when it is old, and always before a refusal, so the drift can
+     * only make the budget a little soft, never refuse a send there is room for.
+     *
+     * Staging is counted afresh each time, and a capture being uploaded counts at the size
+     * it declared, not at what has arrived so far: its bytes were promised when it was
+     * created, and two captures cannot both be promised the last free gigabyte.
      */
     private async withinBudget(root: string, inbox: string, adding: number): Promise<boolean> {
+        const reserved = await this.stagingReserved(inbox);
         const cached = this.sizes.get(root);
-        if (cached && this.now() - cached.scannedAt < SIZE_RESCAN_MS && cached.bytes + adding <= this.budget) return true;
-        const fresh = { bytes: await treeSize(inbox), scannedAt: this.now() };
+        if (cached && this.now() - cached.scannedAt < SIZE_RESCAN_MS && cached.bytes + reserved + adding <= this.budget) return true;
+        const fresh = { bytes: await treeSize(inbox, STAGING), scannedAt: this.now() };
         this.sizes.set(root, fresh);
-        return fresh.bytes + adding <= this.budget;
+        return fresh.bytes + reserved + adding <= this.budget;
+    }
+
+    /** Bytes held in staging: each capture upload at its declared size, anything else as found. */
+    private async stagingReserved(inbox: string): Promise<number> {
+        const staging = nodePath.join(inbox, STAGING);
+        let names: string[];
+        try {
+            names = await fsp.readdir(staging);
+        } catch {
+            return 0;
+        }
+        let total = 0;
+        for (const name of names) {
+            const dir = nodePath.join(staging, name);
+            const upload = UUID_V4.test(name) ? await this.readUpload(dir, name).catch(() => null) : null;
+            const found = await treeSize(dir);
+            total += upload ? Math.max(found, upload.bytes + declaredTotal(upload.manifest.capture.files)) : found;
+        }
+        return total;
     }
 
     notifyInboxChanged(root: string): void {
@@ -471,6 +554,326 @@ export class InboxWriter implements InboxBackend {
         return inbox;
     }
 
+
+    // --- captures: create, files, commit ----------------------------------------------
+
+    private stamp(ctx: BundleContext): ServerStamp {
+        return { receivedAt: ctx.receivedAt, clientId: ctx.clientId, origin: ctx.origin, extVersion: ctx.extVersion };
+    }
+
+    /**
+     * POST /v1/bundles for a capture. Stages upload.json, which reserves the declared
+     * bytes, and answers with the files still to send. Sent again for a capture still in
+     * staging (the extension resuming after a restart or a lost reply), it answers the
+     * same way with what is still missing; once committed, duplicate.
+     */
+    private createCapture(root: string, manifest: CaptureManifest, ctx: BundleContext): Promise<BundleOutcome> {
+        return this.serialized(root, async (): Promise<BundleOutcome> => {
+            const inbox = await this.ensureLayout(root);
+            await this.sweepOnce(root);
+            const bundleId = manifest.bundleId;
+
+            const existing = await this.findExisting(inbox, bundleId);
+            if (existing) return { status: 'duplicate', bundleId, receivedAt: existing.receivedAt ?? ctx.receivedAt };
+
+            const dir = nodePath.join(inbox, STAGING, bundleId);
+            const upload = await this.readUpload(dir, bundleId).catch((err) => {
+                // Unreadable just now (a handle limit, an antivirus lock) is not "not ours":
+                // the rm below would discard files already received. 500; the resend resumes.
+                if (err instanceof TransientReadError) throw err;
+                return null;
+            });
+            if (upload) {
+                // Resuming: the same client, the same page and the same files. clientTime
+                // may differ between tries and means nothing.
+                const same = (m: CaptureManifest) => canonicalJson({ w: m.workspaceId, p: m.page, c: m.capture });
+                if (upload.server.clientId !== ctx.clientId || same(upload.manifest) !== same(manifest)) {
+                    return { error: 'invalid', detail: 'bundleId: already used for a different capture' };
+                }
+                return { status: 'created', bundleId, missing: await this.missingFiles(dir, upload.manifest) };
+            }
+
+            const bytes = Buffer.from(JSON.stringify(sealManifest(this.deps.keys.manifestKey(), manifest, this.stamp(ctx)), null, 2), 'utf8');
+            if (!(await this.withinBudget(root, inbox, bytes.length + declaredTotal(manifest.capture.files)))) {
+                return { error: 'budget_exceeded' };
+            }
+            // Whatever is there is not a capture this server staged (no sealed upload.json).
+            await fsp.rm(dir, { recursive: true, force: true });
+            await fsp.mkdir(dir);
+            try {
+                await writeExclusive(nodePath.join(dir, UPLOAD_FILE), bytes);
+                await syncDir(dir);
+            } catch (err) {
+                await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+                throw err;
+            }
+            return { status: 'created', bundleId, missing: CAPTURE_FILE_NAMES.filter(n => manifest.capture.files[n]) };
+        });
+    }
+
+    /** A staged capture's upload.json, if main sealed it and it still validates. */
+    private async readUpload(dir: string, bundleId: string): Promise<Upload | null> {
+        const bytes = await readSmallFile(nodePath.join(dir, UPLOAD_FILE), MAX_STORED_MANIFEST);
+        if (!bytes) return null;
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(bytes.toString('utf8'));
+        } catch {
+            return null;
+        }
+        if (!verifySealedManifest(this.deps.keys.manifestKey(), parsed)) return null;
+        const { server, mac: _mac, ...rest } = parsed as Record<string, unknown>;
+        const checked = validateManifest(rest);
+        if (checked.ok === false || checked.value.kind !== 'capture' || checked.value.bundleId !== bundleId) return null;
+        if (!isServerStamp(server) || server.files !== undefined) return null;
+        return { manifest: checked.value, server, bytes: bytes.length };
+    }
+
+    /** Declared files not yet in place, in the fixed order. */
+    private async missingFiles(dir: string, manifest: CaptureManifest): Promise<CaptureFileName[]> {
+        const missing: CaptureFileName[] = [];
+        for (const name of CAPTURE_FILE_NAMES) {
+            const decl = manifest.capture.files[name];
+            if (!decl) continue;
+            const stats = await lstatOrNull(nodePath.join(dir, name));
+            if (!stats || !stats.isFile() || stats.size !== decl.size) missing.push(name);
+        }
+        return missing;
+    }
+
+    /**
+     * Where a bundle id is, in any investigation: still staging, or already committed.
+     * Only ids reach here (the server's route admits nothing else), and each is looked up
+     * by exact name under a real inbox folder.
+     */
+    private async locate(bundleId: string): Promise<{ root: string; staged: boolean } | null> {
+        for (const { root } of await this.investigations()) {
+            const inbox = nodePath.join(root, INBOX_FOLDER);
+            if (!(await isRealDir(inbox))) continue;
+            if (await isRealDir(nodePath.join(inbox, STAGING, bundleId))) return { root, staged: true };
+            for (const state of [PENDING, ...SETTLED]) {
+                if (await lstatOrNull(nodePath.join(inbox, state, bundleId))) return { root, staged: false };
+            }
+        }
+        return null;
+    }
+
+    /**
+     * POST /v1/bundles/<id>/files/<name>. Everything that can be refused is refused before
+     * a byte is read: the capture must be staged by this client, the name declared, and
+     * the length and digest the ones declared. The body is then streamed to disk outside
+     * the workspace's queue, so a large file does not hold up every other inbox call.
+     */
+    async receiveFile(upload: FileUpload, ctx: BundleContext): Promise<FileOutcome> {
+        const { bundleId, name } = upload;
+        if (!UUID_V4.test(bundleId) || !(CAPTURE_FILE_NAMES as readonly string[]).includes(name)) {
+            return { error: 'invalid', detail: 'not a capture file' };
+        }
+        if (!(await this.deps.licensed())) return { error: 'unlicensed' };
+        const found = await this.locate(bundleId);
+        if (!found) return { error: 'unknown_bundle' };
+        if (!found.staged) return { error: 'conflict', detail: 'the capture is already committed' };
+
+        const lock = `${bundleId}/${name}`;
+        type Ready = { dir: string; size: number; sha256: string };
+        const prepared = await this.serialized(found.root, async (): Promise<FileOutcome | Ready> => {
+            const inbox = await this.ensureLayout(found.root);
+            const dir = nodePath.join(inbox, STAGING, bundleId);
+            const staged = (await isRealDir(dir)) ? await this.readUpload(dir, bundleId).catch(() => null) : null;
+            // Another client's capture is as unknown as one that does not exist.
+            if (!staged || staged.server.clientId !== ctx.clientId) return { error: 'unknown_bundle' };
+            const decl = staged.manifest.capture.files[name];
+            if (!decl) return { error: 'invalid', detail: `${name}: not declared in the manifest` };
+            if (upload.size !== decl.size) return { error: 'invalid', detail: `${name}: Content-Length is not the declared size` };
+            if (upload.sha256 !== decl.sha256) return { error: 'invalid', detail: `${name}: X-OC-Body-Sha256 is not the declared sha256` };
+            if (this.receiving.has(lock)) return { error: 'conflict', detail: `${name} is being received on another connection` };
+            const present = await lstatOrNull(nodePath.join(dir, name));
+            // In place under its real name means it was checked on the way in; commit
+            // hashes it again.
+            if (present && present.isFile() && present.size === decl.size) return { received: true };
+            if (present) await fsp.rm(nodePath.join(dir, name), { recursive: true, force: true });
+            this.receiving.add(lock);
+            return { dir, size: decl.size, sha256: decl.sha256 };
+        });
+        if (!('dir' in prepared)) return prepared;
+
+        try {
+            const result = await receiveToFile(prepared.dir, name, upload.body, prepared);
+            return 'error' in result ? { error: result.error, detail: result.detail } : { received: true };
+        } finally {
+            this.receiving.delete(lock);
+        }
+    }
+
+    /**
+     * POST /v1/bundles/<id>/commit. Every declared file must be in place and hash to its
+     * declared digest (hashed again here: the staging folder is on disk, and disks are
+     * shared). manifest.json is written last, naming each file's size and sha256 under the
+     * MAC, and the folder is renamed into pending/ whole.
+     */
+    async commitBundle(bundleId: string, ctx: BundleContext): Promise<CommitOutcome> {
+        if (!UUID_V4.test(bundleId)) return { error: 'unknown_bundle' };
+        if (!(await this.deps.licensed())) return { error: 'unlicensed' };
+        const found = await this.locate(bundleId);
+        if (!found) return { error: 'unknown_bundle' };
+
+        const outcome = await this.serialized(found.root, async (): Promise<CommitOutcome> => {
+            const inbox = await this.ensureLayout(found.root);
+            const dir = nodePath.join(inbox, STAGING, bundleId);
+            if (!(await isRealDir(dir))) {
+                // A retry of a commit whose reply was lost.
+                const existing = await this.findExisting(inbox, bundleId);
+                return existing
+                    ? { status: 'duplicate', bundleId, receivedAt: existing.receivedAt ?? ctx.receivedAt }
+                    : { error: 'unknown_bundle' };
+            }
+            const staged = await this.readUpload(dir, bundleId).catch(() => null);
+            if (!staged || staged.server.clientId !== ctx.clientId) return { error: 'unknown_bundle' };
+            if ([...this.receiving].some(k => k.startsWith(`${bundleId}/`))) {
+                return { error: 'conflict', detail: 'a file is still being received' };
+            }
+
+            const declared = staged.manifest.capture.files;
+            const files: Partial<CaptureFiles> = {};
+            const missing: CaptureFileName[] = [];
+            for (const name of CAPTURE_FILE_NAMES) {
+                const decl = declared[name];
+                if (!decl) continue;
+                const p = nodePath.join(dir, name);
+                const got = await hashFile(p).catch(() => null);
+                if (got && got.size === decl.size && got.sha256 === decl.sha256) {
+                    files[name] = got;
+                    continue;
+                }
+                // Changed since it was received: gone, so the extension sends it again.
+                if (got) await fsp.rm(p, { force: true });
+                missing.push(name);
+            }
+            if (missing.length) return { error: 'incomplete', detail: missing };
+
+            // Only what the bundle is made of goes to pending/: a .part or a manifest.json
+            // left by a commit that died on the way is removed first.
+            const keep = new Set<string>([UPLOAD_FILE, ...CAPTURE_FILE_NAMES.filter(n => declared[n])]);
+            for (const entry of await fsp.readdir(dir)) {
+                if (!keep.has(entry)) await fsp.rm(nodePath.join(dir, entry), { recursive: true, force: true });
+            }
+            const server: ServerStamp = { ...staged.server, files: files as CaptureFiles };
+            const bytes = Buffer.from(JSON.stringify(sealManifest(this.deps.keys.manifestKey(), staged.manifest, server), null, 2), 'utf8');
+            await writeExclusive(nodePath.join(dir, MANIFEST_FILE), bytes);
+            await syncDir(dir);
+            await this.renameWithRetry(dir, nodePath.join(inbox, PENDING, bundleId));
+            await syncDir(nodePath.join(inbox, PENDING));
+            const size = this.sizes.get(found.root);
+            if (size) size.bytes += bytes.length + staged.bytes + declaredTotal(declared);
+            return { status: 'accepted', bundleId, receivedAt: staged.server.receivedAt };
+        });
+        if ('status' in outcome && outcome.status === 'accepted') {
+            this.requestDerive(found.root, bundleId);
+            this.notifyInboxChanged(found.root);
+        }
+        return outcome;
+    }
+
+    // --- captures: derived results ------------------------------------------------------
+
+    private requestDerive(root: string, bundleId: string): void {
+        try {
+            this.deps.derive?.(root, bundleId);
+        } catch {
+            // The next listing asks again.
+        }
+    }
+
+    /** derived.json, if main sealed it for this bundle. Without its MAC. */
+    private async readDerived(dir: string, bundleId: string): Promise<InboxCaptureDerived | null> {
+        try {
+            const bytes = await readSmallFile(nodePath.join(dir, DERIVED_FILE), MAX_DERIVED_BYTES);
+            if (!bytes) return null;
+            const parsed: unknown = JSON.parse(bytes.toString('utf8'));
+            if (!verifySealedDerived(this.deps.keys.manifestKey(), parsed, bundleId)) return null;
+            const { mac: _mac, ...derived } = parsed;
+            return derived;
+        } catch {
+            return null;
+        }
+    }
+
+    /** DeriveStore: the archive of a pending capture that has no derived.json yet. */
+    async deriveTarget(root: string, bundleId: string): Promise<DeriveTarget | null> {
+        if (!UUID_V4.test(bundleId)) return null;
+        return this.serialized(root, async () => {
+            const dir = nodePath.join(root, INBOX_FOLDER, PENDING, bundleId);
+            if (!(await isRealDir(dir))) return null;
+            const checked = await this.checkBundle(dir, bundleId, { requireFiles: true }).catch(() => null);
+            if (!checked || checked.ok !== true || checked.bundle.manifest.kind !== 'capture') return null;
+            if (await this.readDerived(dir, bundleId)) return null;
+            // checkBundle compares sizes only. A same-size archive swapped in after commit
+            // must not be derived into markdown and a PNG sealed as this capture's.
+            const archivePath = nodePath.join(dir, 'page.mhtml');
+            const sealed = checked.bundle.server.files?.['page.mhtml'];
+            const got = await hashFile(archivePath).catch(() => null);
+            if (!got) return null;
+            if (!sealed || got.size !== sealed.size || got.sha256 !== sealed.sha256) {
+                await this.quarantine(nodePath.join(root, INBOX_FOLDER), bundleId, 'page.mhtml changed after commit');
+                return null;
+            }
+            return { archivePath, pageUrl: checked.bundle.manifest.page.url, archiveSha256: got.sha256 };
+        });
+    }
+
+    /**
+     * DeriveStore: writes what was derived into the pending folder, derived.json last, so
+     * a listing that sees derived.json sees the files it names. Each file replaces any
+     * earlier attempt's by rename; one this attempt did not make is removed.
+     */
+    async writeDerived(root: string, bundleId: string, results: DeriveResults): Promise<void> {
+        if (!UUID_V4.test(bundleId)) return;
+        const written = await this.serialized(root, async () => {
+            const dir = nodePath.join(root, INBOX_FOLDER, PENDING, bundleId);
+            // Moved on (rejected, or removed by hand) while it was being derived.
+            if (!(await isRealDir(dir))) return false;
+            const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
+            const derived: InboxCaptureDerived = {
+                v: 1,
+                bundleId,
+                status: results.markdown !== undefined ? 'done' : 'failed',
+                archiveSha256: results.archiveSha256,
+                contentLocation: results.contentLocation,
+                urlMismatch: results.urlMismatch,
+                title: results.title,
+                errors: results.errors,
+                derivedAt: new Date(this.now()).toISOString(),
+            };
+            if (results.markdown !== undefined) {
+                const bytes = Buffer.from(results.markdown, 'utf8');
+                await this.writeReplacing(dir, MARKDOWN_FILE, bytes);
+                derived.markdown = { file: MARKDOWN_FILE, sha256: sha(bytes) };
+            } else {
+                await fsp.rm(nodePath.join(dir, MARKDOWN_FILE), { force: true, recursive: true });
+            }
+            if (results.fullpage) {
+                await this.writeReplacing(dir, FULLPAGE_FILE, results.fullpage);
+                derived.fullpage = { file: FULLPAGE_FILE, sha256: sha(results.fullpage) };
+            } else {
+                await fsp.rm(nodePath.join(dir, FULLPAGE_FILE), { force: true, recursive: true });
+                derived.fullpage = { error: results.fullpageError ?? 'not rendered' };
+            }
+            const sealed = sealDerived(this.deps.keys.manifestKey(), derived);
+            await this.writeReplacing(dir, DERIVED_FILE, Buffer.from(JSON.stringify(sealed, null, 2), 'utf8'));
+            await syncDir(dir);
+            return true;
+        });
+        if (written) this.notifyInboxChanged(root);
+    }
+
+    /** Asks for every pending capture in this investigation that has no derived.json. */
+    private async rederiveMissing(root: string): Promise<void> {
+        const pendingDir = nodePath.join(root, INBOX_FOLDER, PENDING);
+        if (!(await isRealDir(pendingDir))) return;
+        // listPending asks for each one it cannot list for want of derived.json.
+        await this.listPending(root);
+    }
+
     // --- staging -----------------------------------------------------------------------
 
     /** Removes staging folders older than an hour: writes that died before their rename. */
@@ -497,6 +900,8 @@ export class InboxWriter implements InboxBackend {
         this.swept.clear();
         for (const { root } of await this.investigations()) {
             await this.serialized(root, () => this.sweepOnce(root)).catch(() => undefined);
+            // A capture committed just before the app stopped may never have been derived.
+            await this.rederiveMissing(root).catch(() => undefined);
         }
     }
 
@@ -523,9 +928,21 @@ export class InboxWriter implements InboxBackend {
                 // Each on its own: one folder that cannot be checked or moved must not
                 // hide every good bundle behind it.
                 try {
-                    const checked = await this.checkBundle(nodePath.join(pendingDir, name), name);
-                    if (checked.ok === true) bundles.push(checked.bundle);
-                    else if (checked.ok === false) await this.quarantine(inbox, name, checked.reason);
+                    const dir = nodePath.join(pendingDir, name);
+                    const checked = await this.checkBundle(dir, name, { requireFiles: true });
+                    if (checked.ok === false) await this.quarantine(inbox, name, checked.reason);
+                    if (checked.ok !== true) continue;
+                    if (checked.bundle.manifest.kind === 'capture') {
+                        // Not listed until main has derived it; the renderer places what
+                        // derived.json names, so it must not see a capture before that.
+                        const derived = await this.readDerived(dir, name);
+                        if (!derived) {
+                            this.requestDerive(root, name);
+                            continue;
+                        }
+                        checked.bundle.derived = derived;
+                    }
+                    bundles.push(checked.bundle);
                 } catch {
                     // Left in pending/, to be looked at again on the next list.
                 }
@@ -534,7 +951,11 @@ export class InboxWriter implements InboxBackend {
         });
     }
 
-    private async checkBundle(dir: string, name: string): Promise<Checked> {
+    /**
+     * `requireFiles`: a pending capture must still hold every file its manifest names, at
+     * the size main stored. An applied one need not: placing it moves them out.
+     */
+    private async checkBundle(dir: string, name: string, opts: { requireFiles?: boolean } = {}): Promise<Checked> {
         if (!UUID_V4.test(name)) return { ok: false, reason: 'folder name is not a bundle id' };
         let stats: fs.Stats;
         try {
@@ -563,6 +984,24 @@ export class InboxWriter implements InboxBackend {
         if (revalidated.ok === false) return { ok: false, reason: `the manifest no longer validates: ${revalidated.detail}` };
         if (canonicalJson(revalidated.value) !== canonicalJson(manifest)) return { ok: false, reason: 'the manifest is not in clean form' };
         if (revalidated.value.bundleId !== name) return { ok: false, reason: 'the folder name and bundleId differ' };
+        if (revalidated.value.kind === 'capture') {
+            // What main computed at commit must be what was declared; both are under the MAC.
+            if (!server.files || canonicalJson(server.files) !== canonicalJson(revalidated.value.capture.files)) {
+                return { ok: false, reason: 'the stored files do not match the declared ones' };
+            }
+            if (opts.requireFiles) {
+                for (const fileName of CAPTURE_FILE_NAMES) {
+                    const decl = server.files[fileName];
+                    if (!decl) continue;
+                    const stats = await lstatOrNull(nodePath.join(dir, fileName));
+                    if (!stats || !stats.isFile() || stats.size !== decl.size) {
+                        return { ok: false, reason: `${fileName} is missing or changed` };
+                    }
+                }
+            }
+        } else if (server.files !== undefined) {
+            return { ok: false, reason: 'a file list on a bundle that has no files' };
+        }
 
         return {
             ok: true,
@@ -643,13 +1082,18 @@ export class InboxWriter implements InboxBackend {
     private async writeState(dir: string, state: InboxState): Promise<void> {
         const bytes = Buffer.from(JSON.stringify(state, null, 2), 'utf8');
         if (bytes.length > MAX_STATE_BYTES) throw new InboxError('The journal would be too large');
+        await this.writeReplacing(dir, STATE_FILE, bytes);
+    }
 
-        // A fresh file renamed over the old: never a half-written journal, and the
-        // rename replaces a planted symlink rather than writing through it.
-        const tmp = nodePath.join(dir, `.${STATE_FILE}.${randomBytes(4).toString('hex')}.tmp`);
+    /**
+     * A fresh file renamed over the old: never a half-written file, and the rename
+     * replaces a planted symlink rather than writing through it.
+     */
+    private async writeReplacing(dir: string, name: string, bytes: Buffer): Promise<void> {
+        const tmp = nodePath.join(dir, `.${name}.${randomBytes(4).toString('hex')}.tmp`);
         try {
             await writeExclusive(tmp, bytes);
-            await this.renameWithRetry(tmp, nodePath.join(dir, STATE_FILE));
+            await this.renameWithRetry(tmp, nodePath.join(dir, name));
         } catch (err) {
             await fsp.rm(tmp, { force: true }).catch(() => undefined);
             throw err;
@@ -681,7 +1125,12 @@ export class InboxWriter implements InboxBackend {
                 for (const name of names) {
                     try {
                         const checked = await this.checkBundle(nodePath.join(dir, name), name);
-                        if (checked.ok === true) out.push({ ...checked.bundle, where });
+                        if (checked.ok !== true) continue;
+                        if (checked.bundle.manifest.kind === 'capture') {
+                            const derived = await this.readDerived(nodePath.join(dir, name), name);
+                            if (derived) checked.bundle.derived = derived;
+                        }
+                        out.push({ ...checked.bundle, where });
                     } catch {
                         // Unreadable just now; the next listing looks again.
                     }

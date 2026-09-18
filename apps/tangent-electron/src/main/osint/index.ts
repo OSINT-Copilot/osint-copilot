@@ -39,6 +39,8 @@ import { ExtensionController } from './extension/controller'
 import type { ConfirmPairing } from './extension/pairing'
 import { registerExtensionHandlers, registerInboxHandlers } from './inbox/ipc'
 import { tangentInboxHost, workspacePathOf } from './inbox/tangent-host'
+import { utilityParserRunner } from './capture/utility-runner'
+import { renderArchive } from './capture/capture-surface'
 import type { ExecOptions, HttpRequest, PlatformInfo, SecretRef } from '../../osint/host/types'
 
 setWorkspaceRootsProvider(() => [...workspaceMap.keys()])
@@ -238,6 +240,8 @@ const extensionReady: Promise<ExtensionController> = app.whenReady().then(() =>
 		host: inboxHost,
 		appVersion: app.getVersion(),
 		log: Logger.get('osint-extension'),
+		// Parsing in a killable utility process; the render needs a window, so main.
+		capture: { runParser: utilityParserRunner(), renderArchive },
 	}))
 
 extensionReady.then(controller => {

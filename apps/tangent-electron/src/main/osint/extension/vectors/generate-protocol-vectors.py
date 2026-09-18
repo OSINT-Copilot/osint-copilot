@@ -37,6 +37,18 @@ def request(method, path, ts, nonce, body):
             "body": body.decode('utf-8'), "contentLength": str(bl), "bodySha256": bh,
             "stringToSign": s, "signature": b64u(mac(K, s))}
 
+def octet_request(path, ts, nonce, body):
+    # A file upload: the body is raw bytes, given as hex because it need not be UTF-8.
+    # Signed exactly like any other request; Content-Type is not part of the string.
+    r = request("POST", path, ts, nonce, b"")
+    bl = len(body)
+    bh = sha(body)
+    s = "OC1\n" + endpoint + "\nPOST\n" + path + "\n" + ts + "\n" + nonce + "\n" + client_id + "\n" + str(bl) + "\n" + bh
+    del r["body"]
+    r.update({"contentType": "application/octet-stream", "bodyHex": body.hex(), "contentLength": str(bl),
+              "bodySha256": bh, "stringToSign": s, "signature": b64u(mac(K, s))})
+    return r
+
 def response(status, nonce, body):
     bh = sha(body)
     s = "OC1R\n" + endpoint + "\n" + str(status) + "\n" + nonce + "\n" + bh
@@ -64,6 +76,10 @@ out = {
     "requests": [
         request("POST", "/v1/bundles", "1760000000000", req_nonce, manifest),
         request("GET", "/v1/status", "1760000000123", b64u(bytes(range(0xf0, 0x100))), b""),
+    ],
+    "octetRequests": [
+        octet_request("/v1/bundles/0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e/files/viewport.png", "1760000000456",
+                      b64u(bytes(range(0x10, 0x20))), bytes([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) + bytes(range(0x00, 0x100))),
     ],
     "responses": [
         response(200, req_nonce, b'{"status":"accepted","bundleId":"0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e","receivedAt":"2025-10-09T08:53:20.500Z"}'),

@@ -12,7 +12,8 @@
  * No electron import.
  */
 import { b64url, hmac, verifyMac } from '../extension/signing';
-import type { Manifest } from '../extension/protocol';
+import type { CaptureFiles, Manifest } from '../extension/protocol';
+import type { InboxCaptureDerived } from '../../../osint/host/types';
 
 /** What main adds to a manifest when it stores one. */
 export interface ServerStamp {
@@ -21,6 +22,11 @@ export interface ServerStamp {
     clientId: string;
     origin: string;
     extVersion: string;
+    /**
+     * A capture only: each file's size and sha256 as main computed them from the bytes it
+     * stored, at commit. Under the MAC with everything else.
+     */
+    files?: CaptureFiles;
 }
 
 export type StoredManifest = Manifest & { server: ServerStamp; mac: string };
@@ -67,4 +73,31 @@ export function verifySealedManifest(manifestKey: Buffer, stored: unknown): bool
         return false;
     }
     return verifyMac(manifestKey, text, mac);
+}
+
+/**
+ * derived.json: what main made from a capture (page.markdown, fullpage.png) and what it
+ * found (the archive's own address, whether that is the page the extension named). Sealed
+ * with the same key under its own label, so neither file can pass for the other, and bound
+ * to its bundle by bundleId so one capture's results cannot be copied beside another's.
+ */
+const DERIVED_LABEL = 'OCDERIVED1\n';
+
+export type SealedDerived = InboxCaptureDerived & { mac: string };
+
+export function sealDerived(manifestKey: Buffer, derived: InboxCaptureDerived): SealedDerived {
+    return { ...derived, mac: b64url(hmac(manifestKey, DERIVED_LABEL + canonicalJson(derived))) };
+}
+
+export function verifySealedDerived(manifestKey: Buffer, stored: unknown, bundleId: string): stored is SealedDerived {
+    if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) return false;
+    const record = stored as Record<string, unknown>;
+    if (typeof record.mac !== 'string' || record.bundleId !== bundleId) return false;
+    let text: string;
+    try {
+        text = canonicalJson(withoutMac(record));
+    } catch {
+        return false;
+    }
+    return verifyMac(manifestKey, DERIVED_LABEL + text, record.mac);
 }

@@ -9,7 +9,7 @@
  * renderer never links the Node implementation. Everything else (tests included)
  * gets the Node one, which is why the existing suites keep passing untouched.
  */
-import type { Manifest } from '../../main/osint/extension/protocol';
+import type { CaptureFiles, Manifest } from '../../main/osint/extension/protocol';
 
 export interface PlatformInfo {
     /** NodeJS.Platform: 'darwin' | 'linux' | 'win32' | ... */
@@ -192,6 +192,45 @@ export interface InboxServerStamp {
     /** The extension's `chrome-extension://…` origin, as recorded at pairing. */
     origin: string;
     extVersion: string;
+    /** A capture only: each stored file's size and sha256, computed by main at commit. */
+    files?: CaptureFiles;
+}
+
+/** A file main derived from a capture, in the bundle's own folder. */
+export interface InboxDerivedFile {
+    /** A fixed name: 'page.markdown' or 'fullpage.png'. */
+    file: string;
+    sha256: string;
+}
+
+/**
+ * `<bundle>/derived.json`: what main made from a capture's archive, off the main thread,
+ * after the capture committed. MAC-verified by main before it is handed over.
+ */
+export interface InboxCaptureDerived {
+    v: 1;
+    bundleId: string;
+    /** 'failed' when no markdown could be made; the archive itself is still good. */
+    status: 'done' | 'failed';
+    /**
+     * sha256 of the page.mhtml these were derived from, re-hashed and matched against the
+     * sealed digest just before deriving: a placement can tell the results belong to the
+     * archive that is there.
+     */
+    archiveSha256: string;
+    /** Inert markdown of the archived document: no embeds, no HTML. */
+    markdown?: InboxDerivedFile;
+    /** The whole page rendered from the archive, or why it could not be. */
+    fullpage?: InboxDerivedFile | { error: string };
+    /** The address recorded in the archive (Snapshot-Content-Location), or null. */
+    contentLocation: string | null;
+    /** True when the archive's address is not the page the extension named, or is unknown. */
+    urlMismatch: boolean;
+    /** The archived document's <title>, cleaned; may be empty. */
+    title: string;
+    errors: string[];
+    /** ISO 8601, main's clock. */
+    derivedAt: string;
 }
 
 /** One journal step the renderer recorded while applying a bundle. */
@@ -214,6 +253,8 @@ export interface InboxBundle {
     manifest: InboxManifest;
     server: InboxServerStamp;
     state: InboxState | null;
+    /** A capture only: listed once derivation has finished, never before. */
+    derived?: InboxCaptureDerived;
 }
 
 /**

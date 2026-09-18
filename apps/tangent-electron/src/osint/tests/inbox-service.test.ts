@@ -844,3 +844,41 @@ describe('helpers', () => {
         expect(await readExtensionActivity(inbox)).toEqual([]);
     });
 });
+
+describe('a capture from the extension', () => {
+    /** A committed capture as main lists it once derived: this build cannot place it yet. */
+    function addDerivedCapture(): string {
+        const bundleId = inbox.add(noteBundle('placeholder'));
+        const entry = inbox.bundles.get(bundleId)!;
+        const decl = { size: 10, sha256: 'a'.repeat(64) };
+        entry.bundle.manifest = {
+            ...(entry.bundle.manifest as object),
+            kind: 'capture',
+            capture: { files: { 'page.mhtml': decl } },
+        } as unknown as Manifest;
+        delete (entry.bundle.manifest as { note?: unknown }).note;
+        entry.bundle.server.files = { 'page.mhtml': decl };
+        entry.bundle.derived = {
+            v: 1, bundleId, status: 'done',
+            markdown: { file: 'page.markdown', sha256: 'b'.repeat(64) },
+            fullpage: { error: 'not rendered' },
+            contentLocation: 'https://example.com/team', urlMismatch: false,
+            title: 'Team page', errors: [], derivedAt: '2026-09-18T10:05:00.000Z',
+        };
+        return bundleId;
+    }
+
+    it('is left pending, not dropped, while nothing can place it', async () => {
+        const capture = addDerivedCapture();
+        const note = inbox.add(noteBundle('Beside it'));
+        await newService().start();
+        // Rejecting it would throw the evidence away for good.
+        expect(inbox.where(capture)).toBe('pending');
+        expect(inbox.calls).not.toContain('finish:rejected');
+        expect(dropped).toEqual([]);
+        // What can be placed still is, and only it is counted.
+        expect(inbox.where(note)).toBe('done');
+        expect(notices).toEqual([1]);
+        expect(inbox.bundles.get(capture)!.bundle.state).toBeNull();
+    });
+});
