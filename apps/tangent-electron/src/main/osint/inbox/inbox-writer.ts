@@ -33,6 +33,7 @@ import type { BundleContext, BundleOutcome, InboxBackend } from '../extension/se
 import { INBOX_FOLDER } from '../node/vault';
 import { canonicalJson, sealManifest, verifySealedManifest, type ServerStamp } from './manifest-mac';
 import type {
+    InboxAppliedBundle,
     InboxBundle,
     InboxOutcome,
     InboxServerStamp,
@@ -47,6 +48,10 @@ export const DONE = 'done';
 export const REJECTED = 'rejected';
 export const REMOVED = 'removed';
 const SETTLED = [DONE, REJECTED, REMOVED] as const;
+/** The journal step markRemoved writes: when the item was removed. */
+export const REMOVED_STEP = 'removed';
+/** How many applied bundles listApplied returns, newest by receive time. */
+export const APPLIED_LIST_LIMIT = 500;
 
 /** Sent to every window with the workspace open whenever its pending set changes. */
 export const INBOX_CHANGED_CHANNEL = 'osint:inbox.changed';
@@ -630,20 +635,60 @@ export class InboxWriter implements InboxBackend {
                 const record: InboxStepRecord = { step, at, data: clean };
                 state.steps.push(record);
             }
-            const bytes = Buffer.from(JSON.stringify(state, null, 2), 'utf8');
-            if (bytes.length > MAX_STATE_BYTES) throw new InboxError('The journal would be too large');
-
-            // A fresh file renamed over the old: never a half-written journal, and the
-            // rename replaces a planted symlink rather than writing through it.
-            const tmp = nodePath.join(dir, `.${STATE_FILE}.${randomBytes(4).toString('hex')}.tmp`);
-            try {
-                await writeExclusive(tmp, bytes);
-                await this.renameWithRetry(tmp, nodePath.join(dir, STATE_FILE));
-            } catch (err) {
-                await fsp.rm(tmp, { force: true }).catch(() => undefined);
-                throw err;
-            }
+            await this.writeState(dir, state);
             return state;
+        });
+    }
+
+    private async writeState(dir: string, state: InboxState): Promise<void> {
+        const bytes = Buffer.from(JSON.stringify(state, null, 2), 'utf8');
+        if (bytes.length > MAX_STATE_BYTES) throw new InboxError('The journal would be too large');
+
+        // A fresh file renamed over the old: never a half-written journal, and the
+        // rename replaces a planted symlink rather than writing through it.
+        const tmp = nodePath.join(dir, `.${STATE_FILE}.${randomBytes(4).toString('hex')}.tmp`);
+        try {
+            await writeExclusive(tmp, bytes);
+            await this.renameWithRetry(tmp, nodePath.join(dir, STATE_FILE));
+        } catch (err) {
+            await fsp.rm(tmp, { force: true }).catch(() => undefined);
+            throw err;
+        }
+    }
+
+    /**
+     * The applied bundles, done or removed, the newest APPLIED_LIST_LIMIT by receive time,
+     * oldest first, each with its journal. This is the activity log the renderer shows:
+     * it lives here, one journal per bundle, rather than in the investigation's settings
+     * file, which every window rewrites whole from its own copy. Any window on the
+     * investigation reads the same list, fresh.
+     *
+     * Each MAC is checked like a pending one, but a bundle that fails is only left out:
+     * it was already applied, and moving it would hide nothing the vault does not hold.
+     */
+    async listApplied(root: string): Promise<InboxAppliedBundle[]> {
+        return this.serialized(root, async () => {
+            const inbox = await this.ensureLayout(root);
+            const out: InboxAppliedBundle[] = [];
+            for (const where of [DONE, REMOVED] as const) {
+                const dir = nodePath.join(inbox, where);
+                let names: string[];
+                try {
+                    names = await fsp.readdir(dir);
+                } catch {
+                    continue;
+                }
+                for (const name of names) {
+                    try {
+                        const checked = await this.checkBundle(nodePath.join(dir, name), name);
+                        if (checked.ok === true) out.push({ ...checked.bundle, where });
+                    } catch {
+                        // Unreadable just now; the next listing looks again.
+                    }
+                }
+            }
+            out.sort((a, b) => a.server.receivedAt.localeCompare(b.server.receivedAt) || a.bundleId.localeCompare(b.bundleId));
+            return out.slice(-APPLIED_LIST_LIMIT);
         });
     }
 
@@ -658,6 +703,31 @@ export class InboxWriter implements InboxBackend {
             const from = await this.bundleDir(inbox, bundleId, outcome === REMOVED ? [PENDING, DONE] : [PENDING]);
             const to = nodePath.join(inbox, outcome, bundleId);
             if (await lstatOrNull(to)) throw new InboxError(`Bundle ${bundleId} is already ${outcome}`);
+            await this.renameWithRetry(from.dir, to);
+        });
+        this.notifyInboxChanged(root);
+    }
+
+    /**
+     * The Remove action on an applied item: done/ to removed/ only. finish() would also
+     * take a pending bundle to removed/, which here would mean dropping something that was
+     * never applied, so Remove cannot reach that.
+     */
+    async markRemoved(root: string, bundleId: string): Promise<void> {
+        await this.serialized(root, async () => {
+            const inbox = await this.ensureLayout(root);
+            const from = await this.bundleDir(inbox, bundleId, [DONE]);
+            const to = nodePath.join(inbox, REMOVED, bundleId);
+            if (await lstatOrNull(to)) throw new InboxError(`Bundle ${bundleId} is already ${REMOVED}`);
+            // When, for the activity log. Best effort: the move is what Remove means.
+            try {
+                const state: InboxState = (await this.readState(from.dir)) ?? { v: 1, steps: [] };
+                state.steps = state.steps.filter(s => s.step !== REMOVED_STEP);
+                state.steps.push({ step: REMOVED_STEP, at: new Date(this.now()).toISOString(), data: null });
+                await this.writeState(from.dir, state);
+            } catch {
+                // The bundle still moves; the log then shows no removal time.
+            }
             await this.renameWithRetry(from.dir, to);
         });
         this.notifyInboxChanged(root);

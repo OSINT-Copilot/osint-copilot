@@ -295,7 +295,10 @@ class FTMSchemaServiceClass {
 			return String(properties[labelField]);
 		}
 
-		const fallbackFields = ['full_name', 'name', 'title', 'address', 'label'];
+		// 'value' last: it is the only identifying property of the STIX observables
+		// (Url, Ipv4Addr, Ipv6Addr, EmailAddr), which otherwise all came out labelled
+		// with their schema name and filed as Url.md, Url (1a2b3c).md, ...
+		const fallbackFields = ['full_name', 'name', 'title', 'address', 'label', 'value'];
 		for (const field of fallbackFields) {
 			if (properties[field] && typeof properties[field] === 'string' && properties[field].trim()) {
 				return String(properties[field]);

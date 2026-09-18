@@ -18,6 +18,7 @@ import type { ExtensionController } from '../extension/controller';
 import type {
     ExtensionPairing,
     ExtensionStatus,
+    InboxAppliedBundle,
     InboxBundle,
     InboxClaimResult,
     InboxOutcome,
@@ -41,7 +42,7 @@ export type InboxHandle = (
 ) => void;
 
 /** The inbox operations the channels need; InboxWriter in the app. */
-export type InboxStore = Pick<InboxWriter, 'investigationRootFor' | 'listPending' | 'recordStep' | 'finish'>;
+export type InboxStore = Pick<InboxWriter, 'investigationRootFor' | 'listPending' | 'recordStep' | 'finish' | 'markRemoved' | 'listApplied'>;
 
 export interface InboxIpcDeps {
     handle: InboxHandle;
@@ -135,6 +136,22 @@ export function registerInboxHandlers({ handle, inbox, workspacePathOf }: InboxI
         const root = await requireHolder(e);
         await (await inbox()).finish(root, bundleId, outcome);
     });
+
+    // Not lease-bound, unlike the three above. Remove is the user acting on an item they
+    // are looking at, in whichever window shows it; the bundle is already applied, so no
+    // two windows can race to apply it, and main serialises the move per workspace. Only
+    // done/ to removed/: a pending bundle cannot be dropped through here.
+    handle('osint:inbox.markRemoved', async (e, bundleId: string): Promise<void> => {
+        if (typeof bundleId !== 'string') throw new Error('markRemoved takes a bundle id');
+        const root = await requireRoot(e);
+        await (await inbox()).markRemoved(root, bundleId);
+    });
+
+    // The activity log, read by whichever window shows it; not lease-bound for the same
+    // reason as markRemoved. It lives with the journals here, so every window on the
+    // investigation reads one current list rather than its own stale copy.
+    handle('osint:inbox.listApplied', async (e): Promise<InboxAppliedBundle[]> =>
+        (await inbox()).listApplied(await requireRoot(e)));
 
     return leases;
 }

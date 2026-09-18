@@ -9,7 +9,7 @@ import type { UrlData } from './urlData'
 import type { LicenseStatus } from './license'
 import type {
 	BasemapOpenResult, BasemapRange, ExecOptions, ExecResult, ExtensionPairing, ExtensionStatus,
-	HttpRequest, HttpResponse, InboxBundle, InboxClaimResult, InboxOutcome, InboxState,
+	HttpRequest, HttpResponse, InboxAppliedBundle, InboxBundle, InboxClaimResult, InboxOutcome, InboxState,
 	PlatformInfo, SecretRef, StatDto
 } from '../osint/host/types'
 
@@ -255,6 +255,16 @@ export default interface WindowAPI {
 			step(bundleId: string, step: string, data: unknown): Promise<InboxState>
 			/** 'removed' also applies to a bundle already done. */
 			finish(bundleId: string, outcome: InboxOutcome): Promise<void>
+			/**
+			 * Remove on an applied item: done/ to removed/, never from pending/. Needs the
+			 * window's own investigation, not the lease.
+			 */
+			markRemoved(bundleId: string): Promise<void>
+			/**
+			 * Applied bundles (done and removed) with their journals, for the activity log.
+			 * Needs the window's own investigation, not the lease.
+			 */
+			listApplied(): Promise<InboxAppliedBundle[]>
 			/** Fires when a bundle arrives or is settled. Returns an unsubscribe. */
 			onChanged(callback: () => void): () => void
 		}

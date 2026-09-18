@@ -10,6 +10,7 @@
  * elsewhere (a new custom runtime, an installed prompt file).
  */
 import { onDestroy, onMount } from 'svelte'
+import ExtensionSettings from './ExtensionSettings.svelte'
 
 let container: HTMLElement
 let message: string = null
@@ -61,6 +62,8 @@ onDestroy(() => {
 })
 </script>
 
+<!-- Svelte, not a row in the tab: it needs a live countdown and main's status. -->
+<ExtensionSettings />
 <div class="OsintSettings" bind:this={container}>
 	{#if message}<p class="message">{message}</p>{/if}
 </div>

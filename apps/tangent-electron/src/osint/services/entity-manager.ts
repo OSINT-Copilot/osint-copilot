@@ -53,7 +53,7 @@ const RESERVED_FRONTMATTER_KEYS = new Set([
  * and some YAML/Markdown readers treat them as line breaks or reject them.
  * Every front-matter string written by hand in this file goes through here.
  */
-function yamlQuote(value: string): string {
+export function yamlQuote(value: string): string {
     return JSON.stringify(value).replace(
         /[\u007f-\u009f\u2028\u2029]/g,
         (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`,
@@ -80,8 +80,11 @@ function stripControls(value: string): string {
     return value.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ');
 }
 
-/** `key: value` for a hand-built scalar front-matter line, whatever the key or value holds. */
-function yamlScalarLine(key: string, value: unknown): string {
+/**
+ * `key: value` for a hand-built scalar front-matter line, whatever the key or value holds.
+ * Exported for other notes built from page text (the extension's Sources notes).
+ */
+export function yamlScalarLine(key: string, value: unknown): string {
     const k = yamlPlainOrQuote(key);
     if (typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) {
         return `${k}: ${String(value)}`;
@@ -927,13 +930,55 @@ export class EntityManager {
 
         // finalizeOsintSources gives id-less sources content-derived ids, so a later append of
         // the same capture is a no-op.
-        const entity = await this.createFTMEntity(schema, properties, {
+        //
+        // A name that is not an FTM schema is a legacy type (Phone, Username), created the
+        // way @@create_entity creates it, so an item from outside lands as the same kind of
+        // note the assistant would have written for it.
+        const createOptions = {
             skipAutoGeocode: true,
             osint_sources: sources,
             osint_captured_at: options?.captured_at,
             conversation_id: options?.conversation_id,
-        });
+        };
+        const entity = isFTMSchema(schema)
+            ? await this.createFTMEntity(schema, properties, createOptions)
+            : await this.createEntity(schema as EntityType, properties, createOptions);
         return { entity, created: true };
+    }
+
+    /**
+     * The reverse of appendOsintSources: drop the sources with these ids and keep
+     * everything else -- id, properties, the other sources and the note's path -- then
+     * recompute confidence from what is left. Unknown ids are ignored, so undoing twice is
+     * harmless. Returns null when the entity is gone or its note is locked.
+     */
+    async removeOsintSources(entityId: string, sourceIds: string[]): Promise<Entity | null> {
+        const entity = this.entities.get(entityId);
+        if (!entity) return null;
+        const drop = new Set(sourceIds);
+        const existing = entity.osint_sources ?? [];
+        const kept = existing.filter((s) => !drop.has(s.id));
+        if (kept.length === existing.length) return entity;
+
+        if (!this.assertPathWritable(entity.filePath, 'update entity')) return null;
+
+        const previous = {
+            osint_sources: entity.osint_sources,
+            osint_confidence: entity.osint_confidence,
+            osint_contradictions: entity.osint_contradictions,
+        };
+        entity.osint_sources = kept;
+        const o = computeOsintConfidence(entity, kept);
+        entity.osint_confidence = o.osint_confidence;
+        entity.osint_contradictions = o.osint_contradictions;
+        try {
+            // keepPath for the same reason as appendOsintSources: only provenance changed.
+            entity.filePath = await this.saveEntityNote(entity, { keepPath: true });
+        } catch (e) {
+            Object.assign(entity, previous);
+            throw e;
+        }
+        return entity;
     }
 
     /**

@@ -216,6 +216,14 @@ export interface InboxBundle {
     state: InboxState | null;
 }
 
+/**
+ * An applied bundle, still in done/ or moved to removed/ by Remove, with its journal: the
+ * activity log is read from these.
+ */
+export interface InboxAppliedBundle extends InboxBundle {
+    where: 'done' | 'removed';
+}
+
 export type InboxOutcome = 'done' | 'rejected' | 'removed';
 
 /** One window applies a workspace's inbox at a time; the others are told no. */
@@ -250,6 +258,40 @@ export interface ExtensionPairing {
     pairingString: string;
     /** Unix ms. */
     expiresAt: number;
+}
+
+/**
+ * The browser extension's inbox for the window's own investigation. No call names a
+ * workspace: main answers for the calling window's, so a window can only ever apply,
+ * journal or settle bundles in the investigation it has open.
+ */
+export interface InboxHost {
+    /** One window per investigation applies its inbox; the others are told 'held'. */
+    claim(): Promise<InboxClaimResult>;
+    release(): Promise<void>;
+    /** Pending bundles, each with its MAC re-verified by main. Lease holder only. */
+    list(): Promise<InboxBundle[]>;
+    /** Records (or merges into) one journal step. Re-recording a step is harmless. */
+    step(bundleId: string, step: string, data: unknown): Promise<InboxState>;
+    finish(bundleId: string, outcome: InboxOutcome): Promise<void>;
+    /** The Remove action on an applied item: moves its bundle from done/ to removed/. */
+    markRemoved(bundleId: string): Promise<void>;
+    /**
+     * Applied bundles (done and removed), newest 500, oldest first. Like markRemoved, any
+     * window on the investigation may ask, not only the lease holder.
+     */
+    listApplied(): Promise<InboxAppliedBundle[]>;
+    /** Fires when a bundle arrives or is settled. Returns an unsubscribe. */
+    onChanged(callback: () => void): () => void;
+}
+
+/** The settings page's controls for the extension channel. No call returns a key. */
+export interface ExtensionHost {
+    status(): Promise<ExtensionStatus>;
+    setEnabled(enabled: boolean): Promise<ExtensionStatus>;
+    pairBegin(): Promise<ExtensionPairing>;
+    pairCancel(): Promise<void>;
+    revoke(clientId: string): Promise<boolean>;
 }
 
 export interface Host {
@@ -303,6 +345,9 @@ export interface Host {
         read(handleId: string, offset: number, length: number): Promise<BasemapRange>;
         close(handleId: string): Promise<void>;
     };
+
+    inbox: InboxHost;
+    extension: ExtensionHost;
 
     app: {
         /** Native folder picker. Returns null if the user cancels. */

@@ -154,6 +154,23 @@ export const host: Host = {
         read: (handleId, offset, length) => api().basemap.read(handleId, offset, length),
         close: (handleId) => api().basemap.close(handleId),
     },
+    inbox: {
+        claim: () => api().inbox.claim(),
+        release: () => api().inbox.release(),
+        list: () => api().inbox.list(),
+        step: (bundleId, step, data) => api().inbox.step(bundleId, step, data),
+        finish: (bundleId, outcome) => api().inbox.finish(bundleId, outcome),
+        markRemoved: (bundleId) => api().inbox.markRemoved(bundleId),
+        listApplied: () => api().inbox.listApplied(),
+        onChanged: (callback) => api().inbox.onChanged(callback),
+    },
+    extension: {
+        status: () => api().extension.status(),
+        setEnabled: (enabled) => api().extension.setEnabled(enabled),
+        pairBegin: () => api().extension.pairBegin(),
+        pairCancel: () => api().extension.pairCancel(),
+        revoke: (clientId) => api().extension.revoke(clientId),
+    },
     app: {
         async pickVault() {
             throw new Error('host.app.pickVault is not used under Tangent: it owns workspace selection.');

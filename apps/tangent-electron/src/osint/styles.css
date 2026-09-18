@@ -3163,3 +3163,40 @@ svg.leaflet-image-layer.leaflet-interactive path {
 .graph_copilot-entity-picture-actions button:hover {
   background: var(--interactive-hover);
 }
+
+/* Browser extension activity (modals/extension-activity-modal.ts) */
+.osint-extension-activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.osint-extension-activity-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.osint-extension-activity-item.is-removed {
+  opacity: 0.55;
+}
+.osint-extension-activity-main {
+  flex: 1;
+  min-width: 0;
+}
+.osint-extension-activity-type {
+  font-weight: 600;
+  margin-right: 6px;
+}
+.osint-extension-activity-summary,
+.osint-extension-activity-url {
+  overflow-wrap: anywhere;
+}
+.osint-extension-activity-merged,
+.osint-extension-activity-url,
+.osint-extension-activity-time {
+  font-size: 0.85em;
+  color: var(--text-muted);
+}

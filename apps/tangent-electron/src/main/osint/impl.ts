@@ -191,6 +191,8 @@ function requireHostVault(): OpenVault {
     return hostVault;
 }
 
+const NO_WINDOW = 'The browser extension inbox is only reachable from an app window.';
+
 export const host: Host = {
     platform,
     secrets: {
@@ -247,6 +249,25 @@ export const host: Host = {
         forget: () => basemapStore.forget(),
         read: (handleId: string, offset: number, length: number) => basemapStore.read(handleId, offset, length),
         close: (handleId: string) => basemapStore.close(handleId),
+    },
+    // The inbox and the extension controls exist only per window, over IPC: main answers
+    // for the calling window's own investigation, and a caller with no window has none.
+    inbox: {
+        claim: async () => { throw new Error(NO_WINDOW); },
+        release: async () => { throw new Error(NO_WINDOW); },
+        list: async () => { throw new Error(NO_WINDOW); },
+        step: async () => { throw new Error(NO_WINDOW); },
+        finish: async () => { throw new Error(NO_WINDOW); },
+        markRemoved: async () => { throw new Error(NO_WINDOW); },
+        listApplied: async () => { throw new Error(NO_WINDOW); },
+        onChanged: () => () => undefined,
+    },
+    extension: {
+        status: async () => { throw new Error(NO_WINDOW); },
+        setEnabled: async () => { throw new Error(NO_WINDOW); },
+        pairBegin: async () => { throw new Error(NO_WINDOW); },
+        pairCancel: async () => { throw new Error(NO_WINDOW); },
+        revoke: async () => { throw new Error(NO_WINDOW); },
     },
     // Overridden in main (electron/ipc) where dialog and userData exist; inert under vitest.
     app: {

@@ -106,6 +106,12 @@ export interface VaultAISettings {
 	 * should not resurrect it.
 	 */
 	hasSeenWelcomeGuide: boolean;
+	/**
+	 * Whether items the browser extension sends may be looked up on the Wayback Machine.
+	 * Off by default: a lookup tells archive.org which pages this case is looking at.
+	 * Per investigation, like everything here.
+	 */
+	extensionAllowWayback: boolean;
 }
 
 export const DEFAULT_SETTINGS: VaultAISettings = {
@@ -160,4 +166,5 @@ export const DEFAULT_SETTINGS: VaultAISettings = {
 	miroAccessToken: "",
 	miroLastBoardInput: "",
 	hasSeenWelcomeGuide: false,
+	extensionAllowWayback: false,
 };

@@ -131,6 +131,9 @@ import { RenameConversationModal } from '../modals/rename-conversation-modal';
 import { appendVaultOpPreviewBlock, entityHasMapCoordinates } from '../ui/vault-op-previews';
 import { CHAT_VIEW_TYPE, ChatView } from '../views/chat-view';
 import { OsintWorkspaceController } from './osint-workspace-controller';
+import { host as osintHost } from '../host';
+import { InboxService, readExtensionActivity } from '../services/inbox-service';
+import { ExtensionActivityModal } from '../modals/extension-activity-modal';
 
 // AI calls are routed through a user-selected local CLI integration.
 // These model constants are no longer used for remote routing but kept for reference.
@@ -167,6 +170,10 @@ export default class VaultAIPlugin extends Plugin {
   vaultLockService!: VaultLockService;
   schemaCatalogService!: SchemaCatalogService;
   waybackArchiveService!: WaybackArchiveService;
+  /** Applies what the browser extension sends; started once the entity store has loaded. */
+  extensionInbox: InboxService | null = null;
+  /** Set by the Wayback toggle, so the next save writes this window's choice. */
+  private extensionAllowWaybackChanged = false;
 
   attachVaultSkillFromVault(): void {
     if (!this.vaultPromptLoader) return;
@@ -178,8 +185,9 @@ export default class VaultAIPlugin extends Plugin {
 
   /**
    * Leaf names of the non-entity folders (conversations, prompts, skills, task-agents,
-   * enrichers, credentials, scripts) that currently sit directly under the entity base path, so
-   * EntityManager's top-level folder scan doesn't try to parse their files as entity notes.
+   * enrichers, credentials, scripts, and the browser extension's Sources and Evidence) that
+   * currently sit directly under the entity base path, so EntityManager's top-level folder
+   * scan doesn't try to parse their files as entity notes.
    * Computed from the live settings rather than hardcoded defaults, so renaming e.g. the
    * conversation folder in Settings doesn't reintroduce that exact scan.
    */
@@ -200,7 +208,9 @@ export default class VaultAIPlugin extends Plugin {
       this.settings.credentialsFolder,
       this.settings.scriptsFolder,
     ];
-    return [...new Set(candidates.map(leafName).filter((n): n is string => !!n))];
+    // Sources holds one note per web page the browser extension sent something from, and
+    // Evidence its captures: records about pages, never entities.
+    return [...new Set([...candidates.map(leafName), 'Sources', 'Evidence'].filter((n): n is string => !!n))];
   }
 
   getLocalCliService(providerId: 'claude-code' | 'codex' = this.settings.apiProvider): LocalCliService | null {
@@ -365,6 +375,7 @@ export default class VaultAIPlugin extends Plugin {
         await this.entityManager.initialize();
         this.graphFeaturesInitialised = true;
         console.debug('OSINTCopilot: Local entity storage initialized');
+        this.startExtensionInbox();
       } catch (error) {
         // Log but don't block - entity manager can still work for basic operations
         console.warn('OSINTCopilot: Entity storage initialization had issues:', error);
@@ -617,6 +628,12 @@ export default class VaultAIPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "show-browser-extension-activity",
+      name: "Show browser extension activity",
+      callback: () => this.openExtensionActivity(),
+    });
+
+    this.addCommand({
       id: "draft-http-enricher-from-api-docs",
       name: "Draft HTTP enricher skill from API documentation",
       callback: () => {
@@ -843,9 +860,108 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
   }
 
   onunload() {
+    // Gives the inbox lease back, so another window on this investigation can take it.
+    const inbox = this.extensionInbox;
+    this.extensionInbox = null;
+    void inbox?.stop();
+  }
 
+  /**
+   * Starts applying the browser extension's inbox. Only after the entity store has loaded:
+   * matching an arriving address against the entities already here needs their index, and
+   * without it every item would become a duplicate.
+   */
+  private startExtensionInbox(): void {
+    if (this.extensionInbox) return;
+    const service = new InboxService({
+      app: this.app,
+      entityManager: this.entityManager,
+      inbox: osintHost.inbox,
+      allowWayback: () => this.readExtensionAllowWayback(),
+      notify: (applied, dropped) => this.notifyExtensionItems(applied, dropped),
+    });
+    this.extensionInbox = service;
+    void service.start().catch((e) => {
+      console.warn('OSINTCopilot: browser extension inbox did not start:', e);
+    });
+  }
 
+  /**
+   * The investigation's Wayback choice as saved on disk, or null when the file cannot be
+   * read. This window's settings are a copy loaded at start, and the toggle may have been
+   * changed in another window on the same investigation since. Read directly rather than
+   * through loadData, which on a damaged file keeps a backup and raises a notice: this
+   * runs on every settings save.
+   */
+  private async readSavedExtensionAllowWayback(): Promise<boolean | null> {
+    try {
+      // The shim's settings file (obsidian-shim/core/plugin.ts, DATA_PATH).
+      const raw: unknown = JSON.parse(await this.app.vault.adapter.read('.osint-copilot/data.json'));
+      if (!raw || typeof raw !== 'object') return null;
+      return (raw as Record<string, unknown>).extensionAllowWayback === true;
+    } catch {
+      return null;
+    }
+  }
 
+  private async readExtensionAllowWayback(): Promise<boolean> {
+    return (await this.readSavedExtensionAllowWayback()) ?? this.settings.extensionAllowWayback === true;
+  }
+
+  /** Asks before the Settings page revokes a paired extension, which cannot be undone. */
+  confirmExtensionRevoke(origin: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      new ConfirmModal(
+        this.app,
+        'Revoke this extension?',
+        `${origin} will no longer be able to send items to OSINT Copilot. To use it again, pair it again.`,
+        () => resolve(true),
+        () => resolve(false),
+        true,
+        undefined,
+        'Revoke',
+      ).open();
+    });
+  }
+
+  /** The Settings toggle. The one place this window changes the saved Wayback choice. */
+  async setExtensionAllowWayback(allow: boolean): Promise<void> {
+    this.settings.extensionAllowWayback = allow;
+    this.extensionAllowWaybackChanged = true;
+    await this.saveSettings();
+  }
+
+  private notifyExtensionItems(applied: number, dropped: number): void {
+    if (dropped > 0) {
+      // The extension reported these as accepted; the investigator should not assume
+      // they are in the case.
+      new Notice(
+        `${dropped} ${dropped === 1 ? 'item' : 'items'} from the browser extension could not be added to this investigation: this version of the app does not know that kind of item.`,
+        10_000,
+      );
+    }
+    if (applied === 0) return;
+    const notice = new Notice(
+      `${applied} ${applied === 1 ? 'item' : 'items'} added from the browser extension. Click to review.`,
+      10_000,
+    );
+    // The Notice hides itself on click; the dialog is what the click is for.
+    notice.noticeEl?.addEventListener('click', () => this.openExtensionActivity());
+    // Open views only: an item arriving from the browser must not open the graph.
+    if (this.settings.autoRefreshGraph) void this.refreshOpenInsightViews();
+  }
+
+  openExtensionActivity(): void {
+    new ExtensionActivityModal(this.app, {
+      // Read fresh each time the list is shown: any window may have added or removed items.
+      items: () => readExtensionActivity(osintHost.inbox),
+      remove: async (bundleId) => {
+        if (!this.extensionInbox) throw new Error('The investigation\'s entities have not loaded yet.');
+        const removed = await this.extensionInbox.remove(bundleId);
+        if (removed && this.settings.autoRefreshGraph) void this.refreshOpenInsightViews();
+        return removed;
+      },
+    }).open();
   }
 
   async loadSettings() {
@@ -975,6 +1091,9 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
     if (merged.mapBasemapTheme !== 'auto' && merged.mapBasemapTheme !== 'light' && merged.mapBasemapTheme !== 'dark') {
       merged.mapBasemapTheme = DEFAULT_SETTINGS.mapBasemapTheme;
     }
+    if (typeof merged.extensionAllowWayback !== 'boolean') {
+      merged.extensionAllowWayback = DEFAULT_SETTINGS.extensionAllowWayback;
+    }
 
     this.settings = merged as unknown as VaultAISettings;
     // The toolbar and the view commands read the graph-features gate from here.
@@ -1026,6 +1145,15 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
     const runtimeChanged = snapshot !== this.lastRuntimeSettingsSnapshot;
     this.lastRuntimeSettingsSnapshot = snapshot;
     if (runtimeChanged) invalidateChatRuntimeAvailabilityCache();
+    // The Wayback choice is saved by whichever window changed it last. Every other save
+    // takes it from disk, so this window's copy, loaded at start, does not put back a
+    // choice another window has since changed.
+    if (this.extensionAllowWaybackChanged) {
+      this.extensionAllowWaybackChanged = false;
+    } else {
+      const saved = await this.readSavedExtensionAllowWayback();
+      if (saved !== null) this.settings.extensionAllowWayback = saved;
+    }
     // Settings are edited in place, so nothing else can notice a change; say so.
     publishOsintPluginState({ settings: this.settings });
     // Turning graph features on used to need a restart: the entity store was loaded only
@@ -1034,6 +1162,7 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
       this.graphFeaturesInitialised = true;
       try {
         await this.entityManager.initialize();
+        this.startExtensionInbox();
       } catch (e) {
         this.graphFeaturesInitialised = false;
         console.warn('OSINTCopilot: Entity storage initialization had issues:', e);

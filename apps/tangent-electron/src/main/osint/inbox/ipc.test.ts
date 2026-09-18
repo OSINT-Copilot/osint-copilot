@@ -100,7 +100,8 @@ async function bundleIn(root: string): Promise<string> {
 describe('the inbox lease', () => {
 	it('registers every inbox channel', () => {
 		expect([...ctx.channels.keys()].sort()).toEqual([
-			'osint:inbox.claim', 'osint:inbox.finish', 'osint:inbox.list', 'osint:inbox.release', 'osint:inbox.step',
+			'osint:inbox.claim', 'osint:inbox.finish', 'osint:inbox.list', 'osint:inbox.listApplied', 'osint:inbox.markRemoved',
+			'osint:inbox.release', 'osint:inbox.step',
 		])
 	})
 
@@ -184,6 +185,92 @@ describe('a sender only ever reaches its own window\'s workspace', () => {
 		await call(onA, 'osint:inbox.finish', inA, 'done')
 		expect(fs.existsSync(path.join(ctx.a, '.osint-inbox', 'done', inA))).toBe(true)
 		expect(await call(onB, 'osint:inbox.list')).toHaveLength(1)
+	})
+})
+
+describe('osint:inbox.markRemoved', () => {
+	const inbox = (root: string, state: string, id: string) => path.join(root, '.osint-inbox', state, id)
+
+	it('moves an applied bundle from done to removed, from any window on that investigation', async () => {
+		const holder = windowOn(ctx.a)
+		const viewer = windowOn(ctx.a)
+		const bundleId = await bundleIn(ctx.a)
+		await call(holder, 'osint:inbox.claim')
+		await call(holder, 'osint:inbox.finish', bundleId, 'done')
+
+		// Remove is not lease-bound: the window showing the item may not be the one applying.
+		await call(viewer, 'osint:inbox.markRemoved', bundleId)
+		expect(fs.existsSync(inbox(ctx.a, 'done', bundleId))).toBe(false)
+		expect(fs.existsSync(inbox(ctx.a, 'removed', bundleId))).toBe(true)
+		await expect(call(viewer, 'osint:inbox.markRemoved', bundleId)).rejects.toThrow(/No done bundle/)
+	})
+
+	it('never drops a bundle that is still pending', async () => {
+		const holder = windowOn(ctx.a)
+		const bundleId = await bundleIn(ctx.a)
+		await call(holder, 'osint:inbox.claim')
+		await expect(call(holder, 'osint:inbox.markRemoved', bundleId)).rejects.toThrow(/No done bundle/)
+		expect(fs.existsSync(inbox(ctx.a, 'pending', bundleId))).toBe(true)
+	})
+
+	it('reaches only the sender\'s own investigation, and checks its argument', async () => {
+		const onA = windowOn(ctx.a)
+		const onB = windowOn(ctx.b)
+		const inB = await bundleIn(ctx.b)
+		await call(onB, 'osint:inbox.claim')
+		await call(onB, 'osint:inbox.finish', inB, 'done')
+
+		await expect(call(onA, 'osint:inbox.markRemoved', inB)).rejects.toThrow(/No done bundle/)
+		expect(fs.existsSync(inbox(ctx.b, 'done', inB))).toBe(true)
+		await expect(call(onA, 'osint:inbox.markRemoved', { bundleId: inB })).rejects.toThrow(/bundle id/)
+		await expect(call(onA, 'osint:inbox.markRemoved', '../done/x')).rejects.toThrow(/Not a bundle id/)
+		await expect(call(fakeSender(), 'osint:inbox.markRemoved', inB)).rejects.toThrow(/no investigation/)
+	})
+})
+
+describe('osint:inbox.listApplied', () => {
+	it('is the activity log: done and removed bundles with their journals, the same for every window', async () => {
+		const holder = windowOn(ctx.a)
+		const viewer = windowOn(ctx.a)
+		const kept = await bundleIn(ctx.a)
+		const taken = await bundleIn(ctx.a)
+		const waiting = await bundleIn(ctx.a)
+		await call(holder, 'osint:inbox.claim')
+		for (const id of [kept, taken]) {
+			await call(holder, 'osint:inbox.step', id, 'applied', { entityId: null, created: false })
+			await call(holder, 'osint:inbox.finish', id, 'done')
+		}
+		await call(viewer, 'osint:inbox.markRemoved', taken)
+
+		// Not lease-bound: the viewer reads it too, and both read the same thing.
+		const seen = await call(viewer, 'osint:inbox.listApplied')
+		expect(await call(holder, 'osint:inbox.listApplied')).toEqual(seen)
+		expect(seen.map((b: any) => [b.bundleId, b.where]).sort()).toEqual([[kept, 'done'], [taken, 'removed']].sort())
+		expect(seen.map((b: any) => b.bundleId)).not.toContain(waiting)
+		const removed = seen.find((b: any) => b.bundleId === taken)
+		expect(removed.state.steps.map((s: any) => s.step)).toEqual(['applied', 'removed'])
+		expect(removed.state.steps[0].data).toEqual({ entityId: null, created: false })
+		expect(removed.manifest.note.text).toBe(`in ${path.basename(ctx.a)}`)
+	})
+
+	it('reaches only the sender\'s own investigation, and leaves out a tampered bundle', async () => {
+		const onA = windowOn(ctx.a)
+		const onB = windowOn(ctx.b)
+		const inB = await bundleIn(ctx.b)
+		const forged = await bundleIn(ctx.b)
+		await call(onB, 'osint:inbox.claim')
+		await call(onB, 'osint:inbox.finish', inB, 'done')
+		await call(onB, 'osint:inbox.finish', forged, 'done')
+		const file = path.join(ctx.b, '.osint-inbox', 'done', forged, 'manifest.json')
+		const stored = JSON.parse(fs.readFileSync(file, 'utf8'))
+		stored.note.text = 'something else'
+		fs.writeFileSync(file, JSON.stringify(stored))
+
+		expect(await call(onA, 'osint:inbox.listApplied')).toEqual([])
+		expect((await call(onB, 'osint:inbox.listApplied')).map((b: any) => b.bundleId)).toEqual([inB])
+		// Left where it is: it was applied, and moving it would hide nothing.
+		expect(fs.existsSync(file)).toBe(true)
+		await expect(call(fakeSender(), 'osint:inbox.listApplied')).rejects.toThrow(/no investigation/)
 	})
 })
 
