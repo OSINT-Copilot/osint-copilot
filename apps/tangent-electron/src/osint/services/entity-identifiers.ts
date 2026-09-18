@@ -1,6 +1,7 @@
 /**
  * Normalised identifier keys for entities: `email:<addr>`, `phone:<digits>`, `domain:<host>`,
- * `wallet:<chain>:<address>`, `username:<name>`, `url:<url>`, `ip:<addr>`.
+ * `wallet:<chain>:<address>`, `username:<name>` or `username:<platform>:<name>`, `url:<url>`,
+ * `ip:<addr>`.
  *
  * Labels are not identity. Two people can share a name, and the same email address arrives
  * as "Alice@Example.com" from one page and "alice@example.com" from another. External
@@ -47,9 +48,98 @@ function normalizeDomain(raw: string): string | null {
     return v || null;
 }
 
+/**
+ * A colon is refused because it separates the platform in `username:<platform>:<name>`: a
+ * platform-less "github:john" would otherwise produce the very key a GitHub "john" has.
+ */
 function normalizeUsername(raw: string): string | null {
     const v = raw.trim().replace(/^@+/, '').toLowerCase();
-    return v && !/\s/.test(v) ? v : null;
+    return v && !/[\s:]/.test(v) ? v : null;
+}
+
+/**
+ * Hosts and names that are one platform under several spellings. Keys are compared after
+ * lowercasing and dropping a leading `www.`.
+ */
+const PLATFORM_ALIASES: Record<string, string> = {
+    'twitter': 'twitter',
+    'x': 'twitter',
+    'twitter.com': 'twitter',
+    'mobile.twitter.com': 'twitter',
+    'x.com': 'twitter',
+    'github': 'github',
+    'github.com': 'github',
+    'gitlab': 'gitlab',
+    'gitlab.com': 'gitlab',
+    'telegram': 'telegram',
+    't.me': 'telegram',
+    'telegram.me': 'telegram',
+    'telegram.org': 'telegram',
+    'facebook': 'facebook',
+    'facebook.com': 'facebook',
+    'm.facebook.com': 'facebook',
+    'fb.com': 'facebook',
+    'instagram': 'instagram',
+    'instagram.com': 'instagram',
+    'linkedin': 'linkedin',
+    'linkedin.com': 'linkedin',
+    'reddit': 'reddit',
+    'reddit.com': 'reddit',
+    'old.reddit.com': 'reddit',
+    'youtube': 'youtube',
+    'youtube.com': 'youtube',
+    'm.youtube.com': 'youtube',
+    'youtu.be': 'youtube',
+    'tiktok': 'tiktok',
+    'tiktok.com': 'tiktok',
+};
+
+/**
+ * One name per platform, so a username seen on "x.com" and one recorded by hand as
+ * "Twitter" meet on the same key. Accepts a URL, a bare host or free text; unknown hosts
+ * are kept as the host (without `www.`), unknown free text is reduced to [a-z0-9.-].
+ * Returns null when nothing usable is left.
+ */
+export function normalizePlatform(raw: unknown): string | null {
+    if (typeof raw !== 'string') return null;
+    let v = raw.trim().toLowerCase();
+    if (!v) return null;
+    if (v.includes('://')) {
+        try {
+            v = new URL(v).hostname;
+        } catch {
+            /* treat it as text */
+        }
+    } else {
+        // A bare "example.com:8080" is the host; the port must not fuse into its name.
+        v = v.replace(/:\d+$/, '');
+    }
+    v = v.replace(/^www\./, '').replace(/\.+$/, '');
+    if (PLATFORM_ALIASES[v]) return PLATFORM_ALIASES[v];
+    v = v.replace(/[^a-z0-9.-]/g, '').replace(/^www\./, '').replace(/^[.-]+|[.-]+$/g, '');
+    if (!v) return null;
+    return PLATFORM_ALIASES[v] ?? v;
+}
+
+/**
+ * The platform a page belongs to, from its URL's host -- for ingestion code that sees an
+ * account on a page and has no platform property to go on.
+ */
+export function platformFromHost(host: string): string | null {
+    return normalizePlatform(host);
+}
+
+/**
+ * `username:<platform>:<name>` when the platform is known, else `username:<name>`. The two
+ * forms never match each other: a GitHub "john" must not merge into a Twitter "john", nor
+ * into a "john" whose platform nobody recorded.
+ */
+export function usernameIdentifierKey(name: unknown, platform?: unknown): string | null {
+    if (typeof name !== 'string' && typeof name !== 'number') return null;
+    const user = normalizeUsername(String(name));
+    if (!user) return null;
+    const where = normalizePlatform(platform);
+    return where ? `username:${where}:${user}` : `username:${user}`;
 }
 
 function normalizeUrl(raw: string): string | null {
@@ -110,8 +200,12 @@ const NORMALIZERS: Record<IdentifierKind, (raw: string) => string | null> = {
     ip: normalizeIp,
 };
 
-/** `kind:value` with the value normalised, or null when it is not a usable identifier. */
-export function identifierKey(kind: IdentifierKind, raw: unknown): string | null {
+/**
+ * `kind:value` with the value normalised, or null when it is not a usable identifier.
+ * `platform` is only read for usernames (see usernameIdentifierKey).
+ */
+export function identifierKey(kind: IdentifierKind, raw: unknown, platform?: unknown): string | null {
+    if (kind === 'username') return usernameIdentifierKey(raw, platform);
     if (typeof raw !== 'string' && typeof raw !== 'number') return null;
     const value = NORMALIZERS[kind](String(raw));
     return value ? `${kind}:${value}` : null;
@@ -126,7 +220,14 @@ export function normalizeIdentifierKey(key: string): string | null {
     if (sep <= 0) return null;
     const kind = key.slice(0, sep).trim().toLowerCase();
     if (!isKind(kind)) return null;
-    return identifierKey(kind, key.slice(sep + 1));
+    const rest = key.slice(sep + 1);
+    if (kind === 'username') {
+        const at = rest.lastIndexOf(':');
+        return at >= 0
+            ? (normalizePlatform(rest.slice(0, at)) ? usernameIdentifierKey(rest.slice(at + 1), rest.slice(0, at)) : null)
+            : usernameIdentifierKey(rest);
+    }
+    return identifierKey(kind, rest);
 }
 
 /** FTM properties can be multi-valued; every string in an array is an identifier too. */
@@ -185,9 +286,13 @@ export function identifierKeysForEntity(
 ): string[] {
     const keys = new Set<string>();
     const props = entity.properties ?? {};
+    // Legacy Username notes call it platform; FTM UserAccount calls it service.
+    const platform = [...valuesOf(props.platform), ...valuesOf(props.service)]
+        .map(normalizePlatform)
+        .find((p) => p !== null) ?? null;
     for (const [prop, kind] of identifierFieldsFor(entity)) {
         for (const v of valuesOf(props[prop])) {
-            const key = identifierKey(kind, v);
+            const key = identifierKey(kind, v, platform);
             if (key) keys.add(key);
         }
     }

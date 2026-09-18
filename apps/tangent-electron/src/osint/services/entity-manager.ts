@@ -89,6 +89,58 @@ function yamlScalarLine(key: string, value: unknown): string {
     return `${k}: ${yamlQuote(String(value))}`;
 }
 
+/**
+ * A quoted scalar as the line-by-line fallback reader sees it. Double-quoted scalars are
+ * written by yamlQuote(), i.e. as JSON strings, so JSON decodes the escapes; one that is
+ * not valid JSON (hand-written YAML escapes such as \x41) is returned without its quotes
+ * rather than dropped. Single-quoted YAML only escapes the quote itself, by doubling it.
+ */
+function decodeYamlScalar(quoted: string): string {
+    if (quoted.startsWith('"')) {
+        try {
+            const decoded: unknown = JSON.parse(quoted);
+            if (typeof decoded === 'string') return decoded;
+        } catch {
+            /* fall through to the raw text */
+        }
+        return quoted.slice(1, -1);
+    }
+    return quoted.slice(1, -1).replace(/''/g, "'");
+}
+
+/**
+ * Property keys never written to or read from front matter: assigning `__proto__` on the
+ * plain object a note is read into would replace that object's prototype.
+ */
+const UNSAFE_PROPERTY_KEYS = new Set(['__proto__']);
+
+/**
+ * Keys buildConnectionFrontmatter writes itself. A connection property with one of these
+ * names goes under `props:` instead, as entity properties do with RESERVED_FRONTMATTER_KEYS:
+ * written beside them it would repeat the key, the YAML parser would reject the note, and
+ * the fallback reader would let the property's value win -- a property named `id` would
+ * re-point the connection.
+ */
+const CONNECTION_FRONTMATTER_KEYS = new Set([
+    'id',
+    'type',
+    'relationship',
+    'fromEntityId',
+    'toEntityId',
+    'fromEntity',
+    'toEntity',
+    'schemaFamily',
+    'ftmSchema',
+    'label',
+    'props',
+    'osint_sources',
+    'osint_confidence',
+    'osint_contradictions',
+]);
+
+/** generateNoteContent (undo/restore) also writes these two itself. */
+const HISTORY_NOTE_FRONTMATTER_KEYS = new Set([...RESERVED_FRONTMATTER_KEYS, 'created', 'modified']);
+
 function isSchemaFamilyFolderName(name: string): name is SchemaFamily {
     return SCHEMA_FAMILY_FOLDERS.includes(name as SchemaFamily);
 }
@@ -121,14 +173,21 @@ export class EntityManager {
         lines.push(...chunk.split('\n'));
     }
 
+    /**
+     * One property line, or into `props:` when its key is one the writer emits itself: a
+     * property named `id` or `label` must not be able to stand in for the real one. Keys
+     * that are not plain YAML are JSON-quoted by yamlScalarLine/stringifyYaml.
+     */
     private appendEntityPropertyToFrontmatter(
         lines: string[],
         propsChunk: Record<string, unknown>,
         key: string,
         value: unknown,
+        writerKeys: ReadonlySet<string> = RESERVED_FRONTMATTER_KEYS,
     ): void {
         if (value === undefined || value === null || value === '') return;
-        if (RESERVED_FRONTMATTER_KEYS.has(key)) {
+        if (UNSAFE_PROPERTY_KEYS.has(key)) return;
+        if (writerKeys.has(key)) {
             propsChunk[key] = value;
             return;
         }
@@ -355,6 +414,7 @@ export class EntityManager {
             const properties: Record<string, unknown> = {};
             const internalKeys = [...RESERVED_FRONTMATTER_KEYS];
             for (const [key, value] of Object.entries(frontmatter)) {
+                if (UNSAFE_PROPERTY_KEYS.has(key)) continue;
                 if (!internalKeys.includes(key) && value !== undefined && value !== null) {
                     properties[key] = value;
                 }
@@ -362,6 +422,7 @@ export class EntityManager {
             const propsBlock = frontmatter.props;
             if (propsBlock && typeof propsBlock === 'object' && !Array.isArray(propsBlock)) {
                 for (const [key, value] of Object.entries(propsBlock as Record<string, unknown>)) {
+                    if (UNSAFE_PROPERTY_KEYS.has(key)) continue;
                     if (value !== undefined && value !== null) {
                         properties[key] = value;
                     }
@@ -468,27 +529,61 @@ export class EntityManager {
             console.warn('[EntityManager] YAML parse failed, using line fallback:', e);
         }
 
+        // Top-level lines are read, and the first occurrence of a key wins; indented lines
+        // are read only as entries of the `props:` block, into `props`. An indented
+        // `  id: evil` under `props:`, or a property an older writer put beside the real
+        // key, would otherwise replace the note's own id or type.
         const result: Record<string, unknown> = {};
         const lines = yamlText.split('\n');
+        let block: 'props' | null = null;
         for (const line of lines) {
-            const colonIndex = line.indexOf(':');
-            if (colonIndex > 0) {
-                const key = line.substring(0, colonIndex).trim();
-                let value = line.substring(colonIndex + 1).trim();
-
-                if ((value.startsWith('"') && value.endsWith('"')) ||
-                    (value.startsWith("'") && value.endsWith("'"))) {
-                    value = value.slice(1, -1);
-                }
-
-                if (value === 'true') result[key] = true;
-                else if (value === 'false') result[key] = false;
-                else if (!isNaN(Number(value)) && value !== '') result[key] = Number(value);
-                else result[key] = value;
+            const indented = /^\s/.test(line);
+            if (indented && block !== 'props') continue;
+            const entry = this.parseFallbackLine(line.trim());
+            if (!entry) {
+                if (!indented) block = null;
+                continue;
             }
+            const [key, value] = entry;
+            if (indented) {
+                const props = result.props as Record<string, unknown>;
+                if (!Object.prototype.hasOwnProperty.call(props, key)) props[key] = value;
+                continue;
+            }
+            const opensProps = key === 'props' && value === '';
+            if (!Object.prototype.hasOwnProperty.call(result, key)) {
+                // `props:` with nothing after it opens the block; anything else is a plain key.
+                result[key] = opensProps ? {} : value;
+            }
+            const props = result.props;
+            block = opensProps && props !== null && typeof props === 'object' ? 'props' : null;
         }
 
         return result;
+    }
+
+    /**
+     * One `key: value` line for the fallback reader, as [key, value]; null for anything else
+     * and for keys never read (UNSAFE_PROPERTY_KEYS).
+     */
+    private parseFallbackLine(line: string): [string, unknown] | null {
+        // A key the writer JSON-quoted (see yamlPlainOrQuote) can itself hold a colon.
+        const quotedKey = line.match(/^("(?:[^"\\]|\\.)*")\s*:/);
+        const colonIndex = quotedKey ? quotedKey[0].length - 1 : line.indexOf(':');
+        if (colonIndex <= 0) return null;
+        const key = quotedKey
+            ? decodeYamlScalar(quotedKey[1])
+            : line.substring(0, colonIndex).trim();
+        const raw = line.substring(colonIndex + 1).trim();
+        if (!key || UNSAFE_PROPERTY_KEYS.has(key)) return null;
+
+        // A quoted value is a string whatever it looks like: "true" or "42" came
+        // from a string property, and the writer quoted it to keep it one.
+        if (/^(".*"|'.*')$/.test(raw) && raw.length >= 2) return [key, decodeYamlScalar(raw)];
+        if (raw === 'true') return [key, true];
+        if (raw === 'false') return [key, false];
+        if (!isNaN(Number(raw)) && raw !== '') return [key, Number(raw)];
+        return [key, raw];
     }
 
     /** Append osint_* keys as YAML (supports nested arrays). */
@@ -572,13 +667,18 @@ export class EntityManager {
 
             // Extract connection properties from frontmatter
             const properties: Record<string, unknown> = {};
-            const excludedKeys = ['id', 'type', 'relationship', 'fromEntityId', 'toEntityId',
-                'fromEntity', 'toEntity', 'ftmSchema', 'label', 'schemaFamily',
-                'osint_sources', 'osint_confidence', 'osint_contradictions'];
-
             for (const [key, value] of Object.entries(frontmatter)) {
-                if (!excludedKeys.includes(key) && value !== undefined && value !== null) {
+                if (UNSAFE_PROPERTY_KEYS.has(key)) continue;
+                if (!CONNECTION_FRONTMATTER_KEYS.has(key) && value !== undefined && value !== null) {
                     properties[key] = value;
+                }
+            }
+            // Properties whose names the writer uses itself (see CONNECTION_FRONTMATTER_KEYS).
+            const propsBlock = frontmatter.props;
+            if (propsBlock && typeof propsBlock === 'object' && !Array.isArray(propsBlock)) {
+                for (const [key, value] of Object.entries(propsBlock as Record<string, unknown>)) {
+                    if (UNSAFE_PROPERTY_KEYS.has(key)) continue;
+                    if (value !== undefined && value !== null) properties[key] = value;
                 }
             }
 
@@ -692,11 +792,18 @@ export class EntityManager {
      * identifier, then by the label the create would compute, within the same schema and
      * type. Callers that used to rely on a same-label create overwriting the old note use
      * this to update the existing entity instead.
+     *
+     * The label match is refused when both sides carry a username key and none is shared
+     * (a shared one would have matched above). An account's label is only its username,
+     * so without this a Twitter "john" would merge into a GitHub "john", or into a "john"
+     * whose platform nobody recorded, and take that account's provenance. Other kinds do
+     * not veto: a person or organisation with a second email address is still the same one.
      */
     findExistingEntity(type: string, properties: Record<string, unknown>): Entity | undefined {
         const ftmSchema = isFTMSchema(type) ? type : legacyToFTMSchema(type as EntityType);
         const sameKind = (e: Entity) => String(e.type) === type && (e.ftmSchema || String(e.type)) === ftmSchema;
-        for (const key of identifierKeysForEntity({ type, ftmSchema, properties })) {
+        const incomingKeys = identifierKeysForEntity({ type, ftmSchema, properties });
+        for (const key of incomingKeys) {
             for (const id of this.identifierIndex.get(key) ?? []) {
                 const e = this.entities.get(id);
                 if (e && sameKind(e)) return e;
@@ -706,9 +813,13 @@ export class EntityManager {
             ? ftmSchemaService.getEntityLabel(type, properties)
             : this.computeEntityLabel(type, ftmSchema, properties);
         if (!label) return undefined;
+        const isUsernameKey = (key: string) => key.startsWith('username:');
+        const incomingHasUsername = incomingKeys.some(isUsernameKey);
+        const conflicts = (e: Entity) =>
+            incomingHasUsername && (this.identifierKeysById.get(e.id) ?? []).some(isUsernameKey);
         const wanted = label.toLowerCase();
         for (const e of this.entities.values()) {
-            if (sameKind(e) && String(e.label ?? '').toLowerCase() === wanted) return e;
+            if (sameKind(e) && String(e.label ?? '').toLowerCase() === wanted && !conflicts(e)) return e;
         }
         return undefined;
     }
@@ -792,9 +903,19 @@ export class EntityManager {
         // The caller's key first, then the identifiers in the properties: a key that does
         // not match (or does not parse) must not mean a duplicate of an entity the
         // properties would have found.
+        //
+        // A caller's username key is dropped when the properties name the account's own
+        // username key and it is not that one: "username:john" sent with service: github
+        // would otherwise merge a GitHub account into a platform-less "john".
+        const propertyKeys = identifierKeysForEntity({ type: schema, ftmSchema: schema, properties });
+        const callerKey = options?.identifierKey ? normalizeIdentifierKey(options.identifierKey) : null;
+        const callerKeyContradicts = callerKey !== null
+            && callerKey.startsWith('username:')
+            && propertyKeys.some((k) => k.startsWith('username:'))
+            && !propertyKeys.includes(callerKey);
         const keys = [
-            ...(options?.identifierKey ? [options.identifierKey] : []),
-            ...identifierKeysForEntity({ type: schema, ftmSchema: schema, properties }),
+            ...(options?.identifierKey && !callerKeyContradicts ? [options.identifierKey] : []),
+            ...propertyKeys,
         ];
         for (const key of keys) {
             const match = this.findEntityByIdentifier(schema, key);
@@ -1107,8 +1228,12 @@ export class EntityManager {
         const slash = path.lastIndexOf('/');
         const folder = this.app.vault.getAbstractFileByPath(slash > 0 ? path.substring(0, slash) : '/');
         if (!(folder instanceof TFolder)) return null;
-        const wanted = path.toLowerCase();
-        return folder.children.find((child) => normalizePath(child.path).toLowerCase() === wanted) ?? null;
+        // NFC as well as case: macOS also treats a precomposed "é" and "e" plus a combining
+        // accent as one name. normalizePath already composes both sides today; folding here
+        // keeps the guard right for a caller that passes a path it did not normalize.
+        const fold = (p: string) => p.normalize('NFC').toLowerCase();
+        const wanted = fold(path);
+        return folder.children.find((child) => fold(normalizePath(child.path)) === wanted) ?? null;
     }
 
     /**
@@ -1765,14 +1890,14 @@ ${(entity.properties.notes as string) || ''}
                 return false;
             }
 
-            // Update in-memory
-            this.putEntity(entity);
-
-            // Update the note file
+            // Note first: if the write fails, memory and the graph yaml still match the
+            // note on disk, and the caller is told the undo did not happen.
             if (file instanceof TFile) {
                 const content = this.generateNoteContent(entity);
                 await this.app.vault.modify(file, content);
             }
+
+            this.putEntity(entity);
 
             try {
                 await this.writeEntityYamlFile(entity);
@@ -1802,13 +1927,20 @@ ${(entity.properties.notes as string) || ''}
         lines.push(`created: ${now}`);
         lines.push(`modified: ${now}`);
 
-        // Add properties to frontmatter
+        // Add properties to frontmatter. Keys this writer emits itself go under `props:`,
+        // as in the other writers, so a property named `id` cannot re-point the note.
+        const propsChunk: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(entity.properties)) {
-            if (value !== undefined && value !== null && value !== '') {
-                // Non-scalars are written as their String() form, as before, but quoted.
-                lines.push(yamlScalarLine(key, value));
+            if (value === undefined || value === null || value === '') continue;
+            if (HISTORY_NOTE_FRONTMATTER_KEYS.has(key)) {
+                this.appendEntityPropertyToFrontmatter(lines, propsChunk, key, value, HISTORY_NOTE_FRONTMATTER_KEYS);
+                continue;
             }
+            if (UNSAFE_PROPERTY_KEYS.has(key)) continue;
+            // Non-scalars are written as their String() form, as before, but quoted.
+            lines.push(yamlScalarLine(key, value));
         }
+        this.appendPropsChunk(lines, propsChunk);
 
         lines.push('---');
         lines.push('');
@@ -2011,9 +2143,6 @@ ${(entity.properties.notes as string) || ''}
         try {
             if (!this.assertPathWritable(connection.filePath, 'update connection')) return false;
 
-            // Update in-memory
-            this.connections.set(connection.id, connection);
-
             // Get entities for note generation
             const fromEntity = this.entities.get(connection.fromEntityId);
             const toEntity = this.entities.get(connection.toEntityId);
@@ -2023,14 +2152,19 @@ ${(entity.properties.notes as string) || ''}
                 return false;
             }
 
-            // Update the note file, unless another connection has since taken its name.
-            if (connection.filePath) {
-                const file = this.app.vault.getAbstractFileByPath(connection.filePath);
-                if (file instanceof TFile && await this.isNotePathFreeFor(connection.filePath, connection.id)) {
-                    const content = this.generateConnectionNoteContent(connection, fromEntity, toEntity);
-                    await this.app.vault.modify(file, content);
-                }
+            // All or nothing, as updateEntityForHistory: when another connection has since
+            // taken the note's name, memory and the graph yaml are left as they are too.
+            const file = connection.filePath ? this.app.vault.getAbstractFileByPath(connection.filePath) : null;
+            if (file instanceof TFile && !(await this.isNotePathFreeFor(connection.filePath!, connection.id))) {
+                console.warn(`[EntityManager] Not undoing ${connection.id}: ${connection.filePath} belongs to another note`);
+                return false;
             }
+            if (file instanceof TFile) {
+                const content = this.generateConnectionNoteContent(connection, fromEntity, toEntity);
+                await this.app.vault.modify(file, content);
+            }
+
+            this.connections.set(connection.id, connection);
 
             try {
                 await this.writeConnectionYamlFile(connection);
@@ -2266,14 +2400,20 @@ ${this.buildConnectionPropertiesSection(connection)}
         }
 
         // Add connection properties to frontmatter
+        const propsChunk: Record<string, unknown> = {};
         if (connection.properties) {
             for (const [key, value] of Object.entries(connection.properties)) {
-                if (value !== undefined && value !== null && value !== '') {
-                    lines.push(yamlScalarLine(key, value));
+                if (value === undefined || value === null || value === '') continue;
+                if (UNSAFE_PROPERTY_KEYS.has(key)) continue;
+                if (CONNECTION_FRONTMATTER_KEYS.has(key)) {
+                    propsChunk[key] = value;
+                    continue;
                 }
+                lines.push(yamlScalarLine(key, value));
             }
         }
 
+        this.appendPropsChunk(lines, propsChunk);
         this.appendOsintFrontmatter(lines, connection);
         return lines.join('\n');
     }

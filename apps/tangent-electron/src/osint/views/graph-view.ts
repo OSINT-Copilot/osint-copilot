@@ -265,8 +265,15 @@ export class GraphView extends ItemView {
                 this.addEntityToGraphPreserveLayout(entity);
             },
             onEntityUpdate: async (entity: Entity) => {
-                // Update entity in disk and graph
-                await this.entityManager.updateEntityForHistory(entity);
+                // Update entity in disk and graph. A refused update changed nothing, so the
+                // graph stays as it is and the history manager keeps the entry and says so.
+                // Inside a batch entry the sub-operations that ran before this one are not
+                // rolled back (GraphHistoryManager has no compensation), so the batch stays
+                // half applied and a retry repeats them; that is still better than a graph
+                // showing an edit the note never received.
+                if (!(await this.entityManager.updateEntityForHistory(entity))) {
+                    throw new Error(`Could not update entity ${entity.id}`);
+                }
                 this.updateEntityInGraph(entity);
             },
             onConnectionCreate: (connection: Connection) => {
@@ -287,8 +294,10 @@ export class GraphView extends ItemView {
                 this.addConnectionToGraph(connection);
             },
             onConnectionUpdate: async (connection: Connection) => {
-                // Update connection in disk and graph
-                await this.entityManager.updateConnectionForHistory(connection);
+                // Update connection in disk and graph (see onEntityUpdate on a refusal).
+                if (!(await this.entityManager.updateConnectionForHistory(connection))) {
+                    throw new Error(`Could not update connection ${connection.id}`);
+                }
                 this.updateConnectionInGraph(connection);
             },
             onNodePositionChange: (positions: Map<string, NodePosition>) => {

@@ -3,7 +3,12 @@ import { parse as parseYaml } from 'yaml';
 import { EntityManager } from '../services/entity-manager';
 import { createTestApp, type TestApp } from '../obsidian-shim/testing/create-test-app';
 import { getContent, snapshotPaths } from './helpers/vault-inspect';
-import { identifierKey, identifierKeysForEntity, normalizeIdentifierKey } from '../services/entity-identifiers';
+import {
+    identifierKey, identifierKeysForEntity, normalizeIdentifierKey, normalizePlatform, platformFromHost,
+    usernameIdentifierKey,
+} from '../services/entity-identifiers';
+import { Vault } from '../obsidian-shim/vault/vault';
+import { MemoryStorage } from '../obsidian-shim/vault/storage';
 import type { OsintSourceInput } from '../entities/types';
 import { OrchestrationService } from '../services/orchestration-service';
 
@@ -400,6 +405,22 @@ describe('finding and upserting by identifier', () => {
         expect(manager.getAllEntities()).toHaveLength(1);
     });
 
+    it('upsertEntityFromExternal ignores a username key the properties contradict', async () => {
+        const bare = await manager.upsertEntityFromExternal('UserAccount', { username: 'john' }, [SOURCE_A]);
+        const github = await manager.upsertEntityFromExternal(
+            'UserAccount', { username: 'john', service: 'github' }, [SOURCE_B], { identifierKey: 'username:john' },
+        );
+        expect(github.created).toBe(true);
+        expect(github.entity.id).not.toBe(bare.entity.id);
+        expect(manager.getEntity(bare.entity.id)!.osint_sources).toHaveLength(1);
+
+        // A key that agrees with the properties is still used.
+        const again = await manager.upsertEntityFromExternal(
+            'UserAccount', { username: 'john', service: 'github' }, [SOURCE_A], { identifierKey: 'username:github.com:john' },
+        );
+        expect(again.entity.id).toBe(github.entity.id);
+    });
+
     it('upsertEntityFromExternal creates once, then appends to the same entity', async () => {
         const first = await manager.upsertEntityFromExternal('EmailAddr', { value: 'Target@Example.com' }, [SOURCE_A], {
             identifierKey: 'email:target@example.com',
@@ -491,5 +512,293 @@ describe('@@create_entity for an entity that already exists', () => {
         expect(manager.getAllEntities()).toHaveLength(1);
         expect(manager.getEntity(entity.id)!.osint_sources).toHaveLength(1);
         expect(getContent(app, entity.filePath!)).toBe(afterFirst);
+    });
+
+    // An account's label is only its username, so the label fallback must not join accounts
+    // whose platforms differ.
+    for (const [type, platformKey] of [['UserAccount', 'service'], ['Username', 'platform']] as const) {
+        it(`${type}: the same username on GitHub, Twitter and no platform stays three entities`, async () => {
+            const account = (platform: string | undefined, source: OsintSourceInput) =>
+                `@@create_entity ${JSON.stringify({
+                    type,
+                    properties: { username: 'john', ...(platform ? { [platformKey]: platform } : {}) },
+                    sources: [source],
+                })}`;
+            const twitterSource = { ...SOURCE_B, source_url: 'https://x.com/john' };
+
+            await orchestration.executeGraphCommandsImmediate([account('github', SOURCE_A)], { showErrorNotices: false });
+            const lines = await orchestration.executeGraphCommandsImmediate(
+                [account('twitter', twitterSource), account(undefined, SOURCE_B)], { showErrorNotices: false },
+            );
+
+            expect(lines.join('\n')).not.toContain('Merged into existing');
+            const accounts = manager.getAllEntities();
+            expect(accounts).toHaveLength(3);
+            const github = accounts.find((e) => e.properties[platformKey] === 'github')!;
+            expect(github.osint_sources?.map((s) => s.source_url)).toEqual([SOURCE_A.source_url]);
+
+            // The same GitHub account again still merges, by its key.
+            const again = await orchestration.executeGraphCommandsImmediate(
+                [account('GitHub.com', { ...SOURCE_A, source_url: 'https://github.com/john' })], { showErrorNotices: false },
+            );
+            expect(again[0]).toContain('Merged into existing');
+            expect(manager.getAllEntities()).toHaveLength(3);
+            expect(manager.getEntity(github.id)!.osint_sources).toHaveLength(2);
+        });
+    }
+});
+
+/**
+ * Windows and macOS filesystems ignore letter case, so renaming onto "acme.md" replaces
+ * "Acme.md" there even though the vault index holds them as two paths. The storage here
+ * behaves that way: a path that differs only in case is the same file.
+ */
+class CaseInsensitiveStorage extends MemoryStorage {
+    // macOS also ignores Unicode normalization: "é" and "e" plus a combining accent are one name.
+    private static fold(path: string): string {
+        return path.normalize('NFC').toLowerCase();
+    }
+
+    private sameFile(path: string): string | undefined {
+        const wanted = CaseInsensitiveStorage.fold(path);
+        return this.paths().find((p) => CaseInsensitiveStorage.fold(p) === wanted);
+    }
+
+    override async create(path: string, data: string) {
+        if (this.sameFile(path)) throw new Error('File already exists.');
+        return super.create(path, data);
+    }
+
+    override async write(path: string, data: string) {
+        const existing = this.sameFile(path);
+        if (existing && existing !== path) await this.remove(existing);
+        return super.write(path, data);
+    }
+
+    override async rename(from: string, to: string) {
+        const existing = this.sameFile(to);
+        // Like fs.rename: the destination is replaced, unless it is the source itself.
+        if (existing && CaseInsensitiveStorage.fold(existing) !== CaseInsensitiveStorage.fold(from)) await this.remove(existing);
+        return super.rename(from, to);
+    }
+}
+
+async function caseInsensitiveApp(): Promise<TestApp> {
+    const storage = new CaseInsensitiveStorage();
+    const vault = new Vault(storage);
+    await vault.open();
+    return {
+        vault,
+        storage,
+        fileManager: { async trashFile(file) { await vault.trash(file); } },
+        metadataCache: { getFileCache: () => null },
+        workspace: { getLeaf: () => ({ async openFile() { /* unused */ } }), getLeavesOfType: () => [], openedFiles: [] },
+    };
+}
+
+describe('note names on a case-insensitive filesystem', () => {
+    let app: TestApp;
+    let manager: EntityManager;
+
+    beforeEach(async () => {
+        app = await caseInsensitiveApp();
+        manager = new EntityManager(app as never, 'OSINTCopilot', null);
+        await manager.initialize();
+    });
+
+    it('the storage really does replace a note on a case-only rename', async () => {
+        await app.vault.create('OSINTCopilot/a.md', 'a');
+        await app.vault.create('OSINTCopilot/b.md', 'b');
+        await app.vault.rename(app.vault.getAbstractFileByPath('OSINTCopilot/b.md')!, 'OSINTCopilot/A.md');
+        expect(getContent(app, 'OSINTCopilot/a.md')).toBeUndefined();
+    });
+
+    it('a label change to another entity\'s name in a different case does not replace its note', async () => {
+        const taken = await manager.createFTMEntity('Company', { name: 'Acme' }, { skipAutoGeocode: true });
+        const takenBytes = getContent(app, taken.filePath!);
+        const mover = await manager.createFTMEntity('Company', { name: 'Mover' }, { skipAutoGeocode: true });
+
+        await manager.updateEntity(mover.id, { name: 'ACME' });
+
+        expect(getContent(app, taken.filePath!)).toBe(takenBytes);
+        expect(mover.filePath).toContain(`ACME (${mover.id.substring(0, 6)}).md`);
+        expect(frontmatterOf(getContent(app, mover.filePath!)).id).toBe(mover.id);
+        expect(entityNotes(app)).toHaveLength(2);
+    });
+
+    it('a label change to the same name in another Unicode normalization does not replace its note', async () => {
+        const taken = await manager.createFTMEntity('Company', { name: 'Caf\u00e9' }, { skipAutoGeocode: true });
+        const takenBytes = getContent(app, taken.filePath!);
+        const mover = await manager.createFTMEntity('Company', { name: 'Mover' }, { skipAutoGeocode: true });
+
+        await manager.updateEntity(mover.id, { name: 'CAFE\u0301' });
+
+        expect(getContent(app, taken.filePath!)).toBe(takenBytes);
+        expect(mover.filePath).toContain(`(${mover.id.substring(0, 6)}).md`);
+        expect(entityNotes(app)).toHaveLength(2);
+    });
+
+    it('a new entity whose name differs only in case gets its own note', async () => {
+        const first = await manager.createFTMEntity('Company', { name: 'Acme' }, { skipAutoGeocode: true });
+        const firstBytes = getContent(app, first.filePath!);
+
+        const second = await manager.createFTMEntity('Company', { name: 'acme' }, { skipAutoGeocode: true });
+
+        expect(getContent(app, first.filePath!)).toBe(firstBytes);
+        expect(second.filePath).toContain(`acme (${second.id.substring(0, 6)}).md`);
+    });
+
+    it('a note that is not loaded is not replaced either', async () => {
+        const ghost = await manager.createFTMEntity('Company', { name: 'Ghost' }, { skipAutoGeocode: true });
+        const ghostBytes = getContent(app, ghost.filePath!);
+        manager.deleteEntityInMemory(ghost.id);
+        const mover = await manager.createFTMEntity('Company', { name: 'Mover' }, { skipAutoGeocode: true });
+
+        await manager.updateEntity(mover.id, { name: 'ghost' });
+
+        expect(getContent(app, ghost.filePath!)).toBe(ghostBytes);
+        expect(mover.filePath).not.toMatch(/\/ghost\.md$/);
+    });
+
+    it('an entity can still change the case of its own name', async () => {
+        const entity = await manager.createFTMEntity('Company', { name: 'acme' }, { skipAutoGeocode: true });
+        const oldPath = entity.filePath!;
+
+        await manager.updateEntity(entity.id, { name: 'Acme' });
+
+        expect(entity.filePath).toBe(oldPath.replace(/acme\.md$/, 'Acme.md'));
+        expect(getContent(app, oldPath)).toBeUndefined();
+        expect(frontmatterOf(getContent(app, entity.filePath!)).name).toBe('Acme');
+        expect(entityNotes(app)).toHaveLength(1);
+    });
+});
+
+describe('undo is all or nothing', () => {
+    let app: TestApp;
+    let manager: EntityManager;
+
+    beforeEach(async () => {
+        app = createTestApp();
+        manager = new EntityManager(app as never, 'OSINTCopilot', null);
+        await manager.initialize();
+    });
+
+    function yamlOf(prefix: string, id: string): string | undefined {
+        const path = snapshotPaths(app).find((p) => p.includes('graph-yaml') && p.includes(prefix) && p.includes(id));
+        return path ? getContent(app, path) : undefined;
+    }
+
+    it('an entity undo that cannot write its note leaves memory and the graph yaml alone', async () => {
+        const entity = await manager.createFTMEntity('Company', { name: 'Solid', country: 'de' }, { skipAutoGeocode: true });
+        const noteBefore = getContent(app, entity.filePath!);
+        const yamlBefore = snapshotPaths(app).filter((p) => p.includes('graph-yaml')).map((p) => getContent(app, p));
+        const snapshot = { ...entity, properties: { ...entity.properties, country: 'fr' } };
+
+        const modify = vi.spyOn(app.vault, 'modify').mockRejectedValueOnce(new Error('disk full'));
+        try {
+            expect(await manager.updateEntityForHistory(snapshot)).toBe(false);
+        } finally {
+            modify.mockRestore();
+        }
+
+        expect(manager.getEntity(entity.id)?.properties.country).toBe('de');
+        expect(getContent(app, entity.filePath!)).toBe(noteBefore);
+        expect(snapshotPaths(app).filter((p) => p.includes('graph-yaml')).map((p) => getContent(app, p))).toEqual(yamlBefore);
+    });
+
+    it('a connection undo onto a note another connection now owns changes nothing', async () => {
+        const a = await manager.createFTMEntity('Person', { name: 'Ann' }, { skipAutoGeocode: true });
+        const acme = await manager.createFTMEntity('Company', { name: 'Acme' }, { skipAutoGeocode: true });
+        const conn = (await manager.createConnection(a.id, acme.id, 'Employment', { role: 'clerk' }))!;
+        const snapshot = { ...conn, properties: { ...conn.properties, role: 'director' } };
+
+        // The connection's note now carries another connection's id, as after a delete and
+        // a new connection taking the name.
+        const content = getContent(app, conn.filePath!)!;
+        await app.vault.modify(
+            app.vault.getAbstractFileByPath(conn.filePath!) as never,
+            content.replace(`id: ${JSON.stringify(conn.id)}`, 'id: "someone-else"'),
+        );
+        (manager as unknown as { connections: Map<string, unknown> }).connections.delete(conn.id);
+        const noteBefore = getContent(app, conn.filePath!);
+        const yamlBefore = yamlOf('', conn.id);
+
+        expect(await manager.updateConnectionForHistory(snapshot)).toBe(false);
+
+        expect(getContent(app, conn.filePath!)).toBe(noteBefore);
+        expect(manager.getConnection(conn.id)).toBeUndefined();
+        expect(yamlOf('', conn.id)).toBe(yamlBefore);
+    });
+});
+
+describe('usernames are keyed by platform', () => {
+    it('normalizePlatform folds the spellings of one platform together', () => {
+        for (const [raw, want] of [
+            ['x.com', 'twitter'],
+            ['https://www.x.com/john', 'twitter'],
+            ['Twitter.com', 'twitter'],
+            ['twitter', 'twitter'],
+            ['X', 'twitter'],
+            ['www.github.com', 'github'],
+            ['GitHub', 'github'],
+            ['t.me', 'telegram'],
+            ['telegram.me', 'telegram'],
+            ['telegram.org', 'telegram'],
+            ['www.Example.org.', 'example.org'],
+            ['https://forum.example.net/u/john', 'forum.example.net'],
+            ['My Forum!', 'myforum'],
+            ['forum.example.net:8080', 'forum.example.net'],
+            ['https://forum.example.net:8443/u/john', 'forum.example.net'],
+        ] as const) {
+            expect(normalizePlatform(raw), raw).toBe(want);
+        }
+        expect(normalizePlatform('  ')).toBeNull();
+        expect(normalizePlatform('!!!')).toBeNull();
+        expect(normalizePlatform(42)).toBeNull();
+        expect(platformFromHost('www.twitter.com')).toBe('twitter');
+        expect(platformFromHost('mastodon.social')).toBe('mastodon.social');
+    });
+
+    it('a known platform goes into the key, and the forms never meet', () => {
+        expect(identifierKey('username', '@John', 'github.com')).toBe('username:github:john');
+        expect(identifierKey('username', 'john', 'x.com')).toBe('username:twitter:john');
+        expect(identifierKey('username', 'john')).toBe('username:john');
+        expect(identifierKey('username', 'john', '')).toBe('username:john');
+        // A colon would forge the platform form.
+        expect(identifierKey('username', 'github:john')).toBeNull();
+        expect(usernameIdentifierKey('John', 'Twitter')).toBe('username:twitter:john');
+
+        expect(normalizeIdentifierKey('username:x.com:@John')).toBe('username:twitter:john');
+        expect(normalizeIdentifierKey('USERNAME:John')).toBe('username:john');
+        expect(normalizeIdentifierKey('username::john')).toBeNull();
+    });
+
+    it('identifierKeysForEntity reads platform (legacy) and service (FTM)', () => {
+        expect(identifierKeysForEntity({ type: 'Username', ftmSchema: 'UserAccount', properties: { username: 'Neo', platform: 'twitter.com' } }))
+            .toEqual(['username:twitter:neo']);
+        expect(identifierKeysForEntity({ type: 'UserAccount', ftmSchema: 'UserAccount', properties: { username: 'Neo', service: 'GitHub' } }))
+            .toEqual(['username:github:neo']);
+        expect(identifierKeysForEntity({ type: 'UserAccount', ftmSchema: 'UserAccount', properties: { username: 'Neo', service: '???' } }))
+            .toEqual(['username:neo']);
+    });
+
+    it('the same name on two platforms, or on none, stays three entities', async () => {
+        const app = createTestApp();
+        const manager = new EntityManager(app as never, 'OSINTCopilot', null);
+        await manager.initialize();
+
+        const gh = await manager.upsertEntityFromExternal('UserAccount', { username: 'john', service: 'github.com' }, [SOURCE_A]);
+        const tw = await manager.upsertEntityFromExternal('UserAccount', { username: 'john', service: 'x.com' }, [SOURCE_A]);
+        const none = await manager.upsertEntityFromExternal('UserAccount', { username: 'john' }, [SOURCE_A]);
+        expect([gh.created, tw.created, none.created]).toEqual([true, true, true]);
+        expect(new Set([gh.entity.id, tw.entity.id, none.entity.id]).size).toBe(3);
+
+        // The same account from another spelling of the platform lands on the first one.
+        const again = await manager.upsertEntityFromExternal('UserAccount', { username: '@John', service: 'GitHub' }, [SOURCE_B]);
+        expect(again.created).toBe(false);
+        expect(again.entity.id).toBe(gh.entity.id);
+
+        expect(manager.findEntityByIdentifier('UserAccount', 'username:twitter.com:john')?.id).toBe(tw.entity.id);
+        expect(manager.findEntityByIdentifier('UserAccount', 'username:john')?.id).toBe(none.entity.id);
     });
 });
