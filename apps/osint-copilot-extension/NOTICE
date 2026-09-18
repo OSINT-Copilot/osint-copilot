@@ -1,0 +1,15 @@
+OSINT Copilot extension
+Copyright 2026 Probe Point Analytics LLC
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It is original work of Probe Point Analytics LLC. It contains no code from the
+WorldBrain Memex extension or from any other browser extension.
+
+Google's chrome-extensions-samples (Apache-2.0,
+https://github.com/GoogleChrome/chrome-extensions-samples) was read as a
+reference for the structure of a side panel with a selection context menu. No
+code from it is included.
+
+The icons are resized from the OSINT Copilot desktop app's icon
+(apps/tangent-electron/build/icon.png) by scripts/make-icons.py.

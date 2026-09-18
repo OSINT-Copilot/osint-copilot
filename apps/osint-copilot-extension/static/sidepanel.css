@@ -1,0 +1,130 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright 2026 Probe Point Analytics LLC */
+
+:root {
+	color-scheme: light dark;
+	--bg: #f6f7f9;
+	--card: #ffffff;
+	--text: #1c1f24;
+	--muted: #5d6573;
+	--line: #d9dde3;
+	--accent: #2f5bd3;
+	--accent-text: #ffffff;
+	--ok: #1f7a3d;
+	--warn: #a15c00;
+	--bad: #b3261e;
+	font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #16181c;
+		--card: #1f2228;
+		--text: #e7e9ee;
+		--muted: #9aa3b2;
+		--line: #333842;
+		--accent: #7aa2ff;
+		--accent-text: #0d1117;
+		--ok: #5cc98a;
+		--warn: #f0b35a;
+		--bad: #ff8a80;
+	}
+}
+
+* { box-sizing: border-box; }
+
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+}
+
+.bar {
+	position: sticky;
+	top: 0;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 12px;
+	background: var(--card);
+	border-bottom: 1px solid var(--line);
+	z-index: 1;
+}
+
+h1 { font-size: 14px; margin: 0; flex: 1; }
+h2 { font-size: 13px; margin: 0 0 8px; }
+
+main { padding: 10px 12px 24px; display: grid; gap: 10px; }
+#paired { display: grid; gap: 10px; }
+#paired[hidden] { display: none; }
+
+.card {
+	background: var(--card);
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	padding: 10px 12px;
+}
+
+summary { cursor: pointer; font-weight: 600; }
+
+label { display: block; font-weight: 600; margin: 6px 0 4px; }
+.row label { margin: 0; min-width: 64px; }
+
+input, select, textarea {
+	width: 100%;
+	font: inherit;
+	color: inherit;
+	background: var(--bg);
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	padding: 6px 8px;
+}
+textarea { resize: vertical; }
+
+.row { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+.row > input, .row > select { flex: 1; }
+
+button {
+	font: inherit;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	padding: 6px 12px;
+	margin-top: 8px;
+	background: var(--accent);
+	color: var(--accent-text);
+	cursor: pointer;
+	white-space: nowrap;
+}
+.row button { margin-top: 0; }
+button.secondary { background: transparent; color: var(--accent); border-color: var(--line); }
+button.danger { background: transparent; color: var(--bad); border-color: var(--line); }
+button:disabled { opacity: 0.5; cursor: default; }
+
+.badge {
+	font-size: 11px;
+	padding: 2px 8px;
+	border-radius: 999px;
+	border: 1px solid var(--line);
+	color: var(--muted);
+}
+.badge.connected { color: var(--ok); border-color: var(--ok); }
+.badge.offline { color: var(--warn); border-color: var(--warn); }
+
+.hint { color: var(--muted); margin: 6px 0 0; }
+.problem { color: var(--bad); margin: 6px 0 0; }
+#connection-problem { margin: 8px 12px 0; }
+.current { margin: 8px 12px 0; font-weight: 600; overflow-wrap: anywhere; }
+.flash { margin: 0; color: var(--ok); }
+.flash.error { color: var(--bad); }
+
+.page-title { font-weight: 600; overflow-wrap: anywhere; }
+.page-url { color: var(--muted); overflow-wrap: anywhere; font-size: 12px; }
+
+.queue { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.queue li { border-top: 1px solid var(--line); padding-top: 8px; }
+.queue li:first-child { border-top: 0; padding-top: 0; }
+.queue .label { overflow-wrap: anywhere; }
+.queue .meta { color: var(--muted); font-size: 12px; }
+.queue .failed .meta { color: var(--bad); }
+.queue .actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.queue .actions select { width: auto; flex: 1; margin-top: 8px; }
