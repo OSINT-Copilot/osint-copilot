@@ -1,0 +1,14 @@
+{
+	"name": "osint-copilot-extension",
+	"version": "0.1.0",
+	"private": true,
+	"description": "OSINT Copilot extension: send notes, entities and page captures from the browser into an OSINT Copilot investigation.",
+	"license": "Apache-2.0",
+	"type": "module",
+	"scripts": {},
+	"devDependencies": {
+		"@types/chrome": "^0.3.0",
+		"esbuild": "0.27.2",
+		"fake-indexeddb": "^6.2.5"
+	}
+}

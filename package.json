@@ -17,6 +17,7 @@
 		"packages/tangent-query-parser",
 		"packages/tangent-html-to-markdown",
 		"apps/tangent-electron",
+		"apps/osint-copilot-extension",
 		"apps/tangent-website",
 		"apps/tangent-test-workspace-generator"
 	],
