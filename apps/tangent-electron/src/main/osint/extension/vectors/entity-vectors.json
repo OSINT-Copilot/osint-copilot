@@ -1,0 +1,961 @@
+{
+	"_comment": "Shared acceptance vectors for the extension and the app. 'entities' go through validateEntity, 'manifests' through validateManifest (the POST /v1/bundles body). Where given, 'value', 'url', 'text' and 'bundleId' are the cleaned result, and 'detail' is the exact 422 detail. Regenerate with generate-entity-vectors.py.",
+	"entities": [
+		{
+			"note": "plain address",
+			"entity": {
+				"kind": "email",
+				"value": "analyst@example.com"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "plus tag and subdomain",
+			"entity": {
+				"kind": "email",
+				"value": "First.Last+tag@sub.example.co.uk"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "no @",
+			"entity": {
+				"kind": "email",
+				"value": "no-at-sign.example.com"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "two @",
+			"entity": {
+				"kind": "email",
+				"value": "a@b@example.com"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "whitespace",
+			"entity": {
+				"kind": "email",
+				"value": "a b@example.com"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "no dot in the domain",
+			"entity": {
+				"kind": "email",
+				"value": "user@localhost"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "empty local part",
+			"entity": {
+				"kind": "email",
+				"value": "@example.com"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "plain",
+			"entity": {
+				"kind": "domain",
+				"value": "example.com"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "IDN converts to punycode",
+			"entity": {
+				"kind": "domain",
+				"value": "b\u00fccher.de"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "already punycode",
+			"entity": {
+				"kind": "domain",
+				"value": "xn--bcher-kva.de"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "no dot",
+			"entity": {
+				"kind": "domain",
+				"value": "localhost"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "URL-shaped: belongs to the url kind",
+			"entity": {
+				"kind": "domain",
+				"value": "example.com/path"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "empty label",
+			"entity": {
+				"kind": "domain",
+				"value": "a..com"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "whitespace",
+			"entity": {
+				"kind": "domain",
+				"value": "exa mple.com"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "https",
+			"entity": {
+				"kind": "url",
+				"value": "https://example.com/a?b=1"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "http",
+			"entity": {
+				"kind": "url",
+				"value": "http://example.com"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "not http(s)",
+			"entity": {
+				"kind": "url",
+				"value": "ftp://example.com/file"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "script scheme",
+			"entity": {
+				"kind": "url",
+				"value": "javascript:alert(1)"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "no scheme",
+			"entity": {
+				"kind": "url",
+				"value": "example.com"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "IPv4",
+			"entity": {
+				"kind": "ip",
+				"value": "192.0.2.1"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "IPv6",
+			"entity": {
+				"kind": "ip",
+				"value": "2001:db8::1"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "octet out of range",
+			"entity": {
+				"kind": "ip",
+				"value": "256.1.1.1"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "three octets",
+			"entity": {
+				"kind": "ip",
+				"value": "1.2.3"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "leading zero is not dotted-decimal",
+			"entity": {
+				"kind": "ip",
+				"value": "01.2.3.4"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "IPv6 with a zone id",
+			"entity": {
+				"kind": "ip",
+				"value": "fe80::1%eth0"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "international with spaces",
+			"entity": {
+				"kind": "phone",
+				"value": "+44 20 7946 0958"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "national with punctuation",
+			"entity": {
+				"kind": "phone",
+				"value": "(555) 010-4477"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "three digits",
+			"entity": {
+				"kind": "phone",
+				"value": "123"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "21 digits",
+			"entity": {
+				"kind": "phone",
+				"value": "+123456789012345678901"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "letters",
+			"entity": {
+				"kind": "phone",
+				"value": "555-CALL-NOW"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "plus not leading",
+			"entity": {
+				"kind": "phone",
+				"value": "12+34567"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "plain",
+			"entity": {
+				"kind": "username",
+				"value": "john_doe"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "with platform",
+			"entity": {
+				"kind": "username",
+				"value": "john",
+				"platform": "github"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "whitespace",
+			"entity": {
+				"kind": "username",
+				"value": "john doe"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "65 characters",
+			"entity": {
+				"kind": "username",
+				"value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "platform with uppercase",
+			"entity": {
+				"kind": "username",
+				"value": "john",
+				"platform": "GitHub"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "platform too long",
+			"entity": {
+				"kind": "username",
+				"value": "john",
+				"platform": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "platform on a non-username",
+			"entity": {
+				"kind": "email",
+				"value": "a@example.com",
+				"platform": "github"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "btc Base58Check P2PKH",
+			"entity": {
+				"kind": "wallet",
+				"value": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+				"chain": "btc"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "btc Base58Check P2SH",
+			"entity": {
+				"kind": "wallet",
+				"value": "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+				"chain": "btc"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "btc Base58Check checksum broken by one character",
+			"entity": {
+				"kind": "wallet",
+				"value": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb",
+				"chain": "btc"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "btc bech32 v0",
+			"entity": {
+				"kind": "wallet",
+				"value": "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+				"chain": "btc"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "btc bech32m v1",
+			"entity": {
+				"kind": "wallet",
+				"value": "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0",
+				"chain": "btc"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "btc v0 with a bech32m checksum",
+			"entity": {
+				"kind": "wallet",
+				"value": "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kemeawh",
+				"chain": "btc"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "btc bech32 checksum broken",
+			"entity": {
+				"kind": "wallet",
+				"value": "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5",
+				"chain": "btc"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "eth EIP-55 checksummed",
+			"entity": {
+				"kind": "wallet",
+				"value": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+				"chain": "eth"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "eth all lowercase (no checksum claimed)",
+			"entity": {
+				"kind": "wallet",
+				"value": "0xde709f2102306220921060314715629080e2fb77",
+				"chain": "eth"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "eth mixed case failing EIP-55",
+			"entity": {
+				"kind": "wallet",
+				"value": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD",
+				"chain": "eth"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "eth too short",
+			"entity": {
+				"kind": "wallet",
+				"value": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeA",
+				"chain": "eth"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "other chain, no checksum",
+			"entity": {
+				"kind": "wallet",
+				"value": "addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer",
+				"chain": "other"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "other chain under 8 characters",
+			"entity": {
+				"kind": "wallet",
+				"value": "short",
+				"chain": "other"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "other chain with spaces",
+			"entity": {
+				"kind": "wallet",
+				"value": "has space in it",
+				"chain": "other"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "wallet without a chain",
+			"entity": {
+				"kind": "wallet",
+				"value": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "unknown chain",
+			"entity": {
+				"kind": "wallet",
+				"value": "0xde709f2102306220921060314715629080e2fb77",
+				"chain": "sol"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "chain on a non-wallet",
+			"entity": {
+				"kind": "email",
+				"value": "a@example.com",
+				"chain": "btc"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "unknown entity kind",
+			"entity": {
+				"kind": "gps",
+				"value": "51.5,-0.1"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "value of exactly 512 characters",
+			"entity": {
+				"kind": "email",
+				"value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx@example.com"
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "value of 513 characters",
+			"entity": {
+				"kind": "email",
+				"value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx@example.com"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "context over 500 characters",
+			"entity": {
+				"kind": "email",
+				"value": "a@example.com",
+				"context": "ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "unknown field",
+			"entity": {
+				"kind": "email",
+				"value": "a@example.com",
+				"confidence": 1
+			},
+			"expect": "reject"
+		},
+		{
+			"note": "control characters and U+2028 are stripped, then the value is checked",
+			"entity": {
+				"kind": "email",
+				"value": "a\u0000@exa\u2028mple.com"
+			},
+			"expect": "accept",
+			"value": "a@example.com"
+		},
+		{
+			"note": "bidi overrides and isolates are stripped from a value",
+			"entity": {
+				"kind": "username",
+				"value": "\u2066jo\u202ehn\u2069"
+			},
+			"expect": "accept",
+			"value": "john"
+		}
+	],
+	"manifests": [
+		{
+			"note": "note",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "note",
+				"note": {
+					"text": "hello"
+				}
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "entity",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "entity",
+				"entity": {
+					"kind": "domain",
+					"value": "example.com"
+				}
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "credentials are stripped from page.url",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://user:pw@example.com/x",
+					"title": ""
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "note",
+				"note": {
+					"text": "hello"
+				}
+			},
+			"expect": "accept",
+			"url": "https://example.com/x"
+		},
+		{
+			"note": "note keeps newlines and drops other control characters",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "note",
+				"note": {
+					"text": "one\r\ntwo\u0007\u2029three"
+				}
+			},
+			"expect": "accept",
+			"text": "one\ntwothree"
+		},
+		{
+			"note": "uppercase bundleId is lowercased",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0B7E7C1E-3F7A-4C56-9A3E-2D4F5B6C7D8E",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "note",
+				"note": {
+					"text": "hello"
+				}
+			},
+			"expect": "accept",
+			"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e"
+		},
+		{
+			"note": "capture is a later-phase kind",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "capture"
+			},
+			"expect": "reject",
+			"detail": "kind not supported by this app version"
+		},
+		{
+			"note": "unknown kind",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "bogus"
+			},
+			"expect": "reject",
+			"detail": "kind: must be one of note, entity, capture, highlight, highlight.update, highlight.delete"
+		},
+		{
+			"note": "wrong version",
+			"manifest": {
+				"v": 2,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "note",
+				"note": {
+					"text": "hello"
+				}
+			},
+			"expect": "reject",
+			"detail": "v: must be 1"
+		},
+		{
+			"note": "bundleId not a v4 UUID",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-1c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "note",
+				"note": {
+					"text": "hello"
+				}
+			},
+			"expect": "reject",
+			"detail": "bundleId: must be a UUID v4"
+		},
+		{
+			"note": "workspaceId that is a path",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "/home/analyst/case",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "note",
+				"note": {
+					"text": "hello"
+				}
+			},
+			"expect": "reject",
+			"detail": "workspaceId: must be a workspace id from /v1/workspaces"
+		},
+		{
+			"note": "page.url not http(s)",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "file:///etc/passwd",
+					"title": ""
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "note",
+				"note": {
+					"text": "hello"
+				}
+			},
+			"expect": "reject",
+			"detail": "page.url: must be an http(s) URL"
+		},
+		{
+			"note": "page.url over 2048 characters",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					"title": ""
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "note",
+				"note": {
+					"text": "hello"
+				}
+			},
+			"expect": "reject",
+			"detail": "page.url: longer than 2048 characters"
+		},
+		{
+			"note": "page.title over 1024 characters",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "note",
+				"note": {
+					"text": "hello"
+				}
+			},
+			"expect": "reject",
+			"detail": "page.title: longer than 1024 characters"
+		},
+		{
+			"note": "note.text over 20000 characters",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "note",
+				"note": {
+					"text": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+				}
+			},
+			"expect": "reject",
+			"detail": "note.text: longer than 20000 characters"
+		},
+		{
+			"note": "empty note",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "note",
+				"note": {
+					"text": "  \u0000 "
+				}
+			},
+			"expect": "reject",
+			"detail": "note.text: must not be empty"
+		},
+		{
+			"note": "entity field on a note",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "note",
+				"note": {
+					"text": "hello"
+				},
+				"entity": {
+					"kind": "email",
+					"value": "a@example.com"
+				}
+			},
+			"expect": "reject",
+			"detail": "entity: unknown field"
+		},
+		{
+			"note": "unknown top-level field",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "note",
+				"note": {
+					"text": "hello"
+				},
+				"path": "/tmp"
+			},
+			"expect": "reject",
+			"detail": "path: unknown field"
+		},
+		{
+			"note": "note text loses bidi overrides",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "note",
+				"note": {
+					"text": "paid \u202etxt.exe"
+				}
+			},
+			"expect": "accept",
+			"text": "paid txt.exe"
+		},
+		{
+			"note": "missing clientTime",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"kind": "note",
+				"note": {
+					"text": "hello"
+				}
+			},
+			"expect": "reject",
+			"detail": "clientTime: must be a string"
+		},
+		{
+			"note": "clientTime with an offset",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T10:53:20+02:00",
+				"kind": "note",
+				"note": {
+					"text": "hello"
+				}
+			},
+			"expect": "accept"
+		},
+		{
+			"note": "clientTime that Date.parse takes but is not ISO 8601",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "March 7",
+				"kind": "note",
+				"note": {
+					"text": "hello"
+				}
+			},
+			"expect": "reject",
+			"detail": "clientTime: must be an ISO 8601 time"
+		},
+		{
+			"note": "clientTime that is a bare number",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "1",
+				"kind": "note",
+				"note": {
+					"text": "hello"
+				}
+			},
+			"expect": "reject",
+			"detail": "clientTime: must be an ISO 8601 time"
+		},
+		{
+			"note": "entity failing its check names the field",
+			"manifest": {
+				"v": 1,
+				"bundleId": "0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e",
+				"workspaceId": "AAAAAAAAAAAAAAAAAAAAAA",
+				"page": {
+					"url": "https://example.com/",
+					"title": "Example"
+				},
+				"clientTime": "2025-10-09T08:53:20.000Z",
+				"kind": "entity",
+				"entity": {
+					"kind": "ip",
+					"value": "999.1.1.1"
+				}
+			},
+			"expect": "reject",
+			"detail": "entity.value: not an IPv4 or IPv6 address"
+		}
+	]
+}
