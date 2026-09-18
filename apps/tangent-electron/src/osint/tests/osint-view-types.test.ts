@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { OSINT_VIEWS, OSINT_FILE_TYPES } from '../integration/osint-view-types';
 import { knownExtensions, visibleFileTypeMatch } from '../../common/fileExtensions';
-import { BROWSE_FILE_TYPE } from '../browser/browse-file-type';
 import { CHAT_VIEW_TYPE } from '../views/chat-view';
 import { GRAPH_VIEW_TYPE } from '../views/graph-view';
 import { TIMELINE_VIEW_TYPE } from '../views/timeline-view';
@@ -48,18 +47,6 @@ describe('OSINT view descriptors', () => {
         // And in knownExtensions, or [[Board.canvas]] gets '.md' appended and resolves to
         // a virtual note instead of the board.
         expect(knownExtensions).toContain(CANVAS_FILE_TYPE);
-    });
-
-    it('registers the browsing extension, on the same hand-kept list', () => {
-        // A browsing pane is a document like a board, not a singleton view, so it is not
-        // in OSINT_VIEWS -- but it has the same problem: common/ cannot import from
-        // osint/, so the literal has to be repeated and can drift.
-        expect(BROWSE_FILE_TYPE).toMatch(visibleFileTypeMatch);
-        expect(knownExtensions).toContain(BROWSE_FILE_TYPE);
-    });
-
-    it('does not collide with a view file type', () => {
-        expect(OSINT_VIEWS.map(v => v.fileType)).not.toContain(BROWSE_FILE_TYPE);
     });
 
     it('has a unique file type, view type and command key per view', () => {

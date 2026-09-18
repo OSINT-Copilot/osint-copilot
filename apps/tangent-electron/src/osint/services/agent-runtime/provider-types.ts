@@ -17,21 +17,6 @@ export interface AgentEnricherInvocation {
     query: string;
 }
 
-/**
- * A page the assistant thinks is worth looking at.
- *
- * Proposal, not retrieval: the app opens a browsing pane for it and the pane stays PARKED
- * until the user loads it. So the assistant can say "look here" without fetching anything
- * as the user, from the user's address, in the user's session -- which is the difference
- * between a suggestion and an action taken on someone's behalf.
- */
-export interface AgentBrowseProposal {
-    /** http(s) only; anything else is dropped at parse. */
-    url: string;
-    /** Why this page. Shown to the user beside the pane. */
-    reason?: string;
-}
-
 export interface AgentTurnDiagnostics {
     provider: AgentRuntimeId;
     /** Short excerpt of raw model stdout for debugging (never full vault). */
@@ -55,11 +40,6 @@ export interface AgentTurnResult {
     custom_vault_operations: CustomVaultOperation[];
     /** Run after parse: plugin executes via Node HTTP (see enricher specs). */
     enricher_invocations: AgentEnricherInvocation[];
-    /**
-     * Pages to open as PARKED browsing panes. Nothing is fetched by accepting these.
-     * Optional so an older provider's output still parses.
-     */
-    browse_proposals?: AgentBrowseProposal[];
     diagnostics?: AgentTurnDiagnostics;
 }
 

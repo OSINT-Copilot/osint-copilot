@@ -31,18 +31,6 @@ $: views = OSINT_VIEWS.filter(v => !v.requiresGraphFeatures || graphFeaturesEnab
  * take Mod+Alt+1..6 and this takes Mod+Alt+7.
  */
 const CANVAS_ICON = 'layout-dashboard'
-
-/*
- * Browsing panes are documents too, and there can be any number of them, so like boards
- * they are spelled out here rather than coming from the descriptor list. Last in the
- * strip, which keeps the "shortcut digit = position" rule true across the whole thing:
- * six views on Mod+Alt+1..6, boards on 7, this on 8.
- *
- * It needs a button more than anything else here does. The views each have one, and a
- * board can be reached from the New Note menu -- a browsing pane could only be opened by
- * knowing a keyboard shortcut, which is indistinguishable from the feature not existing.
- */
-const BROWSE_ICON = 'globe'
 </script>
 
 <!--
@@ -66,12 +54,6 @@ const BROWSE_ICON = 'globe'
 		aria-label="Canvas"
 		use:command={{ command: workspace.commands.osintOpenCanvas }}
 	>{@html lucideSvg(CANVAS_ICON)}</button>
-	<!-- svelte-ignore a11y_consider_explicit_label -->
-	<button
-		class="subtle"
-		aria-label="Browse"
-		use:command={{ command: workspace.commands.osintNewBrowse }}
-	>{@html lucideSvg(BROWSE_ICON)}</button>
 </span>
 
 <style>

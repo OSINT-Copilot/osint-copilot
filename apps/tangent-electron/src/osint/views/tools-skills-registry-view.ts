@@ -214,18 +214,6 @@ class AddEnricherDraftModal extends Modal {
 	}
 }
 
-/** Mirrors main's Pivot; this view only displays what main resolved. */
-interface PivotEntry {
-	id: string;
-	label: string;
-	category: string;
-	appliesTo: string[];
-	enabled: boolean;
-}
-
-/** Where the operator's overrides live. Must match PIVOTS_VAULT_PATH in pivot-runtime.ts. */
-const PIVOTS_VAULT_PATH = "OSINTCopilot/browsing/pivots.json";
-
 export class ToolsSkillsRegistryView extends ItemView {
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -274,7 +262,6 @@ export class ToolsSkillsRegistryView extends ItemView {
 		this.toolsCol = grid.createDiv({ cls: "osint-copilot-registry-column" });
 		this.skillsCol = grid.createDiv({ cls: "osint-copilot-registry-column" });
 		this.enrichCol = grid.createDiv({ cls: "osint-copilot-registry-column" });
-		this.pivotCol = grid.createDiv({ cls: "osint-copilot-registry-column" });
 
 		await this.reload();
 	}
@@ -282,7 +269,6 @@ export class ToolsSkillsRegistryView extends ItemView {
 	private toolsCol!: HTMLElement;
 	private skillsCol!: HTMLElement;
 	private enrichCol!: HTMLElement;
-	private pivotCol!: HTMLElement;
 	private refreshBtn: HTMLButtonElement | null = null;
 	/** reload() is reachable from five places and every caller discards the promise. */
 	private reloadInFlight: Promise<void> | null = null;
@@ -314,19 +300,14 @@ export class ToolsSkillsRegistryView extends ItemView {
 			this.host.enricherRegistry.invalidate();
 			this.renderTools();
 			// Settled independently: one registry failing must not hide the other's list.
-			const [skills, enrichers, pivots] = await Promise.allSettled([
+			const [skills, enrichers] = await Promise.allSettled([
 				this.host.skillRegistry.listVaultSkills(),
 				this.host.enricherRegistry.listAll(),
-				// Resolved in main, because the bundled list lives there and the merge with
-				// the operator's overrides is main's rule, not a second copy of it here.
-				((globalThis as any).api?.osint?.browse?.pivots?.() ?? Promise.resolve([])),
 			]);
 			if (skills.status === "fulfilled") this.renderSkills(skills.value);
 			else this.renderColumnError(this.skillsCol, "Vault skills", "Could not read the skills folder", skills.reason);
 			if (enrichers.status === "fulfilled") this.renderEnrichers(enrichers.value);
 			else this.renderColumnError(this.enrichCol, "HTTP enrichers", "Could not read the enrichers folder", enrichers.reason);
-			if (pivots.status === "fulfilled") this.renderPivots(pivots.value as PivotEntry[]);
-			else this.renderColumnError(this.pivotCol, "Browser pivots", "Could not read the pivot directory", pivots.reason);
 		} catch (err) {
 			console.error("[ToolsSkillsRegistryView] reload failed:", err);
 			new Notice("Could not refresh the registry.");
@@ -458,48 +439,6 @@ export class ToolsSkillsRegistryView extends ItemView {
 			openBtn.addEventListener("click", () => void this.openPath(path));
 			const delBtn = actions.createEl("button", { text: "Delete", cls: "mod-warning" });
 			delBtn.addEventListener("click", () => this.confirmTrashEnricher(e, path));
-		}
-	}
-
-	/**
-	 * The pivot directory: what a right-click on a selected value can offer.
-	 *
-	 * Read-only here on purpose. The bundled entries are code and the overrides are a vault
-	 * file the analyst edits directly; a half-editor that could only change some of them
-	 * would be a worse answer than a list that says where the real one is.
-	 */
-	private renderPivots(list: PivotEntry[]): void {
-		this.pivotCol.empty();
-		this.pivotCol.createEl("h3", { text: "Browser pivots" });
-		this.pivotCol.createDiv({
-			text: `Override or add: ${PIVOTS_VAULT_PATH}`,
-			cls: "osint-copilot-registry-hint",
-		});
-		if (!list.length) {
-			this.pivotCol.createDiv({ text: "No pivots available.", cls: "osint-copilot-registry-empty" });
-			return;
-		}
-
-		const byCategory = new Map<string, PivotEntry[]>();
-		for (const pivot of list) {
-			const bucket = byCategory.get(pivot.category) ?? [];
-			bucket.push(pivot);
-			byCategory.set(pivot.category, bucket);
-		}
-
-		for (const [category, entries] of byCategory) {
-			this.pivotCol.createEl("h4", { text: category });
-			for (const pivot of entries) {
-				const row = this.pivotCol.createDiv({ cls: "osint-copilot-registry-row" });
-				row.createEl("div", {
-					text: pivot.label,
-					cls: "osint-copilot-registry-row-title",
-				});
-				row.createEl("code", {
-					text: `${pivot.id} · ${pivot.appliesTo.join(", ")}${pivot.enabled ? "" : " · disabled"}`,
-					cls: "osint-copilot-registry-row-id",
-				});
-			}
 		}
 	}
 

@@ -98,9 +98,7 @@ export const knownExtensions = [
 	...mscExtensions,
 	// So [[Board.canvas]] resolves to the board rather than having '.md' appended and
 	// creating a virtual note. Same literal-string constraint as visibleFileTypeMatch.
-	'.canvas',
-	// Browsing panes, for the same reason.
-	'.osintbrowse'
+	'.canvas'
 ]
 
 export const knownExtensionsMatch = getExtensionRegex(knownExtensions)
@@ -120,9 +118,7 @@ export const visibleFileTypeMatch = getFileTypeRegex([
 	'.osintchat', '.osintgraph', '.osinttimeline', '.osintmap', '.osintregistry',
 	'.osintdocs',
 	// Canvas boards. Obsidian's extension, deliberately: the same file opens in either app.
-	'.canvas',
-	// Browsing panes. A document rather than a view, so it is not in OSINT_VIEWS.
-	'.osintbrowse'
+	'.canvas'
 ])
 
 /**

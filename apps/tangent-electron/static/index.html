@@ -6,9 +6,8 @@
 
 	<!--
 		The renderer holds window.api, which reaches vault writes and cli.exec, and it
-		displays content it did not author: rendered markdown, LLM output, enricher output,
-		and -- since browsing panes -- text pulled out of pages under investigation. Until
-		now nothing stopped an injection in any of those from executing.
+		displays content it did not author: rendered markdown, LLM output and enricher
+		output. Nothing else stops an injection in any of those from executing.
 
 		The point of this policy is the script-src line: no 'unsafe-inline', no
 		'unsafe-eval', so injected markup cannot run even if it survives DOMPurify.
@@ -18,10 +17,6 @@
 		does not reliably match for file: documents. img-src and connect-src stay broad
 		because link previews, entity pictures and the optional online basemap legitimately
 		reach arbitrary hosts. frame-src is the YouTube embed in EmbedRoot.svelte.
-
-		<webview> guests are NOT governed by this policy -- they are separate webContents
-		with their own origin, and their preferences are set in
-		main/osint/browser/attach-guard.ts.
 	-->
 	<meta http-equiv="Content-Security-Policy" content="
 		default-src 'none';

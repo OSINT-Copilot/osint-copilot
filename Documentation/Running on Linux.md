@@ -52,9 +52,8 @@ sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 To make that survive a reboot, put `kernel.apparmor_restrict_unprivileged_userns=0` in
 `/etc/sysctl.d/60-apparmor-namespace.conf`.
 
-You can also start with `--no-sandbox`, but think twice: this app renders model output,
-enricher output and -- in [[Browsing Panes]] -- whole web pages. The renderer sandbox is
-worth having.
+You can also start with `--no-sandbox`, but think twice: this app renders model output
+and enricher output, neither of which it wrote. The renderer sandbox is worth having.
 
 ## No window, and no error at all
 

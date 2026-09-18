@@ -31,7 +31,6 @@ import {
 } from './exec-guard'
 import { handle, on } from './guarded-ipc'
 import { setApplicationWindowPredicate } from './sender-guard'
-import './browser'
 import type { ExecOptions, HttpRequest, PlatformInfo, SecretRef } from '../../osint/host/types'
 
 setWorkspaceRootsProvider(() => [...workspaceMap.keys()])

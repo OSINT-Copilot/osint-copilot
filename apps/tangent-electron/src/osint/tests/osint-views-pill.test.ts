@@ -10,8 +10,8 @@ import { OSINT_VIEWS } from '../integration/osint-view-types'
  * WorkspaceView with a `workspace` context and a live command registry; standing all that
  * up would test the harness more than the thing. What actually goes wrong here is simpler
  * and this catches it: someone adds a surface, wires its command, and never adds the
- * button -- which is exactly what happened to browsing panes. The command existed, the
- * shortcut worked, and the feature was invisible unless you already knew it was there.
+ * button. That shipped once, in 0.13.0: the command existed, the shortcut worked, and
+ * the feature was invisible unless you already knew it was there.
  *
  * A feature reachable only by a keyboard shortcut nobody told you about is
  * indistinguishable, from the outside, from a feature that was never built.
@@ -22,7 +22,6 @@ const pillSource = fs.readFileSync(
 /** Commands for surfaces that are documents, not views, so they are not in OSINT_VIEWS. */
 const DOCUMENT_COMMANDS = [
     { key: 'osintOpenCanvas', what: 'canvas boards' },
-    { key: 'osintNewBrowse', what: 'browsing panes' },
 ]
 
 describe('the OSINT toolbar', () => {

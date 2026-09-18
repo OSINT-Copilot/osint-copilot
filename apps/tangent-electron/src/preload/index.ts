@@ -300,31 +300,6 @@ const bridge: WindowApi = {
 		// Fetched once, before the page loads. See the note on 'osint:platform' in main.
 		platform: () => platformSnapshot,
 
-		browse: {
-			onShortcut: handler => on('osint:browse.shortcut', handler),
-			claim: profileId => ipcRenderer.invoke('osint:browse.claim', profileId),
-			profiles: () => ipcRenderer.invoke('osint:browse.profiles'),
-			realityCheck: (webContentsId, profileId) =>
-				ipcRenderer.invoke('osint:browse.realityCheck', webContentsId, profileId),
-			bindGuest: (webContentsId, token) =>
-				ipcRenderer.invoke('osint:browse.bindGuest', webContentsId, token),
-			setArmed: (token, armed) => ipcRenderer.invoke('osint:browse.setArmed', token, armed),
-			isArmed: token => ipcRenderer.invoke('osint:browse.isArmed', token),
-			captureNow: webContentsId => ipcRenderer.invoke('osint:browse.captureNow', webContentsId),
-			setBudget: bytes => ipcRenderer.invoke('osint:browse.setBudget', bytes),
-			onCapture: handler => on('osint:browse.capture', handler),
-			onHits: handler => on('osint:browse.hits', handler),
-			setWatching: value => ipcRenderer.invoke('osint:browse.setWatching', value),
-			isWatching: () => ipcRenderer.invoke('osint:browse.isWatching'),
-			selectors: () => ipcRenderer.invoke('osint:browse.selectors'),
-			rescan: () => ipcRenderer.invoke('osint:browse.rescan'),
-			pivots: () => ipcRenderer.invoke('osint:browse.pivots'),
-			pivotTargets: selection => ipcRenderer.invoke('osint:browse.pivotTargets', selection),
-			onPivot: handler => on('osint:browse.pivot', handler),
-			release: token => ipcRenderer.invoke('osint:browse.release', token),
-			snapshot: webContentsId => ipcRenderer.invoke('osint:browse.snapshot', webContentsId)
-		},
-
 		secrets: {
 			has: ref => ipcRenderer.invoke('osint:secrets.has', ref),
 			setKeychain: (name, value) => ipcRenderer.invoke('osint:secrets.setKeychain', name, value),

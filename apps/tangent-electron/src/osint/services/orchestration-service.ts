@@ -313,21 +313,6 @@ export class OrchestrationService {
                 answer += `\n\n### Retrieval\n${srcLines}`;
             }
 
-            if (turn.browse_proposals?.length) {
-                // Accepting these fetches nothing. Each becomes a browsing pane carrying
-                // the address, and a pane whose document has a url comes up PARKED -- so
-                // the assistant proposes where to look without looking on the user's
-                // behalf, from the user's address, in the user's session. That is a
-                // property of the pane, not a promise made here.
-                onProgress("Opening proposed pages…", 54);
-                try {
-                    answer += `\n\n${await this.openBrowseProposals(turn.browse_proposals)}`;
-                } catch (err) {
-                    const msg = err instanceof Error ? err.message : String(err);
-                    answer += `\n\n_Could not open the proposed pages: ${msg}_`;
-                }
-            }
-
             if (turn.enricher_invocations?.length) {
                 const n = turn.enricher_invocations.length;
                 const blocks: string[] = [];
@@ -792,42 +777,6 @@ export class OrchestrationService {
 
         await Promise.all(promises);
         return results;
-    }
-
-    /** How many panes one turn may propose. Matches the pivot menu's cap. */
-    private static readonly MAX_PROPOSED_PANES = 8;
-
-    /**
-     * Turns the assistant's proposals into parked browsing panes.
-     *
-     * It exists because enrichers run in main with no browser cookies, so anything behind
-     * a login is unreachable to them -- the app's own prompt says so. This is the answer,
-     * and it keeps the decision with the analyst: the panes are opened, not loaded.
-     */
-    private async openBrowseProposals(
-        proposals: Array<{ url: string; reason?: string }>,
-    ): Promise<string> {
-        const vault = this.plugin.app?.vault;
-        if (!vault) return "_Browsing panes are not available in this window._";
-
-        const wanted = proposals.slice(0, OrchestrationService.MAX_PROPOSED_PANES);
-        const { fanOut } = await import("../browser/browse-commands");
-
-        const lines: string[] = [];
-        for (const proposal of wanted) {
-            let label = proposal.url;
-            try { label = new URL(proposal.url).hostname; } catch { /* keep the whole url */ }
-            await fanOut(
-                vault,
-                label,
-                [{ pivotId: "assistant", label, url: proposal.url }],
-                { url: "assistant" },
-            );
-            lines.push(`- [${label}](${proposal.url})${proposal.reason ? ` — ${proposal.reason}` : ""}`);
-        }
-
-        return `### Pages opened for you\n\nThese are **not loaded** — open the ones you want:\n\n`
-            + lines.join("\n");
     }
 
     private async feedResultsToGraphExtraction(results: Record<string, any>): Promise<string[]> {

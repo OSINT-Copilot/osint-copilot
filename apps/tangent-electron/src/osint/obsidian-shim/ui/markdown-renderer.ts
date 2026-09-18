@@ -75,9 +75,11 @@ function linkifyWikilinks(root: HTMLElement): void {
  * only matters if that setting is ever relaxed, or if a future call site sanitises HTML
  * from somewhere else. Exported so both are testable without reaching into the renderer.
  *
- * `webview` is named because the app enables `webviewTag` for the browser panes, and a
- * <webview> reaching the DOM would be a page of the attacker's choosing running inside
- * the app window. It is belt-and-braces, not a gap being closed: DOMPurify works from an
+ * `webview` is named although the app no longer enables `webviewTag` anywhere -- it was
+ * added when browsing panes existed, and it is kept because the cost is one array entry
+ * and the failure mode, were the flag ever set again, is a page of the attacker's
+ * choosing running inside the app window. It is belt-and-braces, not a gap being closed:
+ * DOMPurify works from an
  * allowlist of known-safe elements, so a non-standard tag is already dropped by default.
  * Naming it states the intent, and it keeps holding if anyone later adds an `ADD_TAGS`
  * -- FORBID_TAGS wins over ADD_TAGS, which is what the test pins.
