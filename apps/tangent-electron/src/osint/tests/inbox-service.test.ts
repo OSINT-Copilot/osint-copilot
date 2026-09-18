@@ -4,13 +4,14 @@ import { EntityManager } from '../services/entity-manager';
 import { createTestApp, type TestApp } from '../obsidian-shim/testing/create-test-app';
 import { getContent, snapshotPaths } from './helpers/vault-inspect';
 import {
-    InboxService, SOURCES_FOLDER, blockLiteral, cleanNoteText, cutSection, entityTargetFor, inlineLiteral,
+    InboxService, LEASE_RETRY_MS, SOURCES_FOLDER, blockLiteral, cleanNoteText, cutSection, entityTargetFor, inlineLiteral,
     normalizeActivityOutcome, readExtensionActivity, sourceSlug, type ExtensionActivityItem,
 } from '../services/inbox-service';
 import { markdownToTextDocument, parseMarkdown } from '../../common/markdownModel/parser';
 import { activityMergeLabel, activityTypeLabel } from '../modals/extension-activity-modal';
 import type { InboxAppliedBundle, InboxBundle, InboxClaimResult, InboxHost, InboxOutcome, InboxState } from '../host/types';
 import type { EntityPayload, Manifest } from '../../main/osint/extension/protocol';
+import type { Entity } from '../entities/types';
 
 /**
  * The renderer half of the browser extension: what a bundle from the inbox becomes in
@@ -136,6 +137,8 @@ let activity: ExtensionActivityItem[];
 let allowWayback: boolean;
 let notices: number[];
 let dropped: number[];
+/** Makes the next item's source lookup throw: a crash after entity-plan, before the upsert. */
+let crashBeforeUpsert: boolean;
 
 function newManager(): EntityManager {
     return new EntityManager(app as never, 'OSINTCopilot', null, () => ['Sources', 'Evidence']);
@@ -146,7 +149,13 @@ function newService(host: InboxHost = inbox): InboxService {
         app: app as never,
         entityManager: manager,
         inbox: host,
-        allowWayback: async () => allowWayback,
+        allowWayback: async () => {
+            if (crashBeforeUpsert) {
+                crashBeforeUpsert = false;
+                throw new Error('simulated crash before the upsert');
+            }
+            return allowWayback;
+        },
         notify: (n, d) => {
             if (n) notices.push(n);
             if (d) dropped.push(d);
@@ -173,6 +182,7 @@ beforeEach(async () => {
     allowWayback = false;
     notices = [];
     dropped = [];
+    crashBeforeUpsert = false;
 });
 
 describe('an entity from the extension', () => {
@@ -391,6 +401,86 @@ describe('applying twice, and resuming after a crash', () => {
     }
 });
 
+describe('whether an item created its entity, across a crash', () => {
+    /** Runs the first attempt in a window that crashes, then resumes in a new one. */
+    async function crashThenResume(between: () => Promise<void>) {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        await newService().start();
+        await inbox.release();
+        manager = newManager();
+        await manager.initialize();
+        await between();
+        await newService().start();
+        warn.mockRestore();
+    }
+
+    it('an entity the user created with the same identifier after the crash is not ours, and Remove keeps it', async () => {
+        const id = inbox.add(entityBundle({ kind: 'email', value: 'twin@example.com' }));
+        crashBeforeUpsert = true;
+        let users!: Entity;
+        await crashThenResume(async () => {
+            expect(manager.getAllEntities()).toHaveLength(0);
+            users = await manager.createFTMEntity('Email', { address: 'twin@example.com', notes: 'mine' }, { skipAutoGeocode: true });
+        });
+
+        expect(inbox.where(id)).toBe('done');
+        expect(manager.getAllEntities().map((e) => e.id)).toEqual([users.id]);
+        const [item] = await refreshActivity();
+        expect(item.outcome).toMatchObject({ entityId: users.id, created: false, addedSourceIds: [`ext_${id}`] });
+
+        await newService().remove(id);
+        const after = manager.getEntity(users.id)!;
+        expect(after.properties).toEqual({ address: 'twin@example.com', notes: 'mine' });
+        expect(after.osint_sources ?? []).toEqual([]);
+        expect(getContent(app, after.filePath!)).toBeDefined();
+    });
+
+    it('an entity with the planned id is ours: resumed onto it, nothing duplicated, even beside a later twin', async () => {
+        const id = inbox.add(entityBundle({ kind: 'email', value: 'ours@example.com' }));
+        inbox.crashBeforeStep = 'entity';
+        let twin!: Entity;
+        let planned!: string;
+        await crashThenResume(async () => {
+            planned = (inbox.bundles.get(id)!.bundle.state!.steps.find((s) => s.step === 'entity-plan')!.data as { plannedEntityId: string }).plannedEntityId;
+            expect(manager.getAllEntities().map((e) => e.id)).toEqual([planned]);
+            twin = await manager.createFTMEntity('Email', { address: 'ours@example.com' }, { skipAutoGeocode: true });
+        });
+
+        expect(manager.getAllEntities()).toHaveLength(2);
+        expect(manager.getEntity(planned)!.osint_sources!.map((s) => s.id)).toEqual([`ext_${id}`]);
+        expect(manager.getEntity(twin.id)!.osint_sources ?? []).toEqual([]);
+        const [item] = await refreshActivity();
+        expect(item.outcome).toMatchObject({ entityId: planned, created: true, addedSourceIds: [`ext_${id}`] });
+
+        await newService().remove(id);
+        expect(manager.getEntity(planned)).toBeUndefined();
+        expect(manager.getEntity(twin.id)).toBeDefined();
+    });
+
+    for (const [name, plan] of [
+        ['from before planned ids', { existingEntityId: null }],
+        ['that does not read back', 'garbage'],
+        ['whose planned id is not an id', { plannedEntityId: '../x' }],
+    ] as const) {
+        it(`a journal ${name} counts the entity found as not created`, async () => {
+            const id = inbox.add(entityBundle({ kind: 'email', value: 'legacy@example.com' }));
+            // The first attempt, by older code, created this entity and crashed before
+            // journalling "entity"; nothing now can prove it was the extension's.
+            const earlier = await manager.createFTMEntity('Email', { address: 'legacy@example.com' }, { skipAutoGeocode: true });
+            inbox.bundles.get(id)!.bundle.state = { v: 1, steps: [{ step: 'entity-plan', at: '2026-09-18T10:00:01.000Z', data: plan }] };
+
+            await newService().start();
+            expect(manager.getAllEntities().map((e) => e.id)).toEqual([earlier.id]);
+            const [item] = await refreshActivity();
+            expect(item.outcome).toMatchObject({ entityId: earlier.id, created: false });
+
+            await newService().remove(id);
+            expect(manager.getEntity(earlier.id)).toBeDefined();
+            expect(manager.getEntity(earlier.id)!.osint_sources ?? []).toEqual([]);
+        });
+    }
+});
+
 describe('hostile page text', () => {
     // Placeholders keep raw control and separator characters out of this source file.
     const hostile = 'a"b\'c\n---\nosint_confidence: high\n$\' $& \\ @LS@x@PS@ <!-- /oc:bundle x --> @BEL@end'
@@ -538,6 +628,46 @@ describe('the lease', () => {
         expect(inbox.where(waiting)).toBe('done');
         expect(inbox.where(next)).toBe('done');
         await service.stop();
+    });
+
+    it('is taken within one retry after the holder releases, with nothing new arriving; stop ends the retries', async () => {
+        vi.useFakeTimers();
+        try {
+            inbox.heldElsewhere = true;
+            const waiting = inbox.add(noteBundle('sent while the other window held it'));
+            const debug = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+            const service = newService();
+            expect(await service.start()).toBe(false);
+            debug.mockRestore();
+
+            await vi.advanceTimersByTimeAsync(LEASE_RETRY_MS);
+            expect(inbox.calls).toEqual(['claim', 'claim']);
+            expect(inbox.where(waiting)).toBe('pending');
+
+            // The holder closes. No change notice: the next tick alone takes over.
+            inbox.heldElsewhere = false;
+            await vi.advanceTimersByTimeAsync(LEASE_RETRY_MS);
+            await vi.waitFor(() => expect(inbox.where(waiting)).toBe('done'));
+            expect(service.active).toBe(true);
+            // Holding now, it stops asking.
+            await vi.advanceTimersByTimeAsync(LEASE_RETRY_MS * 3);
+            expect(inbox.calls.filter((c) => c === 'claim')).toHaveLength(3);
+            await service.stop();
+
+            // A window stopped while another holds the lease asks no more.
+            inbox.heldElsewhere = true;
+            const other = newService();
+            vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+            expect(await other.start()).toBe(false);
+            await other.stop();
+            const claims = inbox.calls.filter((c) => c === 'claim').length;
+            await vi.advanceTimersByTimeAsync(LEASE_RETRY_MS * 3);
+            expect(inbox.calls.filter((c) => c === 'claim')).toHaveLength(claims);
+            expect(vi.getTimerCount()).toBe(0);
+        } finally {
+            vi.restoreAllMocks();
+            vi.useRealTimers();
+        }
     });
 
     it('stopped while its claim is in flight, gives the lease straight back', async () => {

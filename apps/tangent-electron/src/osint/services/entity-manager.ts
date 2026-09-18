@@ -9,7 +9,7 @@ import type { VaultLockService } from './vault-lock-service';
 import type { WaybackArchiveService } from './wayback-archive-service';
 import {
     type Entity, EntityType, type Connection, ENTITY_CONFIGS,
-    getEntityLabel, generateId, sanitizeFilename, COMMON_PROPERTIES,
+    getEntityLabel, generateId, isGeneratedId, sanitizeFilename, COMMON_PROPERTIES,
     getFTMEntityConfig, isFTMSchema, legacyToFTMSchema,
     type OsintConfidence, type OsintContradiction, type OsintSource, type OsintSourceInput,
 } from '../entities/types';
@@ -901,7 +901,17 @@ export class EntityManager {
         schema: string,
         properties: Record<string, unknown>,
         sources: OsintSourceInput[],
-        options?: { identifierKey?: string; captured_at?: string; conversation_id?: string },
+        options?: {
+            identifierKey?: string;
+            captured_at?: string;
+            conversation_id?: string;
+            /**
+             * The id to give the entity if one is created (see createEntity's `id`). The
+             * caller can then tell, even after a crash, whether the entity is one it made:
+             * a match found by identifier keeps its own id.
+             */
+            createId?: string;
+        },
     ): Promise<{ entity: Entity; created: boolean }> {
         // The caller's key first, then the identifiers in the properties: a key that does
         // not match (or does not parse) must not mean a duplicate of an entity the
@@ -939,6 +949,7 @@ export class EntityManager {
             osint_sources: sources,
             osint_captured_at: options?.captured_at,
             conversation_id: options?.conversation_id,
+            ...(options?.createId !== undefined ? { id: options.createId } : {}),
         };
         const entity = isFTMSchema(schema)
             ? await this.createFTMEntity(schema, properties, createOptions)
@@ -982,6 +993,21 @@ export class EntityManager {
     }
 
     /**
+     * The id for an entity about to be created: a fresh one, or the caller's own. A caller's
+     * id must look like a generated one and belong to nothing yet -- reusing an id would
+     * make two notes one entity. Callers choose the id up front when they need to recognise
+     * the entity later as the one they created (the extension inbox, across a crash).
+     */
+    private newEntityId(requested: string | undefined): string {
+        if (requested === undefined) return generateId();
+        if (!isGeneratedId(requested)) throw new Error(`Not an entity id: ${JSON.stringify(requested)}`);
+        if (this.entities.has(requested) || this.connections.has(requested)) {
+            throw new Error(`The id ${requested} is already in use`);
+        }
+        return requested;
+    }
+
+    /**
      * Create a new entity and save it as a note.
      * @param type - The entity type
      * @param properties - The entity properties
@@ -997,9 +1023,11 @@ export class EntityManager {
             osint_sources?: OsintSource[] | OsintSourceInput[];
             osint_captured_at?: string;
             conversation_id?: string;
+            /** A caller-chosen id instead of a generated one; see newEntityId. */
+            id?: string;
         },
     ): Promise<Entity> {
-        const id = generateId();
+        const id = this.newEntityId(options?.id);
 
         // For Location entities, attempt automatic geocoding if coordinates are missing
         // Skip if explicitly requested (e.g., for manual entity creation)
@@ -1063,9 +1091,11 @@ export class EntityManager {
             osint_sources?: OsintSource[] | OsintSourceInput[];
             osint_captured_at?: string;
             conversation_id?: string;
+            /** A caller-chosen id instead of a generated one; see newEntityId. */
+            id?: string;
         },
     ): Promise<Entity> {
-        const id = generateId();
+        const id = this.newEntityId(options?.id);
         const config = getFTMEntityConfig(schemaName);
 
         if (!config) {

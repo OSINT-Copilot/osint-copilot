@@ -802,3 +802,54 @@ describe('usernames are keyed by platform', () => {
         expect(manager.findEntityByIdentifier('UserAccount', 'username:john')?.id).toBe(none.entity.id);
     });
 });
+
+describe('a caller-chosen entity id', () => {
+    let app: TestApp;
+    let manager: EntityManager;
+    const ID = '0f0e0d0c-0b0a-4908-8706-050403020100';
+
+    beforeEach(async () => {
+        app = createTestApp();
+        manager = new EntityManager(app as never, 'OSINTCopilot', null);
+        await manager.initialize();
+    });
+
+    it('is the id of what createEntity, createFTMEntity and a creating upsert make, and survives a reload', async () => {
+        const a = await manager.createFTMEntity('Person', { name: 'Ada' }, { skipAutoGeocode: true, id: ID });
+        expect(a.id).toBe(ID);
+        const legacyId = '1f0e0d0c-0b0a-4908-8706-050403020100';
+        const b = await manager.createEntity('Phone' as never, { number: '+15550100' }, { skipAutoGeocode: true, id: legacyId });
+        expect(b.id).toBe(legacyId);
+        const upsertId = '2f0e0d0c-0b0a-4908-a706-050403020100';
+        const c = await manager.upsertEntityFromExternal('Email', { address: 'c@example.com' }, [SOURCE_A], { createId: upsertId });
+        expect(c).toMatchObject({ created: true, entity: { id: upsertId } });
+
+        const reloaded = new EntityManager(app as never, 'OSINTCopilot', null);
+        await reloaded.initialize();
+        expect([ID, legacyId, upsertId].map((id) => reloaded.getEntity(id)?.id)).toEqual([ID, legacyId, upsertId]);
+    });
+
+    it('is ignored by an upsert that merges: the match keeps its own id', async () => {
+        const mine = await manager.createFTMEntity('Email', { address: 'm@example.com' }, { skipAutoGeocode: true });
+        const r = await manager.upsertEntityFromExternal('Email', { address: 'm@example.com' }, [SOURCE_A], { createId: ID });
+        expect(r).toMatchObject({ created: false, entity: { id: mine.id } });
+        expect(manager.getEntity(ID)).toBeUndefined();
+    });
+
+    it('is refused when it is already in use, or is not the shape of a generated id, and nothing is written', async () => {
+        await manager.createFTMEntity('Person', { name: 'Ada' }, { skipAutoGeocode: true, id: ID });
+        const before = snapshotPaths(app);
+        await expect(manager.createFTMEntity('Person', { name: 'Bob' }, { skipAutoGeocode: true, id: ID }))
+            .rejects.toThrow(/already in use/);
+        await expect(manager.createEntity('Phone' as never, { number: '+15550101' }, { skipAutoGeocode: true, id: ID }))
+            .rejects.toThrow(/already in use/);
+        await expect(manager.upsertEntityFromExternal('Email', { address: 'n@example.com' }, [SOURCE_A], { createId: ID }))
+            .rejects.toThrow(/already in use/);
+        for (const bad of ['../x', 'legacy-1', ID.toUpperCase(), '', '0f0e0d0c-0b0a-1908-8706-050403020100']) {
+            await expect(manager.createFTMEntity('Person', { name: 'Cy' }, { skipAutoGeocode: true, id: bad }))
+                .rejects.toThrow(/Not an entity id/);
+        }
+        expect(snapshotPaths(app)).toEqual(before);
+        expect(manager.getAllEntities()).toHaveLength(1);
+    });
+});

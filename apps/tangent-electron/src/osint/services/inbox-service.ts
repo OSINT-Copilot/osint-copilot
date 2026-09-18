@@ -10,10 +10,13 @@
  * Applying is journalled through `inbox.step`, one step at a time, so a crash anywhere
  * and a re-run adds nothing twice:
  *
- *   entity-plan   whether an entity with this identifier existed BEFORE we touched it.
- *                 Recorded before the upsert, because after a crash the upsert of the
- *                 re-run finds our own entity and would report "merged", and Remove would
- *                 then leave behind an entity the extension created.
+ *   entity-plan   the id the entity gets if this item creates it (plannedEntityId),
+ *                 chosen and recorded BEFORE the upsert. The item created the entity
+ *                 exactly when the entity it landed on has that id. Not "nothing had this
+ *                 identifier before": after a crash, the user or the assistant may have
+ *                 created an entity with the same identifier, and Remove would delete it.
+ *                 An entity made before a planned id was recorded can never have it, so
+ *                 without a readable plan the item is taken to have created nothing.
  *   entity        the upsert's outcome. The upsert itself is idempotent: the source
  *                 carries the id `ext_<bundleId>`, and appendOsintSources skips a source
  *                 whose content the entity already has.
@@ -36,16 +39,16 @@
  * fetched when the note is opened.
  *
  * One window per investigation holds the inbox lease; the others leave it alone, and try
- * again when the inbox changes, in case the holder has gone.
+ * again when the inbox changes and once a minute, in case the holder has gone.
  */
 import { TFile, TFolder, normalizePath, type App } from 'obsidian';
 import type { EntityManager } from './entity-manager';
 import { yamlScalarLine } from './entity-manager';
-import { identifierKey, identifierKeysForEntity, normalizePlatform, usernameIdentifierKey } from './entity-identifiers';
+import { identifierKey, normalizePlatform, usernameIdentifierKey } from './entity-identifiers';
 import { normalizeSourceUrl } from './osint-confidence-engine';
 import { ensureFolderExists } from '../utils/vault-bootstrap-fs';
 import { OSINT_COPILOT_VAULT_ROOT } from '../constants/vault-layout';
-import type { Entity, OsintSourceInput } from '../entities/types';
+import { generateId, isGeneratedId, type Entity, type OsintSourceInput } from '../entities/types';
 import type { InboxAppliedBundle, InboxBundle, InboxHost } from '../host/types';
 import type { EntityPayload, ManifestPage } from '../../main/osint/extension/protocol';
 
@@ -386,11 +389,15 @@ export function cutSection(text: string, bundleId: string): string | null {
 
 // ------------------------------------------------------------------ the service
 
-type EntityPlan = { existingEntityId: string | null };
+type EntityPlan = { plannedEntityId: string };
 type EntityStep = { entityId: string; created: boolean; label: string; addedSourceIds: string[] };
 
+/**
+ * A plan this code can rely on. One from before planned ids (`existingEntityId` only), or
+ * one that does not read back, is not: the apply records a new plan instead.
+ */
 function isEntityPlan(v: unknown): v is EntityPlan {
-    return !!v && typeof v === 'object' && 'existingEntityId' in v;
+    return !!v && typeof v === 'object' && isGeneratedId((v as Record<string, unknown>).plannedEntityId);
 }
 function isEntityStep(v: unknown): v is EntityStep {
     const o = v as Record<string, unknown> | null;
@@ -415,8 +422,16 @@ export interface InboxServiceDeps {
     notify(applied: number, dropped: number): void;
 }
 
+/**
+ * How often a window told the lease is held asks for it again. Change notices alone would
+ * leave items that were already waiting when the holder closed pending until the next one
+ * arrives; once a minute is soon enough for those and costs one IPC call.
+ */
+export const LEASE_RETRY_MS = 60_000;
+
 export class InboxService {
     private held = false;
+    private retryTimer: ReturnType<typeof setInterval> | null = null;
     private stopped = false;
     private unsubscribe: (() => void) | null = null;
     private claiming: Promise<boolean> | null = null;
@@ -435,8 +450,9 @@ export class InboxService {
     /**
      * Takes the lease and applies whatever is pending. Resolves false, doing nothing more,
      * when another window on this investigation already applies its inbox. This window
-     * still listens: when the inbox changes and the lease is free (the holder closed, or
-     * its entity store never loaded), it takes over, so nothing sits in pending/ unseen.
+     * still listens, and asks again every LEASE_RETRY_MS: when the lease is free (the
+     * holder closed, or its entity store never loaded), it takes over, so nothing sits in
+     * pending/ unseen.
      */
     async start(): Promise<boolean> {
         if (this.stopped) return false;
@@ -467,6 +483,7 @@ export class InboxService {
                 return false;
             }
             if (!result.ok) {
+                this.retryWhileHeldElsewhere();
                 if (!this.toldHeld) {
                     this.toldHeld = true;
                     console.debug('[osint] another window applies this investigation\'s browser extension inbox; this one will not.');
@@ -474,6 +491,7 @@ export class InboxService {
                 return false;
             }
             this.held = true;
+            this.stopRetrying();
             await this.processPending();
             return true;
         })();
@@ -482,10 +500,23 @@ export class InboxService {
         return attempt;
     }
 
-    /** Unsubscribes, lets a running pass finish, and gives the lease back. */
+    private retryWhileHeldElsewhere(): void {
+        if (this.retryTimer || this.stopped) return;
+        this.retryTimer = setInterval(() => {
+            if (!this.held && !this.stopped) void this.claim();
+        }, LEASE_RETRY_MS);
+    }
+
+    private stopRetrying(): void {
+        if (this.retryTimer) clearInterval(this.retryTimer);
+        this.retryTimer = null;
+    }
+
+    /** Unsubscribes, stops asking for the lease, lets a running pass finish, and gives the lease back. */
     async stop(): Promise<void> {
         if (this.stopped) return;
         this.stopped = true;
+        this.stopRetrying();
         this.unsubscribe?.();
         this.unsubscribe = null;
         await this.claiming?.catch(() => undefined);
@@ -566,21 +597,32 @@ export class InboxService {
             if (!isEntityStep(done)) {
                 let plan = journal.get('entity-plan');
                 if (!isEntityPlan(plan)) {
-                    plan = { existingEntityId: this.findExisting(target)?.id ?? null };
+                    // Recorded before anything can be created with it (see the header).
+                    plan = { plannedEntityId: generateId() };
                     await step('entity-plan', plan);
                 }
+                const plannedEntityId = (plan as EntityPlan).plannedEntityId;
+                const em = this.deps.entityManager;
                 const source = await this.sourceFor(bundle, manifest.entity.context);
-                const result = await this.deps.entityManager.upsertEntityFromExternal(
-                    target.schema, target.properties, [source],
-                    { identifierKey: target.identifierKey, captured_at: server.receivedAt },
-                );
+                let entity: Entity;
+                if (em.getEntity(plannedEntityId)) {
+                    // An earlier attempt created it, then crashed. Ours, even when an entity
+                    // with the same identifier has appeared since: add to ours, not to that.
+                    const appended = await em.appendOsintSources(plannedEntityId, [source], { captured_at: server.receivedAt });
+                    if (!appended) throw new Error('Entity note is locked');
+                    entity = appended;
+                } else {
+                    ({ entity } = await em.upsertEntityFromExternal(
+                        target.schema, target.properties, [source],
+                        { identifierKey: target.identifierKey, captured_at: server.receivedAt, createId: plannedEntityId },
+                    ));
+                }
                 done = {
-                    entityId: result.entity.id,
-                    // Created by us if nothing had this identifier before our first attempt,
-                    // even when a re-run after a crash finds the entity that attempt made.
-                    created: result.created || (plan as EntityPlan).existingEntityId === null,
-                    label: result.entity.label,
-                    addedSourceIds: (result.entity.osint_sources ?? [])
+                    entityId: entity.id,
+                    // Only the planned id proves it: a merge keeps the match's own id.
+                    created: entity.id === plannedEntityId,
+                    label: entity.label,
+                    addedSourceIds: (entity.osint_sources ?? [])
                         .filter((s) => s.id === source.id)
                         .map((s) => s.id),
                 };
@@ -623,20 +665,6 @@ export class InboxService {
         if (!journal.has(APPLIED_STEP)) await step(APPLIED_STEP, outcome);
         await this.deps.inbox.finish(bundleId, 'done');
         return 'done';
-    }
-
-    /** The entity upsertEntityFromExternal would merge into, looked up the same way. */
-    private findExisting(target: EntityTarget): Entity | null {
-        const em = this.deps.entityManager;
-        const keys = [
-            target.identifierKey,
-            ...identifierKeysForEntity({ type: target.schema, ftmSchema: target.schema, properties: target.properties }),
-        ];
-        for (const key of keys) {
-            const hit = em.findEntityByIdentifier(target.schema, key);
-            if (hit) return hit;
-        }
-        return null;
     }
 
     private async sourceFor(bundle: InboxBundle, context: string | undefined): Promise<OsintSourceInput> {

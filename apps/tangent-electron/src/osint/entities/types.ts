@@ -737,6 +737,16 @@ export function generateId(): string {
     return crypto.randomUUID();
 }
 
+/**
+ * Whether `id` has the shape generateId() gives (a lowercase version 4 UUID). A caller
+ * that picks an entity's id ahead of creating it must pick one of these, so that id
+ * cannot be a path fragment, or anything else no generated id could be.
+ */
+export function isGeneratedId(id: unknown): id is string {
+    return typeof id === 'string'
+        && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id);
+}
+
 /** Longest filename stem we will emit, before any disambiguating suffix. */
 const MAX_FILENAME_LENGTH = 100;
 
