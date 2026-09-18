@@ -211,13 +211,17 @@ export class OpenVault {
      * symlink pointing anywhere, or nowhere. resolve() would refuse such a link, leaving
      * a dangling or outward-pointing link in the vault that nothing could delete.
      *
-     * The root keeps the strict check: it may itself be reached through a symlink, whose
-     * parent is legitimately outside the vault.
+     * The root itself is refused outright. Every caller removes, moves or trashes what it
+     * is given, and none has a reason to do that to the whole workspace -- while "/", ""
+     * and "x/.." all resolve to it, so one bad path from a renderer flow would otherwise
+     * delete the investigation.
      */
     private resolveEntry(vaultPath: string): string {
         const normalized = vaultPath === '/' ? '' : vaultPath.replace(/^\/+/, '');
         const absolute = nodePath.resolve(this.root, normalized);
-        if (absolute === this.root) return this.resolve(vaultPath);
+        if (absolute === this.root) {
+            throw new Error(`Refusing to remove, move or trash the vault root: ${vaultPath}`);
+        }
         if (!isInside(this.root, absolute)) {
             throw new Error(`Path escapes the vault root: ${vaultPath}`);
         }

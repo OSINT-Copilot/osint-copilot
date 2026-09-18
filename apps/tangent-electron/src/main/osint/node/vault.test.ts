@@ -120,6 +120,19 @@ describe('path confinement', () => {
 		expect(fs.existsSync(path.join(dir, 'escaped.md'))).toBe(false)
 	})
 
+	it('refuses to remove, move or trash the vault root itself', async () => {
+		const root = freshDir('root-guard')
+		fs.writeFileSync(path.join(root, 'note.md'), 'keep me')
+		const { vault } = await OpenVault.open(root, { watch: false })
+		for (const p of ['/', '', '.', 'x/..', 'a/b/../..']) {
+			await expect(vault.remove(p)).rejects.toThrow('vault root')
+			await expect(vault.rename(p, 'moved')).rejects.toThrow('vault root')
+			expect(() => vault.absolutePathOf(p)).toThrow('vault root')
+		}
+		expect(fs.readFileSync(path.join(root, 'note.md'), 'utf-8')).toBe('keep me')
+		expect(fs.existsSync(path.join(root, 'moved'))).toBe(false)
+	})
+
 	it('refuses to read through a symlink that points outside the root', async () => {
 		const { vault } = await vaultWithLink('symlink-read')
 		await expect(vault.read('link/secret.txt')).rejects.toThrow('Path escapes the vault root')
