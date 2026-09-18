@@ -41,6 +41,9 @@ export class WaybackArchiveService {
                 const id = String(s.id ?? '');
                 const url = String(s.source_url ?? '');
                 if (s.archive_url) continue;
+                // Every save of the note re-scans all of its sources, so the opt-out has to
+                // be honoured here on each pass, not only when the source was first added.
+                if (s.archive_status === 'skipped') continue;
                 if (!id || !url) continue;
                 if (!/^https?:\/\//i.test(url)) continue;
 
@@ -140,6 +143,8 @@ export class WaybackArchiveService {
             if (typeof raw !== 'object' || !raw) continue;
             const s = raw as Record<string, unknown>;
             if (String(s.id ?? '') !== sourceId) continue;
+            // A job queued before the investigator opted the source out must not undo it.
+            if (s.archive_status === 'skipped') return;
             if (archiveUrl) {
                 s.archive_url = archiveUrl;
             }

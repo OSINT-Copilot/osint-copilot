@@ -186,6 +186,21 @@ export function finalizeOsintSources(
 			captured_at: raw.captured_at ?? defaults.captured_at,
 			conversation_id: raw.conversation_id ?? defaults.conversation_id,
 			claims: raw.claims,
+			// Provenance is copied rather than defaulted: a missing value must stay missing,
+			// not be invented here. Only strings survive, because a value read back from
+			// front matter can be any YAML type.
+			...provenanceOf(raw),
 		};
 	});
+}
+
+const PROVENANCE_KEYS = ['via', 'client_id', 'sha256', 'received_at'] as const;
+
+function provenanceOf(raw: OsintSourceInput): Pick<OsintSource, (typeof PROVENANCE_KEYS)[number]> {
+	const out: Pick<OsintSource, (typeof PROVENANCE_KEYS)[number]> = {};
+	for (const key of PROVENANCE_KEYS) {
+		const value: unknown = raw[key];
+		if (typeof value === 'string') out[key] = value;
+	}
+	return out;
 }

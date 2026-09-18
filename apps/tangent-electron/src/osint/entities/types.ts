@@ -336,6 +336,11 @@ export const COMMON_PROPERTIES = ["notes", "source", "image", "image_url"];
 export const OSINT_CONFIDENCE_LEVELS = ['unverified', 'low', 'medium', 'high', 'conflicted'] as const;
 export type OsintConfidence = (typeof OSINT_CONFIDENCE_LEVELS)[number];
 
+/**
+ * `skipped` means the investigator opted this source out of Wayback lookups (a lookup
+ * tells the Internet Archive which URL is being looked at). It is final: nothing may
+ * queue a skipped source or overwrite the status after a lookup.
+ */
 export type OsintArchiveStatus = 'pending' | 'resolved' | 'failed' | 'skipped';
 
 /** One independent source supporting an entity or connection (dedupe by normalized source_url). */
@@ -351,6 +356,18 @@ export interface OsintSource {
     conversation_id?: string;
     /** Optional structured claims this source supports (for contradiction detection). */
     claims?: Array<{ path: string; value: string }>;
+    /**
+     * Provenance of the capture itself, as opposed to what the page says: which ingestion
+     * path delivered it (`via`, e.g. the browser extension), which paired client sent it,
+     * a SHA-256 of the captured content, and when the app received it (which can differ
+     * from captured_at, the moment the page was read). Meant to be set by ingestion code;
+     * note that @@create_entity sources are passed through unfiltered, so model output
+     * can currently carry them too.
+     */
+    via?: string;
+    client_id?: string;
+    sha256?: string;
+    received_at?: string;
 }
 
 /** Model / extraction payload before ids and timestamps are finalized. */

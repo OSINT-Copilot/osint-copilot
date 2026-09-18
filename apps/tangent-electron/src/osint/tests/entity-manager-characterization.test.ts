@@ -4,6 +4,8 @@ import { createTestApp, appReady, type TestApp } from '../obsidian-shim/testing/
 import { getContent, snapshotPaths } from './helpers/vault-inspect';
 import { parse as parseYaml } from 'yaml';
 import { sanitizeFilename } from '../entities/types';
+import { WaybackArchiveService } from '../services/wayback-archive-service';
+import { finalizeOsintSources } from '../services/osint-confidence-engine';
 
 /**
  * CHARACTERIZATION TESTS -- Phase 0 safety net.
@@ -315,5 +317,118 @@ describe('sanitizeFilename', () => {
         expect(sanitizeFilename('LPT9.tar.gz')).toBe('_LPT9.tar.gz');
         expect(sanitizeFilename('aux ')).toBe('_aux');
         expect(sanitizeFilename('PRN .log')).toBe('_PRN .log');
+    });
+});
+
+/**
+ * Sources captured by the browser extension carry provenance (which client sent them,
+ * a hash of what it saw, when the app received it) and may be opted out of Wayback
+ * lookups. Both have to survive every later save, because each save rewrites the whole
+ * front matter from the in-memory entity and re-scans every source for Wayback.
+ */
+describe('EntityManager osint_sources provenance and Wayback opt-out', () => {
+    let app: TestApp;
+    let manager: EntityManager;
+    let wayback: WaybackArchiveService;
+    let lookedUp: string[];
+    let restoreRandom: () => void;
+
+    const PROVENANCE = {
+        via: 'extension"\nosint_confidence: high',
+        client_id: 'client-1',
+        sha256: 'a'.repeat(64),
+        received_at: '2026-09-18T10:00:00.000Z',
+    };
+
+    function frontmatterOf(content: string | undefined): Record<string, unknown> {
+        const match = content?.match(/^---\n([\s\S]*?)\n---/);
+        expect(match).toBeTruthy();
+        return parseYaml(match![1]) as Record<string, unknown>;
+    }
+
+    function sourcesOf(filePath: string): Array<Record<string, unknown>> {
+        return frontmatterOf(getContent(app, filePath)).osint_sources as Array<Record<string, unknown>>;
+    }
+
+    beforeEach(async () => {
+        restoreRandom = seedRandom();
+        app = createTestApp();
+        manager = new EntityManager(app as never, 'OSINTCopilot', null);
+        await manager.initialize();
+        wayback = new WaybackArchiveService(app as never);
+        lookedUp = [];
+        // No network: record which URLs would have been sent to the Internet Archive.
+        vi.spyOn(wayback as never, 'resolveClosestSnapshot').mockImplementation((async (url: string) => {
+            lookedUp.push(url);
+            return null;
+        }) as never);
+        manager.setWaybackArchiveService(wayback);
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        restoreRandom();
+    });
+
+    async function createWithSkippedSource() {
+        return manager.createFTMEntity('Company', { name: 'Lukoil' }, {
+            skipAutoGeocode: true,
+            osint_sources: [
+                { source_url: 'https://private.example/page', inferred: false, rationale: 'r', archive_status: 'skipped', ...PROVENANCE },
+                { source_url: 'https://public.example/page', inferred: false, rationale: 'r' },
+            ],
+        });
+    }
+
+    it('finalizeOsintSources keeps via, client_id, sha256 and received_at', () => {
+        const [out] = finalizeOsintSources(
+            [{ source_url: 'https://x.example', inferred: false, rationale: 'r', ...PROVENANCE }],
+            { captured_at: '2026-01-01T00:00:00.000Z' },
+        );
+        expect(out).toMatchObject(PROVENANCE);
+    });
+
+    it('finalizeOsintSources drops provenance values that are not strings', () => {
+        const [out] = finalizeOsintSources(
+            [{ source_url: 'https://x.example', inferred: false, rationale: 'r', sha256: 12 as never }],
+            { captured_at: '2026-01-01T00:00:00.000Z' },
+        );
+        expect(out.sha256).toBeUndefined();
+    });
+
+    it('a saved then reloaded entity keeps its source provenance', async () => {
+        const entity = await createWithSkippedSource();
+
+        const fm = frontmatterOf(getContent(app, entity.filePath!));
+        expect(fm.osint_confidence).not.toBe('high');
+        expect(sourcesOf(entity.filePath!)[0]).toMatchObject({ ...PROVENANCE, archive_status: 'skipped' });
+
+        const reloaded = new EntityManager(app as never, 'OSINTCopilot', null);
+        await reloaded.loadEntitiesFromNotes();
+        expect(reloaded.getEntity(entity.id)?.osint_sources?.[0]).toMatchObject({ ...PROVENANCE, archive_status: 'skipped' });
+    });
+
+    it('never looks up a skipped source, on the first save or a later one', async () => {
+        const entity = await createWithSkippedSource();
+        await vi.waitFor(() => expect(lookedUp).toEqual(['https://public.example/page']));
+
+        await manager.updateEntity(entity.id, { name: 'Lukoil', country: 'ru' });
+        await vi.waitFor(() => expect(lookedUp).toHaveLength(2));
+
+        expect(lookedUp).toEqual(['https://public.example/page', 'https://public.example/page']);
+        await vi.waitFor(() => expect(sourcesOf(entity.filePath!)[1].archive_status).toBe('failed'));
+        expect(sourcesOf(entity.filePath!)[0]).toMatchObject({ ...PROVENANCE, archive_status: 'skipped' });
+    });
+
+    it('a lookup finishing after the opt-out does not overwrite it', async () => {
+        const entity = await createWithSkippedSource();
+        const skippedId = sourcesOf(entity.filePath!)[0].id as string;
+
+        // As if the job had been queued before the source was marked skipped.
+        await (wayback as any).patchFrontmatter(entity.filePath!, skippedId, 'https://web.archive.org/web/1/x', 'resolved');
+
+        const [skipped] = sourcesOf(entity.filePath!);
+        expect(skipped.archive_status).toBe('skipped');
+        expect(skipped.archive_url).toBeUndefined();
     });
 });
