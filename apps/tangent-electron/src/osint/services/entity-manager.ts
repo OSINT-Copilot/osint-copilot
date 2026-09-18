@@ -41,6 +41,52 @@ const RESERVED_FRONTMATTER_KEYS = new Set([
     'osint_contradictions',
 ]);
 
+/**
+ * Quote a string as a YAML double-quoted scalar. Labels and property values reach
+ * front matter from untrusted page text, and the hand-built `key: "value"` lines used
+ * to escape only `"`: a newline wrote extra keys, a trailing backslash ate the closing
+ * quote, and `\n---\n` ended the front matter early. A JSON string is a valid YAML
+ * double-quoted scalar, so JSON.stringify covers quotes, backslashes and C0 controls;
+ * DEL, C1 controls and U+2028/U+2029 are escaped on top because JSON leaves them raw
+ * and some YAML/Markdown readers treat them as line breaks or reject them.
+ * Every front-matter string written by hand in this file goes through here.
+ */
+function yamlQuote(value: string): string {
+    return JSON.stringify(value).replace(
+        /[\u007f-\u009f\u2028\u2029]/g,
+        (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`,
+    );
+}
+
+// Identifier-like strings stay plain so existing notes keep byte-identical `type: Person`
+// / `city:` lines; anything else (spaces aside) is quoted. The reserved words would parse
+// back as booleans/null if left plain.
+const YAML_PLAIN_SAFE = /^[A-Za-z_][\w.-]*( [\w.-]+)*$/;
+const YAML_PLAIN_RESERVED = /^(true|false|null|yes|no|on|off|y|n)$/i;
+
+/** A key or identifier value: plain when that is unambiguous, otherwise yamlQuote(). */
+function yamlPlainOrQuote(value: string): string {
+    return YAML_PLAIN_SAFE.test(value) && !YAML_PLAIN_RESERVED.test(value) ? value : yamlQuote(value);
+}
+
+/**
+ * A single-line rendering for Markdown headings built from labels: a CR/LF or Unicode
+ * line separator in a label would otherwise start new body lines under the heading.
+ * Controls become spaces rather than vanishing so the words either side stay apart.
+ */
+function stripControls(value: string): string {
+    return value.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ');
+}
+
+/** `key: value` for a hand-built scalar front-matter line, whatever the key or value holds. */
+function yamlScalarLine(key: string, value: unknown): string {
+    const k = yamlPlainOrQuote(key);
+    if (typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) {
+        return `${k}: ${String(value)}`;
+    }
+    return `${k}: ${yamlQuote(String(value))}`;
+}
+
 function isSchemaFamilyFolderName(name: string): name is SchemaFamily {
     return SCHEMA_FAMILY_FOLDERS.includes(name as SchemaFamily);
 }
@@ -57,12 +103,8 @@ export class EntityManager {
 
     private appendYamlLine(lines: string[], key: string, value: unknown): void {
         if (value === undefined || value === null || value === '') return;
-        if (typeof value === 'string') {
-            lines.push(`${key}: "${value.replace(/"/g, '\\"')}"`);
-            return;
-        }
-        if (typeof value === 'boolean' || typeof value === 'number') {
-            lines.push(`${key}: ${String(value)}`);
+        if (typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') {
+            lines.push(yamlScalarLine(key, value));
             return;
         }
         const chunk = stringifyYaml({ [key]: value }).trim();
@@ -808,7 +850,7 @@ export class EntityManager {
 ${frontmatter}
 ---
 
-# ${entity.label}
+# ${stripControls(entity.label)}
 
 ## Properties
 
@@ -855,7 +897,7 @@ ${(entity.properties.notes as string) || ''}
 ${frontmatter}
 ---
 
-# ${entity.label}
+# ${stripControls(entity.label)}
 
 ## Properties
 
@@ -892,10 +934,10 @@ ${(entity.properties.notes as string) || ''}
 
     private buildCatalogFrontmatter(entity: Entity, cat: CatalogEntityType): string {
         const lines: string[] = [
-            `id: "${entity.id}"`,
-            `type: ${entity.type}`,
-            `schemaFamily: ${cat.family}`,
-            `label: "${String(entity.label).replace(/"/g, '\\"')}"`,
+            yamlScalarLine('id', entity.id),
+            `type: ${yamlPlainOrQuote(String(entity.type))}`,
+            `schemaFamily: ${yamlPlainOrQuote(cat.family)}`,
+            yamlScalarLine('label', String(entity.label)),
         ];
         const propsChunk: Record<string, unknown> = {};
 
@@ -931,11 +973,11 @@ ${(entity.properties.notes as string) || ''}
      */
     private buildFTMFrontmatter(entity: Entity, schemaName: string): string {
         const lines: string[] = [
-            `id: "${entity.id}"`,
-            `type: ${entity.type}`,
+            yamlScalarLine('id', entity.id),
+            `type: ${yamlPlainOrQuote(String(entity.type))}`,
             `schemaFamily: ftm`,
-            `ftmSchema: ${schemaName}`,
-            `label: "${entity.label}"`
+            `ftmSchema: ${yamlPlainOrQuote(schemaName)}`,
+            yamlScalarLine('label', entity.label),
         ];
         const propsChunk: Record<string, unknown> = {};
 
@@ -1087,7 +1129,7 @@ ${(entity.properties.notes as string) || ''}
 ${frontmatter}
 ---
 
-# ${entity.label}
+# ${stripControls(entity.label)}
 
 ## Properties
 
@@ -1128,10 +1170,10 @@ ${(entity.properties.notes as string) || ''}
      */
     private buildFrontmatter(entity: Entity): string {
         const lines: string[] = [
-            `id: "${entity.id}"`,
-            `type: ${entity.type}`,
-            `label: "${entity.label}"`,
-            `aliases: ["${entity.label}"]`
+            yamlScalarLine('id', entity.id),
+            `type: ${yamlPlainOrQuote(String(entity.type))}`,
+            yamlScalarLine('label', entity.label),
+            `aliases: [${yamlQuote(entity.label)}]`,
         ];
         const propsChunk: Record<string, unknown> = {};
 
@@ -1196,7 +1238,9 @@ ${(entity.properties.notes as string) || ''}
                     continue;
                 }
                 const nextFm = this.frontmatterBlockForEntity(entity);
-                const replaced = content.replace(/^---\n[\s\S]*?\n---/, `---\n${nextFm}\n---`);
+                // Splice rather than String.replace: a replacement string expands $' $` $&,
+                // so a label containing $' would paste the raw note body into the front matter.
+                const replaced = `---\n${nextFm}\n---` + content.slice(fmMatch[0].length);
                 if (replaced !== content) {
                     if (!this.assertPathWritable(entity.filePath, 'migrate entity frontmatter')) {
                         skipped++;
@@ -1434,25 +1478,23 @@ ${(entity.properties.notes as string) || ''}
 
         // Frontmatter
         lines.push('---');
-        lines.push(`id: ${entity.id}`);
-        lines.push(`type: ${entity.type}`);
-        lines.push(`label: "${entity.label.replace(/"/g, '\\"')}"`);
+        lines.push(`id: ${yamlPlainOrQuote(entity.id)}`);
+        lines.push(`type: ${yamlPlainOrQuote(String(entity.type))}`);
+        lines.push(yamlScalarLine('label', entity.label));
         lines.push(`created: ${now}`);
         lines.push(`modified: ${now}`);
 
         // Add properties to frontmatter
         for (const [key, value] of Object.entries(entity.properties)) {
             if (value !== undefined && value !== null && value !== '') {
-                const escapedValue = typeof value === 'string'
-                    ? `"${value.replace(/"/g, '\\"')}"`
-                    : value;
-                lines.push(`${key}: ${escapedValue}`);
+                // Non-scalars are written as their String() form, as before, but quoted.
+                lines.push(yamlScalarLine(key, value));
             }
         }
 
         lines.push('---');
         lines.push('');
-        lines.push(`# ${entity.label}`);
+        lines.push(`# ${stripControls(entity.label)}`);
         lines.push('');
         lines.push(`**Type:** ${entity.type}`);
         lines.push('');
@@ -1701,7 +1743,7 @@ ${(entity.properties.notes as string) || ''}
 ${frontmatter}
 ---
 
-# ${connection.label || connection.relationship}
+# ${stripControls(connection.label || connection.relationship)}
 
 ## Connection Details
 
@@ -1832,7 +1874,7 @@ ${this.buildConnectionPropertiesSection(connection)}
 ${frontmatter}
 ---
 
-# ${connection.label || connection.relationship}
+# ${stripControls(connection.label || connection.relationship)}
 
 ## Connection Details
 
@@ -1879,36 +1921,30 @@ ${this.buildConnectionPropertiesSection(connection)}
         toEntity: Entity
     ): string {
         const lines: string[] = [
-            `id: "${connection.id}"`,
+            yamlScalarLine('id', connection.id),
             `type: connection`,
-            `relationship: "${connection.relationship}"`,
-            `fromEntityId: "${connection.fromEntityId}"`,
-            `toEntityId: "${connection.toEntityId}"`,
-            `fromEntity: "[[${fromEntity.label}]]"`,
-            `toEntity: "[[${toEntity.label}]]"`
+            yamlScalarLine('relationship', connection.relationship),
+            yamlScalarLine('fromEntityId', connection.fromEntityId),
+            yamlScalarLine('toEntityId', connection.toEntityId),
+            yamlScalarLine('fromEntity', `[[${fromEntity.label}]]`),
+            yamlScalarLine('toEntity', `[[${toEntity.label}]]`),
         ];
 
-        lines.push(`schemaFamily: ${connection.schemaFamily ?? 'ftm'}`);
+        lines.push(`schemaFamily: ${yamlPlainOrQuote(connection.schemaFamily ?? 'ftm')}`);
 
         if (connection.ftmSchema) {
-            lines.push(`ftmSchema: "${connection.ftmSchema}"`);
+            lines.push(yamlScalarLine('ftmSchema', connection.ftmSchema));
         }
 
         if (connection.label) {
-            lines.push(`label: "${connection.label.replace(/"/g, '\\"')}"`);
+            lines.push(yamlScalarLine('label', connection.label));
         }
 
         // Add connection properties to frontmatter
         if (connection.properties) {
             for (const [key, value] of Object.entries(connection.properties)) {
                 if (value !== undefined && value !== null && value !== '') {
-                    if (typeof value === 'string') {
-                        lines.push(`${key}: "${value.replace(/"/g, '\\"')}"`);
-                    } else if (typeof value === 'boolean') {
-                        lines.push(`${key}: ${value}`);
-                    } else {
-                        lines.push(`${key}: ${value}`);
-                    }
+                    lines.push(yamlScalarLine(key, value));
                 }
             }
         }

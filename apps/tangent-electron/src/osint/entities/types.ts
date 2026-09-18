@@ -734,16 +734,31 @@ const MAX_FILENAME_LENGTH = 100;
  * filename, which entity updates depend on).
  */
 export function sanitizeFilename(name: string): string {
-    const cleaned = name
+    // Labels can come from untrusted page text, so beyond the path separators the name
+    // must also be one every OS will create as an ordinary file: no control characters,
+    // no leading dot (a hidden file, or `..`), and no Windows device name (CON, NUL.txt,
+    // ...: reserved whatever the extension). Trailing dots are kept on purpose: every
+    // caller appends an extension, so Windows' trailing-dot rule never reaches the stem,
+    // and stripping them would move the existing note for a label like "Acme Inc.".
+    let cleaned = name
         .replace(/[\\/:*?"<>|]/g, '-')
         .replace(/\s+/g, ' ')
+        .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+        .trim()
+        .replace(/^\.+/, '')
         .trim();
+
+    if (WINDOWS_RESERVED_NAME.test(cleaned)) cleaned = `_${cleaned}`;
+    // A label made only of dots would otherwise become the bare extension (`.md`).
+    if (!cleaned && /\S/.test(name)) cleaned = '_';
 
     if (cleaned.length <= MAX_FILENAME_LENGTH) return cleaned;
 
     const suffix = `~${shortHash(cleaned)}`;
     return cleaned.substring(0, MAX_FILENAME_LENGTH - suffix.length) + suffix;
 }
+
+const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9]) *(\..*)?$/i;
 
 /** FNV-1a, base36. Deterministic and dependency-free; not security-relevant. */
 function shortHash(value: string): string {

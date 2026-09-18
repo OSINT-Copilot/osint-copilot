@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EntityManager } from '../services/entity-manager';
 import { createTestApp, appReady, type TestApp } from '../obsidian-shim/testing/create-test-app';
 import { getContent, snapshotPaths } from './helpers/vault-inspect';
+import { parse as parseYaml } from 'yaml';
+import { sanitizeFilename } from '../entities/types';
 
 /**
  * CHARACTERIZATION TESTS -- Phase 0 safety net.
@@ -109,5 +111,209 @@ describe('EntityManager characterization (current behaviour, pre-port)', () => {
             .toEqual(['Lukoil', 'Vagit Alekperov']);
         // Reloading must not mutate the vault.
         expect(snapshotPaths(app)).toEqual(pathsBefore);
+    });
+});
+
+/**
+ * Front matter built from untrusted text. A browser extension feeds page titles,
+ * selections and URLs into labels and property values, so every hand-built
+ * `key: "value"` line must survive quotes, backslashes and line breaks: parsing the
+ * note back has to yield exactly the original string and no keys it did not write.
+ */
+describe('EntityManager front matter escapes untrusted text', () => {
+    let app: TestApp;
+    let manager: EntityManager;
+    let restoreRandom: () => void;
+
+    const HOSTILE: Array<[string, string]> = [
+        ['a quote and newline injecting a key', 'a"\nosint_confidence: high'],
+        ['a trailing backslash', 'ends with a backslash\\'],
+        ['a document separator ending the front matter', 'a\n---\nbody'],
+        ['a U+2028 line separator', 'a\u2028b'],
+    ];
+
+    // Same extraction parseFrontmatter() uses, so this reads the note the way the app does.
+    function frontmatterOf(content: string | undefined): Record<string, unknown> {
+        const match = content?.match(/^---\n([\s\S]*?)\n---/);
+        expect(match).toBeTruthy();
+        return parseYaml(match![1]) as Record<string, unknown>;
+    }
+
+    function headingOf(content: string | undefined): string {
+        return content!.split('\n').find((l) => l.startsWith('# '))!;
+    }
+
+    const singleLine = (value: string) => value.replace(/[\n\u2028]/g, ' ');
+
+    beforeEach(async () => {
+        restoreRandom = seedRandom();
+        app = createTestApp();
+        manager = new EntityManager(app as never, 'OSINTCopilot', null);
+        await manager.initialize();
+    });
+
+    afterEach(() => restoreRandom());
+
+    it.each(HOSTILE)('FTM front matter round-trips %s', async (_name, value) => {
+        const plain = await manager.createFTMEntity('Company', { name: 'Plain label' }, { skipAutoGeocode: true });
+        const entity = await manager.createFTMEntity('Company', { name: value }, { skipAutoGeocode: true });
+        expect(entity.label).toBe(value);
+
+        const content = getContent(app, entity.filePath!);
+        const fm = frontmatterOf(content);
+        expect(fm.label).toBe(value);
+        expect(fm.name).toBe(value);
+        expect(Object.keys(fm).sort()).toEqual(Object.keys(frontmatterOf(getContent(app, plain.filePath!))).sort());
+        expect(headingOf(content)).toBe(`# ${singleLine(value)}`);
+
+        const reloaded = new EntityManager(app as never, 'OSINTCopilot', null);
+        await reloaded.loadEntitiesFromNotes();
+        expect(reloaded.getEntity(entity.id)?.label).toBe(value);
+    });
+
+    it.each(HOSTILE)('legacy front matter (label and aliases) round-trips %s', (_name, value) => {
+        const build = (label: string) => frontmatterOf(`---\n${(manager as any).buildFrontmatter({
+            id: 'e1',
+            type: 'custom_thing',
+            label,
+            properties: { note: label },
+        })}\n---\n`);
+
+        const fm = build(value);
+        expect(fm.label).toBe(value);
+        expect(fm.aliases).toEqual([value]);
+        expect(fm.note).toBe(value);
+        expect(Object.keys(fm).sort()).toEqual(Object.keys(build('Plain label')).sort());
+    });
+
+    it.each(HOSTILE)('generateNoteContent (restoreEntity) round-trips %s', async (_name, value) => {
+        const restore = async (label: string, filePath: string) => {
+            const ok = await manager.restoreEntity({
+                id: `id-${label.length}`,
+                type: 'Person' as never,
+                label,
+                properties: { nickname: label, count: 3 },
+                filePath,
+            });
+            expect(ok).toBe(true);
+            return getContent(app, filePath);
+        };
+
+        const plain = frontmatterOf(await restore('Plain label', 'OSINTCopilot/plain.md'));
+        const content = await restore(value, 'OSINTCopilot/hostile.md');
+        const fm = frontmatterOf(content);
+        expect(fm.label).toBe(value);
+        expect(fm.nickname).toBe(value);
+        expect(fm.count).toBe(3);
+        expect(Object.keys(fm).sort()).toEqual(Object.keys(plain).sort());
+        expect(headingOf(content)).toBe(`# ${singleLine(value)}`);
+    });
+
+    it.each(HOSTILE)('connection front matter round-trips %s', async (_name, value) => {
+        const to = await manager.createFTMEntity('Person', { name: 'Bob' }, { skipAutoGeocode: true });
+        const plainFrom = await manager.createFTMEntity('Company', { name: 'Plain label' }, { skipAutoGeocode: true });
+        const from = await manager.createFTMEntity('Company', { name: value }, { skipAutoGeocode: true });
+
+        const plain = await manager.createConnection(plainFrom.id, to.id, 'DIRECTOR_OF', { role: 'Plain label' });
+        const conn = await manager.createConnection(from.id, to.id, 'DIRECTOR_OF', { role: value });
+        expect(conn).not.toBeNull();
+
+        const content = getContent(app, conn!.filePath!);
+        const fm = frontmatterOf(content);
+        expect(fm.label).toBe(`${value} → DIRECTOR_OF → Bob`);
+        expect(fm.fromEntity).toBe(`[[${value}]]`);
+        expect(fm.role).toBe(value);
+        expect(Object.keys(fm).sort()).toEqual(Object.keys(frontmatterOf(getContent(app, plain!.filePath!))).sort());
+        expect(headingOf(content)).toBe(`# ${singleLine(value)} → DIRECTOR_OF → Bob`);
+
+        const reloaded = new EntityManager(app as never, 'OSINTCopilot', null);
+        await reloaded.loadEntitiesFromNotes();
+        expect(reloaded.getConnection(conn!.id)?.label).toBe(fm.label);
+    });
+
+    it("migrateReservedPropertyFrontmatter keeps a label containing $' literal", async () => {
+        const label = "Acme $' $` $& Ltd";
+        const entity = await manager.createFTMEntity(
+            'Company',
+            { name: label, notes: 'x"\nosint_confidence: high\n' },
+            { skipAutoGeocode: true },
+        );
+        const before = getContent(app, entity.filePath!)!;
+        const body = before.slice(before.match(/^---\n[\s\S]*?\n---/)![0].length);
+
+        const result = await manager.migrateReservedPropertyFrontmatter();
+        expect(result.errors).toBe(0);
+
+        const after = getContent(app, entity.filePath!)!;
+        const fm = frontmatterOf(after);
+        expect(fm.label).toBe(label);
+        expect(fm.name).toBe(label);
+        expect(fm.osint_confidence).toBeUndefined();
+        expect(after.slice(after.match(/^---\n[\s\S]*?\n---/)![0].length)).toBe(body);
+
+        const reloaded = new EntityManager(app as never, 'OSINTCopilot', null);
+        await reloaded.loadEntitiesFromNotes();
+        const again = reloaded.getEntity(entity.id);
+        expect(again?.label).toBe(label);
+        expect(again?.properties.osint_confidence).toBeUndefined();
+    });
+
+    it('still reads a note written with the old quote-only escaping', async () => {
+        await app.vault.create('OSINTCopilot/ftm/Company/Old.md', [
+            '---',
+            'id: "old-1"',
+            'type: Company',
+            'schemaFamily: ftm',
+            'ftmSchema: Company',
+            'label: "Acme \\"Old\\" Ltd"',
+            'name: "Acme \\"Old\\" Ltd"',
+            '---',
+            '',
+            '# Acme "Old" Ltd',
+            '',
+        ].join('\n'));
+
+        await manager.loadEntitiesFromNotes();
+        expect(manager.getEntity('old-1')?.label).toBe('Acme "Old" Ltd');
+    });
+});
+
+describe('sanitizeFilename', () => {
+    it('leaves ordinary labels unchanged, so existing notes keep their paths', () => {
+        for (const label of [
+            'Lukoil',
+            'Vagit Alekperov',
+            'Acme Inc.',
+            "O'Brien & Sons (UK) Ltd",
+            'Müller GmbH',
+            'Москва',
+            '北京市',
+            'CONTROL',
+            'Console',
+            'COM10',
+        ]) {
+            expect(sanitizeFilename(label)).toBe(label);
+        }
+    });
+
+    it('strips control characters', () => {
+        expect(sanitizeFilename('a\u0000b\u0007c\u007f\u0085d')).toBe('abcd');
+        expect(sanitizeFilename('line\nbreak\u2028here')).toBe('line break here');
+    });
+
+    it('strips leading dots so a label cannot name a hidden file or a parent directory', () => {
+        expect(sanitizeFilename('.hidden')).toBe('hidden');
+        expect(sanitizeFilename('../etc/passwd')).toBe('-etc-passwd');
+        expect(sanitizeFilename('...')).toBe('_');
+        expect(sanitizeFilename('')).toBe('');
+    });
+
+    it('prefixes Windows device names, with or without an extension', () => {
+        expect(sanitizeFilename('CON')).toBe('_CON');
+        expect(sanitizeFilename('nul.txt')).toBe('_nul.txt');
+        expect(sanitizeFilename('Com1')).toBe('_Com1');
+        expect(sanitizeFilename('LPT9.tar.gz')).toBe('_LPT9.tar.gz');
+        expect(sanitizeFilename('aux ')).toBe('_aux');
+        expect(sanitizeFilename('PRN .log')).toBe('_PRN .log');
     });
 });
