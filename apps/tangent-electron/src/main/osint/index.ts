@@ -18,10 +18,10 @@ import { app, BrowserWindow, dialog, safeStorage, shell } from 'electron'
 import Logger from 'js-logger'
 
 import { contentsMap, workspaceMap } from 'main/workspaces'
-import { host } from './impl'
+import { host, requestFor } from './impl'
 import * as vaultFs from './node/vault'
 import * as basemap from './node/basemap'
-import { configureKeychain } from './node/secrets'
+import { configureKeychain, hasSecret } from './node/secrets'
 import {
 	assertCwdPermitted,
 	assertExecPermitted,
@@ -72,7 +72,9 @@ on('osint:platform', event => {
 
 // ------------------------------------------------------------------------ secrets
 // Deliberately no 'osint:secrets.get'. No channel returns a secret value.
-handle('osint:secrets.has', (_e, ref: SecretRef) => host.secrets.has(ref))
+// A vault-file ref is looked up in the asking window's own vault, never another's.
+handle('osint:secrets.has', (e, ref: SecretRef) =>
+	hasSecret(ref, vaultFs.findVaultForSender(e.sender.id)))
 handle('osint:secrets.setKeychain', (_e, name: string, value: string) =>
 	host.secrets.setKeychain(name, value))
 handle('osint:secrets.deleteKeychain', (_e, name: string) => host.secrets.deleteKeychain(name))
@@ -104,7 +106,9 @@ handle('osint:cli.exec', async (
 on('osint:cli.kill', (_e, execId: string) => host.cli.kill(execId))
 
 // --------------------------------------------------------------------------- net
-handle('osint:net.request', (_e, request: HttpRequest) => host.net.request(request))
+// The sender's vault, so vault-file auth reads the asking window's credentials.
+handle('osint:net.request', (e, request: HttpRequest) =>
+	requestFor(request, vaultFs.findVaultForSender(e.sender.id)))
 
 // ----------------------------------------------------------------------- extract
 handle('osint:extract.pdfText', (_e, data: ArrayBuffer) => host.extract.pdfText(data))
@@ -124,9 +128,9 @@ handle('osint:extract.docxText', (_e, data: ArrayBuffer) => host.extract.docxTex
  * It does NOT bring a second filesystem watcher: `open` is called with watch:false and
  * change events are derived from Tangent's own TreeChange stream in the renderer.
  *
- * Confinement is doubled up. vault.ts refuses any path escaping the open root, and the
- * root itself must be a workspace Tangent has open — the renderer cannot point this at
- * an arbitrary directory.
+ * Confinement is doubled up. vault.ts refuses any path escaping the open root, by `..`
+ * or through a symlink, and the root itself must be a workspace Tangent has open — the
+ * renderer cannot point this at an arbitrary directory.
  */
 function assertIsOpenWorkspace(dir: string): void {
 	const roots = [...workspaceMap.keys()]
@@ -135,24 +139,31 @@ function assertIsOpenWorkspace(dir: string): void {
 	}
 }
 
-handle('osint:vault.open', (_e, dir: string) => {
+/**
+ * Every vault channel resolves against the SENDER's vault. A window that never opened one
+ * gets "No vault is open" rather than another window's root: with a single shared root,
+ * two windows on two vaults each wrote into whichever had opened last.
+ */
+const vaultOf = (e: Electron.IpcMainInvokeEvent) => vaultFs.vaultForSender(e.sender.id)
+
+handle('osint:vault.open', (e, dir: string) => {
 	assertIsOpenWorkspace(dir)
-	return vaultFs.open(dir, { watch: false })
+	return vaultFs.openForSender(e.sender, dir, { watch: false })
 })
 
-handle('osint:vault.read', (_e, p: string) => vaultFs.read(p))
-handle('osint:vault.readBinary', (_e, p: string) => vaultFs.readBinary(p))
-handle('osint:vault.write', (_e, p: string, d: string) => vaultFs.write(p, d))
-handle('osint:vault.writeBinary', (_e, p: string, d: Uint8Array) => vaultFs.writeBinary(p, d))
-handle('osint:vault.create', (_e, p: string, d: string) => vaultFs.create(p, d))
-handle('osint:vault.mkdir', (_e, p: string) => vaultFs.mkdir(p))
-handle('osint:vault.remove', (_e, p: string) => vaultFs.remove(p))
-handle('osint:vault.rename', (_e, from: string, to: string) => vaultFs.rename(from, to))
-handle('osint:vault.stat', (_e, p: string) => vaultFs.stat(p))
+handle('osint:vault.read', (e, p: string) => vaultOf(e).read(p))
+handle('osint:vault.readBinary', (e, p: string) => vaultOf(e).readBinary(p))
+handle('osint:vault.write', (e, p: string, d: string) => vaultOf(e).write(p, d))
+handle('osint:vault.writeBinary', (e, p: string, d: Uint8Array) => vaultOf(e).writeBinary(p, d))
+handle('osint:vault.create', (e, p: string, d: string) => vaultOf(e).create(p, d))
+handle('osint:vault.mkdir', (e, p: string) => vaultOf(e).mkdir(p))
+handle('osint:vault.remove', (e, p: string) => vaultOf(e).remove(p))
+handle('osint:vault.rename', (e, from: string, to: string) => vaultOf(e).rename(from, to))
+handle('osint:vault.stat', (e, p: string) => vaultOf(e).stat(p))
 
 /** Real OS trash, not unlink: four fileManager.trashFile call sites depend on it. */
-handle('osint:vault.trash', async (_e, p: string) => {
-	await shell.trashItem(vaultFs.absolutePathOf(p))
+handle('osint:vault.trash', async (e, p: string) => {
+	await shell.trashItem(vaultOf(e).absolutePathOf(p))
 })
 
 // ------------------------------------------------------------------------ basemap

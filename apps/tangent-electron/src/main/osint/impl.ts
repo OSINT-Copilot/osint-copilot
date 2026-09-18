@@ -4,9 +4,9 @@
  * Used by the Electron main process and by vitest. The sandboxed renderer never
  * links this file -- esbuild aliases ./impl to ./impl.bridge for that target.
  */
-import type { ExecOptions, ExecResult, Host, HttpRequest, HttpResponse, PlatformInfo } from '../../osint/host/types';
+import type { ExecOptions, ExecResult, Host, HttpRequest, HttpResponse, PlatformInfo, WatchEvent } from '../../osint/host/types';
 import { resolveCliPath } from './node/cli';
-import * as vaultFs from './node/vault';
+import { OpenVault } from './node/vault';
 import * as secretStore from './node/secrets';
 import { guardedFetch, BlockedRequestError } from './node/net-guard';
 import { extractPdfText, extractDocxText } from './node/extract';
@@ -113,7 +113,11 @@ async function readCapped(response: Response, limit: number): Promise<ArrayBuffe
     return out.buffer;
 }
 
-async function request(req: HttpRequest): Promise<HttpResponse> {
+/**
+ * @param vault  The vault a `vault-file` credential is read from -- the requesting
+ *               window's own. Main's IPC handler passes the sender's; see resolveSecret.
+ */
+export async function requestFor(req: HttpRequest, vault: OpenVault | null): Promise<HttpResponse> {
     const url = new URL(req.url);
     const headers: Record<string, string> = {
         ...(req.contentType ? { 'Content-Type': req.contentType } : {}),
@@ -122,7 +126,7 @@ async function request(req: HttpRequest): Promise<HttpResponse> {
 
     // Secrets are resolved and injected HERE, never in the renderer.
     if (req.auth) {
-        const secret = await secretStore.resolveSecret(req.auth.ref);
+        const secret = await secretStore.resolveSecret(req.auth.ref, vault);
         if (!secret) {
             throw new Error(
                 `Missing credential (${req.auth.ref.source}: ${req.auth.ref.name})`,
@@ -169,10 +173,28 @@ async function request(req: HttpRequest): Promise<HttpResponse> {
     };
 }
 
+/**
+ * The vault of the in-process host object below, and nothing else's.
+ *
+ * Main's IPC handlers never go through `host.vault`: each window's vault is its own
+ * OpenVault, looked up by sender (node/vault.ts). This one serves the callers that have
+ * no sender -- vitest, which resolves `host-impl` to this file -- and, being a separate
+ * instance, cannot be confused with any window's. In the running app it is never opened,
+ * so `host.secrets.has` / `host.net.request` find no vault-file credentials through it.
+ */
+let hostVault: OpenVault | null = null;
+/** Survive a reopen, as they did when the watcher was module-level. */
+const hostVaultListeners = new Set<(events: WatchEvent[]) => void>();
+
+function requireHostVault(): OpenVault {
+    if (!hostVault) throw new Error('No vault is open');
+    return hostVault;
+}
+
 export const host: Host = {
     platform,
     secrets: {
-        has: secretStore.hasSecret,
+        has: (ref) => secretStore.hasSecret(ref, hostVault),
         setKeychain: secretStore.setKeychain,
         deleteKeychain: secretStore.deleteKeychain,
         listKeychain: secretStore.listKeychain,
@@ -182,30 +204,40 @@ export const host: Host = {
         exec,
         kill(execId: string) { running.get(execId)?.kill('SIGTERM'); },
     },
-    net: { request },
+    net: { request: (req) => requestFor(req, hostVault) },
     vault: {
-        open: vaultFs.open,
-        basePath: vaultFs.basePath,
-        read: vaultFs.read,
-        readBinary: vaultFs.readBinary,
-        write: vaultFs.write,
-        writeBinary: vaultFs.writeBinary,
-        create: vaultFs.create,
-        mkdir: vaultFs.mkdir,
-        remove: vaultFs.remove,
+        async open(dir: string) {
+            const { vault, snapshot } = await OpenVault.open(dir);
+            const previous = hostVault;
+            hostVault = vault;
+            vault.onChange((events) => { for (const listener of hostVaultListeners) listener(events); });
+            await previous?.close();
+            return snapshot;
+        },
+        basePath: () => hostVault?.root ?? '',
+        read: (p) => requireHostVault().read(p),
+        readBinary: (p) => requireHostVault().readBinary(p),
+        write: (p, d) => requireHostVault().write(p, d),
+        writeBinary: (p, d) => requireHostVault().writeBinary(p, d),
+        create: (p, d) => requireHostVault().create(p, d),
+        mkdir: (p) => requireHostVault().mkdir(p),
+        remove: (p) => requireHostVault().remove(p),
         // Electron's shell.trashItem is only available in main; under vitest this
         // degrades to a plain remove, which is what the tests want anyway.
-        trash: vaultFs.remove,
-        rename: vaultFs.rename,
-        stat: vaultFs.stat,
-        onChange: vaultFs.onChange,
+        trash: (p) => requireHostVault().remove(p),
+        rename: (from, to) => requireHostVault().rename(from, to),
+        stat: (p) => requireHostVault().stat(p),
+        onChange(callback) {
+            hostVaultListeners.add(callback);
+            return () => hostVaultListeners.delete(callback);
+        },
         // Same file:// shape as the renderer host. It used to mint `osint-vault://`, a
         // scheme nothing registers -- and this is the implementation the `osint` vitest
         // project resolves `host-impl` to, so a test would have proved the wrong thing.
         resourceUrl: (path: string) => {
             const encode = (value: string) =>
                 value.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/');
-            const root = encode(vaultFs.basePath()).replace(/^([A-Za-z])%3A/i, '$1:');
+            const root = encode(hostVault?.root ?? '').replace(/^([A-Za-z])%3A/i, '$1:');
             return `file://${root.startsWith('/') ? root : `/${root}`}/${encode(path)}`;
         },
     },

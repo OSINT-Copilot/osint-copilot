@@ -15,7 +15,7 @@
 import * as fsp from 'fs/promises';
 import * as nodePath from 'path';
 import type { SecretRef } from '../../../osint/host/types';
-import * as vaultFs from './vault';
+import type { OpenVault } from './vault';
 
 const DEFAULT_CREDENTIALS_FOLDER = 'OSINTCopilot/custom/credentials';
 
@@ -67,8 +67,16 @@ export async function listKeychain(): Promise<string[]> {
     return Object.keys(await readKeychainStore()).sort();
 }
 
-/** Never exposed over IPC. Main-internal only. */
-export async function resolveSecret(ref: SecretRef): Promise<string | null> {
+/**
+ * Never exposed over IPC. Main-internal only.
+ *
+ * @param vault  Where a `vault-file` ref is read from: the requesting window's own vault,
+ *               passed explicitly by the caller. There is deliberately no fallback to "the
+ *               open vault" -- with a window per vault that meant whichever opened last, so
+ *               one case's credentials could be sent on another's requests. Null (no vault
+ *               known for the caller) makes the vault-file source miss.
+ */
+export async function resolveSecret(ref: SecretRef, vault: OpenVault | null): Promise<string | null> {
     if (!ref?.name) return null;
 
     if (ref.source === 'env') {
@@ -89,13 +97,14 @@ export async function resolveSecret(ref: SecretRef): Promise<string | null> {
 
     // vault-file: confined to the credentials folder, so a crafted relative path
     // cannot read arbitrary vault content.
+    if (!vault) return null;
     const relative = ref.name.replace(/^[/\\]+/, '');
     if (relative.includes('..')) return null;
     const path = relative.startsWith(DEFAULT_CREDENTIALS_FOLDER)
         ? relative
         : `${DEFAULT_CREDENTIALS_FOLDER}/${relative}`;
     try {
-        const value = (await vaultFs.read(path)).trim();
+        const value = (await vault.read(path)).trim();
         return value || null;
     } catch {
         return null;
@@ -103,6 +112,6 @@ export async function resolveSecret(ref: SecretRef): Promise<string | null> {
 }
 
 /** Existence check for the renderer -- returns a boolean, never the value. */
-export async function hasSecret(ref: SecretRef): Promise<boolean> {
-    return (await resolveSecret(ref)) !== null;
+export async function hasSecret(ref: SecretRef, vault: OpenVault | null): Promise<boolean> {
+    return (await resolveSecret(ref, vault)) !== null;
 }
