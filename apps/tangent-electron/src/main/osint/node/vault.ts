@@ -57,19 +57,36 @@ function realpathOfDeepestExisting(absolute: string): string | null {
     }
 }
 
-async function walk(dir: string, out: StatDto[], toStat: (absolute: string, stats: fs.Stats) => StatDto): Promise<void> {
+/**
+ * Lists everything under `dir`, agreeing with resolve() on what is in the vault. lstat,
+ * not stat: stat follows a symlink, so a link to a file outside the root was listed with
+ * the outside file's size and mtime while every read of it was refused. A symlink is
+ * listed (with its target's stat) only when its target is inside `realRoot`; one that
+ * escapes, or dangles, is omitted. Symlinked folders are listed but not descended into,
+ * which also keeps a link cycle from recursing forever.
+ */
+async function walk(dir: string, realRoot: string, out: StatDto[], toStat: (absolute: string, stats: fs.Stats) => StatDto): Promise<void> {
     const entries = await fsp.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
         const absolute = nodePath.join(dir, entry.name);
         // .git and node_modules would balloon the index for no benefit; Obsidian's own
         // config folder is likewise not part of the OSINT data model.
         if (entry.isDirectory() && (entry.name === '.git' || entry.name === 'node_modules')) continue;
+        let stats: fs.Stats;
         try {
-            out.push(toStat(absolute, await fsp.stat(absolute)));
+            stats = await fsp.lstat(absolute);
+            if (stats.isSymbolicLink()) {
+                // The realpath flavour resolve() and realRoot use, so all three agree.
+                if (!isInside(realRoot, fs.realpathSync.native(absolute))) continue;
+                stats = await fsp.stat(absolute);
+                out.push(toStat(absolute, stats));
+                continue;
+            }
+            out.push(toStat(absolute, stats));
         } catch {
-            continue; // broken symlink, permission denied -- skip rather than abort the scan
+            continue; // dangling symlink, permission denied -- skip rather than abort the scan
         }
-        if (entry.isDirectory()) await walk(absolute, out, toStat);
+        if (stats.isDirectory()) await walk(absolute, realRoot, out, toStat);
     }
 }
 
@@ -100,7 +117,7 @@ export class OpenVault {
         /** Absolute path as opened; vault paths are reported relative to this. */
         readonly root: string,
         /** The root with symlinks resolved, which is what confinement is checked against. */
-        private readonly realRoot: string,
+        readonly realRoot: string,
     ) {}
 
     static async open(dir: string, { watch = true }: OpenOptions = {}): Promise<{ vault: OpenVault; snapshot: StatDto[] }> {
@@ -110,7 +127,7 @@ export class OpenVault {
         const vault = new OpenVault(root, fs.realpathSync.native(root));
 
         const snapshot: StatDto[] = [];
-        await walk(root, snapshot, (absolute, stats) => vault.toStat(absolute, stats));
+        await walk(root, vault.realRoot, snapshot, (absolute, stats) => vault.toStat(absolute, stats));
         if (watch) vault.startWatching();
         return { vault, snapshot };
     }
@@ -148,6 +165,30 @@ export class OpenVault {
         }
         const real = realpathOfDeepestExisting(absolute);
         if (real === null || !isInside(this.realRoot, real)) {
+            throw new Error(`Path escapes the vault root: ${vaultPath}`);
+        }
+        return absolute;
+    }
+
+    /**
+     * resolve() for operations that act on the entry itself rather than through it:
+     * fs.rm, fs.rename and shell.trashItem all remove or move a symlink, never its target.
+     * So only the parent must really be inside the vault; the final component may be a
+     * symlink pointing anywhere, or nowhere. resolve() would refuse such a link, leaving
+     * a dangling or outward-pointing link in the vault that nothing could delete.
+     *
+     * The root keeps the strict check: it may itself be reached through a symlink, whose
+     * parent is legitimately outside the vault.
+     */
+    private resolveEntry(vaultPath: string): string {
+        const normalized = vaultPath === '/' ? '' : vaultPath.replace(/^\/+/, '');
+        const absolute = nodePath.resolve(this.root, normalized);
+        if (absolute === this.root) return this.resolve(vaultPath);
+        if (!isInside(this.root, absolute)) {
+            throw new Error(`Path escapes the vault root: ${vaultPath}`);
+        }
+        const realParent = realpathOfDeepestExisting(nodePath.dirname(absolute));
+        if (realParent === null || !isInside(this.realRoot, realParent)) {
             throw new Error(`Path escapes the vault root: ${vaultPath}`);
         }
         return absolute;
@@ -269,13 +310,16 @@ export class OpenVault {
     }
 
     async remove(path: string): Promise<void> {
-        await fsp.rm(this.resolve(path), { recursive: true, force: true });
+        await fsp.rm(this.resolveEntry(path), { recursive: true, force: true });
     }
 
     async rename(from: string, to: string): Promise<void> {
-        const target = this.resolve(to);
+        // Both sides are validated before anything touches the disk: creating the
+        // destination's folder first left an empty directory behind a refused rename.
+        const source = this.resolveEntry(from);
+        const target = this.resolveEntry(to);
         await fsp.mkdir(nodePath.dirname(target), { recursive: true });
-        await fsp.rename(this.resolve(from), target);
+        await fsp.rename(source, target);
     }
 
     async stat(path: string): Promise<StatDto | null> {
@@ -286,9 +330,12 @@ export class OpenVault {
         }
     }
 
-    /** Absolute path, for the trash implementation in main (needs Electron's shell). */
+    /**
+     * Absolute path, for the trash implementation in main (needs Electron's shell).
+     * Checked like remove(): trashItem moves a symlink, not what it points at.
+     */
     absolutePathOf(path: string): string {
-        return this.resolve(path);
+        return this.resolveEntry(path);
     }
 }
 
