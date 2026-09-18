@@ -167,22 +167,73 @@ export function generateOsintSourceId(): string {
 	return `src_${Date.now().toString(36)}_${sourceIdSeq}`;
 }
 
+/** What finalizeOsintSources stores when a source arrives without a URL or rationale. */
+const DEFAULT_SOURCE_URL = 'inferred:orchestration';
+const DEFAULT_RATIONALE = 'No rationale provided.';
+
+/**
+ * An id derived from what the source says rather than when it arrived, so the same
+ * capture sent twice gets the same id and appending it again is recognisably a repeat.
+ * Two FNV-1a passes with different offsets give 64 bits: a collision would silently drop
+ * a genuinely new source, which 32 bits makes plausible over a large vault.
+ *
+ * The input is read the way finalizeOsintSources stores it (same defaults, claims as
+ * plain strings), so a raw source and the stored record it became hash the same. That
+ * lets a stored source be recognised whatever id it was saved under, including the
+ * random ids written before this existed.
+ */
+export function deterministicOsintSourceId(raw: OsintSourceInput): string {
+	const claims = Array.isArray(raw.claims)
+		? raw.claims.map((c) => [String(c?.path ?? ''), String(c?.value ?? '')])
+		: [];
+	const material = JSON.stringify([
+		normalizeSourceUrl((raw.source_url ?? '').trim() || DEFAULT_SOURCE_URL),
+		typeof raw.sha256 === 'string' ? raw.sha256 : '',
+		raw.inferred === true,
+		(raw.rationale ?? '').trim() || DEFAULT_RATIONALE,
+		claims,
+	]);
+	return `src_${fnv1a(material, 0x811c9dc5)}${fnv1a(material, 0x01000193 ^ 0x9e3779b9)}`;
+}
+
+function fnv1a(value: string, seed: number): string {
+	let hash = seed >>> 0;
+	for (let i = 0; i < value.length; i++) {
+		hash ^= value.charCodeAt(i);
+		hash = Math.imul(hash, 0x01000193) >>> 0;
+	}
+	return hash.toString(16).padStart(8, '0');
+}
+
 /** Normalize LLM / pipeline input into full OsintSource records. */
 export function finalizeOsintSources(
 	inputs: OsintSourceInput[] | undefined,
 	defaults: { captured_at: string; conversation_id?: string },
 ): OsintSource[] {
 	if (!inputs?.length) return [];
-	return inputs.map((raw) => {
-		const id = raw.id?.trim() || generateOsintSourceId();
-		const source_url = (raw.source_url ?? '').trim() || 'inferred:orchestration';
+	// A source without an id gets one derived from its content, so saving the same
+	// extraction again produces ids a later append recognises. The same source listed twice
+	// in one batch would then share an id, so the repeat is dropped.
+	const derived = new Set<string>();
+	const kept: Array<{ raw: OsintSourceInput; id: string }> = [];
+	for (const raw of inputs) {
+		const own = raw.id?.trim();
+		const id = own || deterministicOsintSourceId(raw);
+		if (!own) {
+			if (derived.has(id)) continue;
+			derived.add(id);
+		}
+		kept.push({ raw, id });
+	}
+	return kept.map(({ raw, id }) => {
+		const source_url = (raw.source_url ?? '').trim() || DEFAULT_SOURCE_URL;
 		return {
 			id,
 			source_url,
 			archive_url: raw.archive_url,
 			archive_status: raw.archive_status,
 			inferred: raw.inferred === true,
-			rationale: (raw.rationale ?? '').trim() || 'No rationale provided.',
+			rationale: (raw.rationale ?? '').trim() || DEFAULT_RATIONALE,
 			captured_at: raw.captured_at ?? defaults.captured_at,
 			conversation_id: raw.conversation_id ?? defaults.conversation_id,
 			claims: raw.claims,

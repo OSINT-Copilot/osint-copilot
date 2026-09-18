@@ -3,7 +3,7 @@
  * Now supports both legacy EntityType and FTM schema format.
  */
 
-import { App, TFile, TFolder, normalizePath, Notice } from 'obsidian';
+import { App, TAbstractFile, TFile, TFolder, normalizePath, Notice } from 'obsidian';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import type { VaultLockService } from './vault-lock-service';
 import type { WaybackArchiveService } from './wayback-archive-service';
@@ -15,9 +15,11 @@ import {
 } from '../entities/types';
 import {
     computeOsintConfidence,
+    deterministicOsintSourceId,
     finalizeOsintSources,
     isOsintConfidence,
 } from './osint-confidence-engine';
+import { identifierKeysForEntity, normalizeIdentifierKey } from './entity-identifiers';
 import { geocodingService, GeocodingError, GeocodingErrorType } from './geocoding-service';
 import { ftmSchemaService } from './ftm-schema-service';
 import type { SchemaCatalogService } from './schema-catalog-service';
@@ -96,6 +98,13 @@ export class EntityManager {
     private basePath: string;
     private entities: Map<string, Entity> = new Map();
     private connections: Map<string, Connection> = new Map();
+    /**
+     * Normalised identifier key (see entity-identifiers.ts) -> ids of the entities carrying
+     * it, oldest first, plus the reverse map so an entity's stale keys can be dropped when
+     * its properties change. Kept in step with `entities` by indexEntity/unindexEntity.
+     */
+    private identifierIndex: Map<string, string[]> = new Map();
+    private identifierKeysById: Map<string, string[]> = new Map();
     private vaultLockService: VaultLockService | null = null;
     private schemaCatalog: SchemaCatalogService | null = null;
     private waybackArchiveService: WaybackArchiveService | null = null;
@@ -255,6 +264,8 @@ export class EntityManager {
     async loadEntitiesFromNotes(): Promise<void> {
         this.entities.clear();
         this.connections.clear();
+        this.identifierIndex.clear();
+        this.identifierKeysById.clear();
 
         const baseFolder = this.app.vault.getAbstractFileByPath(this.basePath);
         if (baseFolder instanceof TFolder) {
@@ -302,7 +313,7 @@ export class EntityManager {
                 if (file instanceof TFile && file.extension === 'md') {
                     const entity = await this.parseEntityFromNote(file, family);
                     if (entity) {
-                        this.entities.set(entity.id, entity);
+                        this.putEntity(entity);
                     }
                 }
             }
@@ -315,7 +326,7 @@ export class EntityManager {
             if (file instanceof TFile && file.extension === 'md') {
                 const entity = await this.parseEntityFromNote(file, 'ftm');
                 if (entity) {
-                    this.entities.set(entity.id, entity);
+                    this.putEntity(entity);
                 }
             }
         }
@@ -624,6 +635,186 @@ export class EntityManager {
         return undefined;
     }
 
+    /** Store an entity in memory and (re)index its identifiers. */
+    private putEntity(entity: Entity): void {
+        this.entities.set(entity.id, entity);
+        this.indexEntity(entity);
+    }
+
+    /** Forget an entity in memory, identifiers included. Its note is untouched. */
+    private dropEntity(entityId: string): void {
+        this.entities.delete(entityId);
+        this.unindexEntity(entityId);
+    }
+
+    private indexEntity(entity: Entity): void {
+        this.unindexEntity(entity.id);
+        const keys = identifierKeysForEntity(entity);
+        if (keys.length === 0) return;
+        this.identifierKeysById.set(entity.id, keys);
+        for (const key of keys) {
+            const ids = this.identifierIndex.get(key);
+            if (ids) ids.push(entity.id);
+            else this.identifierIndex.set(key, [entity.id]);
+        }
+    }
+
+    private unindexEntity(entityId: string): void {
+        const keys = this.identifierKeysById.get(entityId);
+        if (!keys) return;
+        this.identifierKeysById.delete(entityId);
+        for (const key of keys) {
+            const ids = this.identifierIndex.get(key)?.filter((id) => id !== entityId);
+            if (ids?.length) this.identifierIndex.set(key, ids);
+            else this.identifierIndex.delete(key);
+        }
+    }
+
+    /**
+     * The entity already known by a normalised identifier, e.g. `email:alice@example.com`
+     * (the key is normalised here too, so case and formatting do not matter). When several
+     * entities share the key, one stored under `schema` wins, then the oldest. Legacy notes
+     * count: an old Email-type LegalEntity note answers `email:` lookups.
+     */
+    findEntityByIdentifier(schema: string, key: string): Entity | null {
+        const normalized = normalizeIdentifierKey(key);
+        if (!normalized) return null;
+        const candidates = (this.identifierIndex.get(normalized) ?? [])
+            .map((id) => this.entities.get(id))
+            .filter((e): e is Entity => e !== undefined);
+        return candidates.find((e) => (e.ftmSchema || String(e.type)) === schema)
+            ?? candidates[0]
+            ?? null;
+    }
+
+    /**
+     * The entity a create of `type` with `properties` describes, if one exists: first by
+     * identifier, then by the label the create would compute, within the same schema and
+     * type. Callers that used to rely on a same-label create overwriting the old note use
+     * this to update the existing entity instead.
+     */
+    findExistingEntity(type: string, properties: Record<string, unknown>): Entity | undefined {
+        const ftmSchema = isFTMSchema(type) ? type : legacyToFTMSchema(type as EntityType);
+        const sameKind = (e: Entity) => String(e.type) === type && (e.ftmSchema || String(e.type)) === ftmSchema;
+        for (const key of identifierKeysForEntity({ type, ftmSchema, properties })) {
+            for (const id of this.identifierIndex.get(key) ?? []) {
+                const e = this.entities.get(id);
+                if (e && sameKind(e)) return e;
+            }
+        }
+        const label = isFTMSchema(type)
+            ? ftmSchemaService.getEntityLabel(type, properties)
+            : this.computeEntityLabel(type, ftmSchema, properties);
+        if (!label) return undefined;
+        const wanted = label.toLowerCase();
+        for (const e of this.entities.values()) {
+            if (sameKind(e) && String(e.label ?? '').toLowerCase() === wanted) return e;
+        }
+        return undefined;
+    }
+
+    /**
+     * Add sources to an existing entity without touching its id, properties or note path.
+     * A source whose content (see deterministicOsintSourceId) matches one already on the
+     * entity is skipped, whatever id either was given, so sending the same capture twice
+     * changes nothing: the second call does not even rewrite the note. Matching on content
+     * rather than on ids also covers sources saved under the older random ids, and a
+     * caller that reuses an id like `src_1` for different sources does not lose the new
+     * one. Provenance fields (via, client_id, sha256, received_at) are carried through by
+     * finalizeOsintSources.
+     */
+    async appendOsintSources(
+        entityId: string,
+        sources: OsintSourceInput[],
+        options?: { captured_at?: string; conversation_id?: string },
+    ): Promise<Entity | null> {
+        const entity = this.entities.get(entityId);
+        if (!entity) return null;
+
+        const existing = entity.osint_sources ?? [];
+        const seenContent = new Set(existing.map((s) => deterministicOsintSourceId(s)));
+        const takenIds = new Set(existing.map((s) => s.id));
+        const fresh: OsintSourceInput[] = [];
+        for (const raw of sources) {
+            const contentId = deterministicOsintSourceId(raw);
+            if (seenContent.has(contentId)) continue;
+            seenContent.add(contentId);
+            // Keep the caller's id unless another source on this entity already has it.
+            const own = raw.id?.trim();
+            const id = own && !takenIds.has(own) ? own : contentId;
+            takenIds.add(id);
+            fresh.push({ ...raw, id });
+        }
+        if (fresh.length === 0) return entity;
+
+        if (!this.assertPathWritable(entity.filePath, 'update entity')) return null;
+
+        const added = finalizeOsintSources(fresh, {
+            captured_at: options?.captured_at ?? new Date().toISOString(),
+            conversation_id: options?.conversation_id,
+        });
+        const merged = [...existing, ...added];
+        const previous = {
+            osint_sources: entity.osint_sources,
+            osint_confidence: entity.osint_confidence,
+            osint_contradictions: entity.osint_contradictions,
+        };
+        entity.osint_sources = merged;
+        const o = computeOsintConfidence(entity, merged);
+        entity.osint_confidence = o.osint_confidence;
+        entity.osint_contradictions = o.osint_contradictions;
+
+        try {
+            // Only provenance changed, so the note stays where it is even when its name is
+            // not the one the label would give (a note the investigator renamed by hand):
+            // moving it would break every link to it.
+            entity.filePath = await this.saveEntityNote(entity, { keepPath: true });
+        } catch (e) {
+            // Leave memory matching the note on disk when the write did not happen.
+            Object.assign(entity, previous);
+            throw e;
+        }
+        return entity;
+    }
+
+    /**
+     * Entry point for external ingestion: append `sources` to the entity already known by
+     * `identifierKey` (or by an identifier in `properties` when no key is given), or create
+     * a new entity when there is none. A match keeps its own properties; only provenance
+     * is added.
+     */
+    async upsertEntityFromExternal(
+        schema: string,
+        properties: Record<string, unknown>,
+        sources: OsintSourceInput[],
+        options?: { identifierKey?: string; captured_at?: string; conversation_id?: string },
+    ): Promise<{ entity: Entity; created: boolean }> {
+        // The caller's key first, then the identifiers in the properties: a key that does
+        // not match (or does not parse) must not mean a duplicate of an entity the
+        // properties would have found.
+        const keys = [
+            ...(options?.identifierKey ? [options.identifierKey] : []),
+            ...identifierKeysForEntity({ type: schema, ftmSchema: schema, properties }),
+        ];
+        for (const key of keys) {
+            const match = this.findEntityByIdentifier(schema, key);
+            if (!match) continue;
+            const entity = await this.appendOsintSources(match.id, sources, options);
+            if (!entity) throw new Error('Entity note is locked');
+            return { entity, created: false };
+        }
+
+        // finalizeOsintSources gives id-less sources content-derived ids, so a later append of
+        // the same capture is a no-op.
+        const entity = await this.createFTMEntity(schema, properties, {
+            skipAutoGeocode: true,
+            osint_sources: sources,
+            osint_captured_at: options?.captured_at,
+            conversation_id: options?.conversation_id,
+        });
+        return { entity, created: true };
+    }
+
     /**
      * Create a new entity and save it as a note.
      * @param type - The entity type
@@ -685,7 +876,7 @@ export class EntityManager {
             : await this.saveEntityAsNote(entity);
         entity.filePath = filePath;
 
-        this.entities.set(id, entity);
+        this.putEntity(entity);
         return entity;
     }
 
@@ -739,7 +930,7 @@ export class EntityManager {
         const filePath = await this.saveFTMEntityAsNote(entity, schemaName);
         entity.filePath = filePath;
 
-        this.entities.set(id, entity);
+        this.putEntity(entity);
         return entity;
     }
 
@@ -814,7 +1005,7 @@ export class EntityManager {
 
         const filePath = await this.saveCatalogEntityNote(entity, cat);
         entity.filePath = filePath;
-        this.entities.set(id, entity);
+        this.putEntity(entity);
         return entity;
     }
 
@@ -831,16 +1022,109 @@ export class EntityManager {
     }
 
     /**
+     * The path a note is written to: `<stem>.md` in `folderPath`, unless that file belongs
+     * to someone else. Used for entity notes and connection notes alike (`owner` is the
+     * entity or connection; ids are unique across both).
+     *
+     * Two entities can share a label (two people called John Smith; a page title sent
+     * twice), and so can their connections. Writing by label alone used to overwrite the
+     * first one's note with the second's id, properties and sources, silently erasing its
+     * provenance. Now a name held by another owner is skipped for `<stem> (<id prefix>).md`,
+     * then `<stem> (<full id>).md`.
+     *
+     * The chosen path is recorded on the owner (callers assign it to filePath), and a later
+     * save keeps that path while it is still one of this stem's names. With `keepPath`, it
+     * is kept whatever it is called, as long as the note there is still this owner's: a save
+     * that did not change the label must not move a note the investigator renamed, since
+     * links point at the file. Otherwise, when the label changes, the note is renamed rather
+     * than a second copy written beside it, so each entity only ever has one file and
+     * updates, deletes and undo all find it.
+     */
+    private async claimNotePath(
+        owner: { id: string; filePath?: string },
+        folderPath: string,
+        stem: string,
+        options?: { keepPath?: boolean },
+    ): Promise<string> {
+        const names = [
+            stem,
+            `${stem} (${owner.id.substring(0, 6)})`,
+            `${stem} (${owner.id})`,
+        ].map((name) => normalizePath(`${folderPath}/${sanitizeFilename(name)}.md`));
+        const current = owner.filePath ? normalizePath(owner.filePath) : undefined;
+        const currentFile = current ? this.app.vault.getAbstractFileByPath(current) : null;
+
+        if (current && (names.includes(current) || options?.keepPath) && await this.isNotePathFreeFor(current, owner.id)) {
+            return current;
+        }
+
+        for (const candidate of names) {
+            if (candidate === current) continue;
+            if (!(await this.isNotePathFreeFor(candidate, owner.id))) continue;
+            if (current && currentFile instanceof TFile && await this.isNotePathFreeFor(current, owner.id)) {
+                if (!this.assertPathWritable(current, 'rename note')) {
+                    throw new Error('Path locked');
+                }
+                await this.app.vault.rename(currentFile, candidate);
+                owner.filePath = candidate;
+            }
+            return candidate;
+        }
+        throw new Error(`No free note path for ${owner.id} in ${folderPath}`);
+    }
+
+    /**
+     * Whether `path` is free for `ownerId` (an entity or connection id): nothing there, or a
+     * note that is its own. An unknown note (not loaded, or hand-written) counts as its own
+     * only when its front matter carries the same id -- anything unreadable is left alone.
+     *
+     * A note whose name differs only in letter case counts as being at `path`: the vault
+     * index is case-sensitive, but on Windows and macOS the filesystem is not, and a
+     * rename onto such a name would replace the other note.
+     */
+    private async isNotePathFreeFor(path: string, ownerId: string): Promise<boolean> {
+        const file = this.findNoteFileIgnoringCase(path);
+        if (!file) return true;
+        if (!(file instanceof TFile)) return false;
+        const at = normalizePath(file.path);
+        let owned = false;
+        for (const other of [...this.entities.values(), ...this.connections.values()]) {
+            if (!other.filePath || normalizePath(other.filePath) !== at) continue;
+            if (other.id !== ownerId) return false;
+            owned = true;
+        }
+        if (owned) return true;
+        try {
+            return this.parseFrontmatter(await this.app.vault.read(file))?.id === ownerId;
+        } catch {
+            return false;
+        }
+    }
+
+    private findNoteFileIgnoringCase(path: string): TAbstractFile | null {
+        const exact = this.app.vault.getAbstractFileByPath(path);
+        if (exact) return exact;
+        const slash = path.lastIndexOf('/');
+        const folder = this.app.vault.getAbstractFileByPath(slash > 0 ? path.substring(0, slash) : '/');
+        if (!(folder instanceof TFolder)) return null;
+        const wanted = path.toLowerCase();
+        return folder.children.find((child) => normalizePath(child.path).toLowerCase() === wanted) ?? null;
+    }
+
+    /**
      * Save an FTM entity as an Obsidian note.
      */
-    private async saveFTMEntityAsNote(entity: Entity, schemaName: string): Promise<string> {
-        const filename = sanitizeFilename(entity.label);
+    private async saveFTMEntityAsNote(
+        entity: Entity,
+        schemaName: string,
+        options?: { keepPath?: boolean },
+    ): Promise<string> {
         const folderPath = this.resolveEntityStorageFolder(entity, schemaName);
 
         // Ensure folder exists
         await this.ensureFolderExists(folderPath);
 
-        const filePath = normalizePath(`${folderPath}/${filename}.md`);
+        const filePath = await this.claimNotePath(entity, folderPath, entity.label, options);
 
         // Build frontmatter using FTM schema
         const frontmatter = this.buildFTMFrontmatter(entity, schemaName);
@@ -886,12 +1170,15 @@ ${(entity.properties.notes as string) || ''}
         return filePath;
     }
 
-    private async saveCatalogEntityNote(entity: Entity, cat: CatalogEntityType): Promise<string> {
-        const filename = sanitizeFilename(entity.label);
+    private async saveCatalogEntityNote(
+        entity: Entity,
+        cat: CatalogEntityType,
+        options?: { keepPath?: boolean },
+    ): Promise<string> {
         const folderPath = this.resolveEntityStorageFolder(entity, cat.name);
         await this.ensureFolderExists(folderPath);
 
-        const filePath = normalizePath(`${folderPath}/${filename}.md`);
+        const filePath = await this.claimNotePath(entity, folderPath, entity.label, options);
         const frontmatter = this.buildCatalogFrontmatter(entity, cat);
         const content = `---
 ${frontmatter}
@@ -1112,14 +1399,13 @@ ${(entity.properties.notes as string) || ''}
     /**
      * Save an entity as an Obsidian note.
      */
-    private async saveEntityAsNote(entity: Entity): Promise<string> {
-        const filename = sanitizeFilename(`${entity.label}_${entity.id.substring(0, 8)}`);
+    private async saveEntityAsNote(entity: Entity, options?: { keepPath?: boolean }): Promise<string> {
         const folderPath = normalizePath(`${this.basePath}/${entity.type}`);
 
         // Ensure the folder exists before creating the file
         await this.ensureFolderExists(folderPath);
 
-        const filePath = normalizePath(`${folderPath}/${filename}.md`);
+        const filePath = await this.claimNotePath(entity, folderPath, this.legacyNoteStem(entity), options);
 
         // Build frontmatter
         const frontmatter = this.buildFrontmatter(entity);
@@ -1295,6 +1581,8 @@ ${(entity.properties.notes as string) || ''}
 
         if (!this.assertPathWritable(entity.filePath, 'update entity')) return null;
 
+        const previousLabel = entity.label;
+
         // Update properties
         entity.properties = { ...entity.properties, ...properties };
 
@@ -1309,21 +1597,29 @@ ${(entity.properties.notes as string) || ''}
             entity.label = getEntityLabel(entity.type, entity.properties);
         }
 
-        // Save updated note using appropriate method
-        if (entity.ftmSchema) {
-            await this.saveFTMEntityAsNote(entity, entity.ftmSchema);
-        } else if (entity.schemaFamily && entity.schemaFamily !== 'ftm' && this.schemaCatalog) {
-            const cat = this.schemaCatalog.getEntityType(entity.schemaFamily, String(entity.type));
-            if (cat) {
-                await this.saveCatalogEntityNote(entity, cat);
-            } else {
-                await this.saveEntityAsNote(entity);
-            }
-        } else {
-            await this.saveEntityAsNote(entity);
-        }
+        // A label change renames the note, so record where it is now. When the label is
+        // unchanged the note stays put, whatever its file is called.
+        entity.filePath = await this.saveEntityNote(entity, { keepPath: entity.label === previousLabel });
+        this.indexEntity(entity);
 
         return entity;
+    }
+
+    /** Save an existing entity through the writer its kind uses; returns the note path. */
+    private async saveEntityNote(entity: Entity, options?: { keepPath?: boolean }): Promise<string> {
+        if (entity.ftmSchema) {
+            return this.saveFTMEntityAsNote(entity, entity.ftmSchema, options);
+        }
+        if (entity.schemaFamily && entity.schemaFamily !== 'ftm' && this.schemaCatalog) {
+            const cat = this.schemaCatalog.getEntityType(entity.schemaFamily, String(entity.type));
+            if (cat) return this.saveCatalogEntityNote(entity, cat, options);
+        }
+        return this.saveEntityAsNote(entity, options);
+    }
+
+    /** saveEntityAsNote's file stem: legacy (non-FTM, non-catalog) notes carry an id suffix. */
+    private legacyNoteStem(entity: Entity): string {
+        return `${entity.label}_${entity.id.substring(0, 8)}`;
     }
 
     /**
@@ -1360,7 +1656,7 @@ ${(entity.properties.notes as string) || ''}
         }
 
         // Remove from maps
-        this.entities.delete(entityId);
+        this.dropEntity(entityId);
 
         // Remove related connections
         for (const connId of connIdsToDrop) {
@@ -1378,7 +1674,7 @@ ${(entity.properties.notes as string) || ''}
         if (!entity) return false;
 
         // Remove from maps
-        this.entities.delete(entityId);
+        this.dropEntity(entityId);
 
         // Remove related connections
         for (const [connId, conn] of this.connections) {
@@ -1397,14 +1693,25 @@ ${(entity.properties.notes as string) || ''}
     async restoreEntity(entity: Entity): Promise<boolean> {
         try {
             const family = entity.schemaFamily ?? 'ftm';
-            const folderPath = normalizePath(`${this.basePath}/${family}/${String(entity.type)}`);
+            const own = entity.filePath ? normalizePath(entity.filePath) : '';
+            const folderPath = own.includes('/')
+                ? own.substring(0, own.lastIndexOf('/'))
+                : normalizePath(`${this.basePath}/${family}/${String(entity.type)}`);
             await this.ensureFolderExists(folderPath);
 
             // Generate note content
             const content = this.generateNoteContent(entity);
 
-            // Create the note file
-            const filePath = entity.filePath || `${folderPath}/${sanitizeFilename(entity.label)}.md`;
+            // Back to its own path, whatever it was called, when that is still free; another
+            // entity may have taken the name while this one was deleted, and restoring must
+            // not overwrite it. The fallback names beside it follow the writer's convention.
+            const isLegacy = !entity.ftmSchema && !(entity.schemaFamily && entity.schemaFamily !== 'ftm');
+            const filePath = await this.claimNotePath(
+                { id: entity.id, filePath: entity.filePath },
+                folderPath,
+                isLegacy ? this.legacyNoteStem(entity) : entity.label,
+                { keepPath: true },
+            );
 
             if (!this.assertPathWritable(filePath, 'restore entity')) return false;
 
@@ -1422,7 +1729,7 @@ ${(entity.properties.notes as string) || ''}
 
             // Add to entities map
             const restoredEntity = { ...entity, filePath };
-            this.entities.set(entity.id, restoredEntity);
+            this.putEntity(restoredEntity);
 
             try {
                 await this.writeEntityYamlFile(restoredEntity);
@@ -1442,18 +1749,29 @@ ${(entity.properties.notes as string) || ''}
      */
     async updateEntityForHistory(entity: Entity): Promise<boolean> {
         try {
+            // The history snapshot can carry a path the note has since moved from (a label
+            // change renames it), and another entity may now own that name. Write to where
+            // this entity's note is now, and only if that note is still its own.
+            const livePath = this.entities.get(entity.id)?.filePath ?? entity.filePath;
+            if (livePath) entity.filePath = livePath;
+
             if (!this.assertPathWritable(entity.filePath, 'update entity')) return false;
 
+            const file = entity.filePath ? this.app.vault.getAbstractFileByPath(entity.filePath) : null;
+            if (file instanceof TFile && !(await this.isNotePathFreeFor(entity.filePath!, entity.id))) {
+                // The note there is someone else's now. Refuse the whole undo rather than
+                // change memory and the graph yaml while the note says otherwise.
+                console.warn(`[EntityManager] Not undoing ${entity.id}: ${entity.filePath} belongs to another entity`);
+                return false;
+            }
+
             // Update in-memory
-            this.entities.set(entity.id, entity);
+            this.putEntity(entity);
 
             // Update the note file
-            if (entity.filePath) {
-                const file = this.app.vault.getAbstractFileByPath(entity.filePath);
-                if (file instanceof TFile) {
-                    const content = this.generateNoteContent(entity);
-                    await this.app.vault.modify(file, content);
-                }
+            if (file instanceof TFile) {
+                const content = this.generateNoteContent(entity);
+                await this.app.vault.modify(file, content);
             }
 
             try {
@@ -1559,7 +1877,7 @@ ${(entity.properties.notes as string) || ''}
                 }
 
                 // Remove from entities map
-                this.entities.delete(entityId);
+                this.dropEntity(entityId);
 
                 // Collect related connections for deletion
                 for (const [connId, conn] of this.connections) {
@@ -1705,10 +2023,10 @@ ${(entity.properties.notes as string) || ''}
                 return false;
             }
 
-            // Update the note file
+            // Update the note file, unless another connection has since taken its name.
             if (connection.filePath) {
                 const file = this.app.vault.getAbstractFileByPath(connection.filePath);
-                if (file instanceof TFile) {
+                if (file instanceof TFile && await this.isNotePathFreeFor(connection.filePath, connection.id)) {
                     const content = this.generateConnectionNoteContent(connection, fromEntity, toEntity);
                     await this.app.vault.modify(file, content);
                 }
@@ -1859,12 +2177,19 @@ ${this.buildConnectionPropertiesSection(connection)}
         fromEntity: Entity,
         toEntity: Entity
     ): Promise<string> {
-        const filename = sanitizeFilename(`${fromEntity.label} - ${connection.relationship} - ${toEntity.label}`);
         const folderPath = normalizePath(`${this.basePath}/Connections`);
-        const filePath = normalizePath(`${folderPath}/${filename}.md`);
 
         // Ensure the Connections folder exists
         await this.ensureFolderExists(folderPath);
+
+        // Named from the two labels, which two entities can share: two John Smiths who both
+        // work at Acme would otherwise write the same file, and the second connection would
+        // replace the first on disk. Claimed like an entity note.
+        const filePath = await this.claimNotePath(
+            connection,
+            folderPath,
+            `${fromEntity.label} - ${connection.relationship} - ${toEntity.label}`,
+        );
 
         // Build frontmatter
         const frontmatter = this.buildConnectionFrontmatter(connection, fromEntity, toEntity);

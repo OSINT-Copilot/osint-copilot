@@ -897,6 +897,43 @@ export class OrchestrationService {
                         // host must not take the rest of the batch with it.
                         const picture = await this.resolveEntityPicture(data.properties);
                         const properties = picture.properties;
+                        // Re-running extraction over the same text proposes the same entities
+                        // again. A same-label create used to overwrite the existing note, which
+                        // also threw away its id, sources and any edits; it now gets its own
+                        // file instead, so an entity this batch already knows is merged into:
+                        // its sources are appended and only properties it lacks are filled in.
+                        const existing = this.plugin.entityManager.findExistingEntity(String(data.type), properties || {});
+                        if (existing) {
+                            const em = this.plugin.entityManager;
+                            const merged = await em.appendOsintSources(existing.id, rawSources, {
+                                captured_at: osintOpts.osint_captured_at,
+                                conversation_id: osintOpts.conversation_id,
+                            });
+                            const missing: Record<string, unknown> = {};
+                            // Values that differ from what the entity already has are not
+                            // applied (the investigator's value wins), but they are named in
+                            // the response so a correction is not dropped without a word.
+                            const kept: string[] = [];
+                            for (const [k, v] of Object.entries(properties || {})) {
+                                const cur = existing.properties[k];
+                                if (v === undefined || v === null || v === '') continue;
+                                if (cur === undefined || cur === null || cur === '') {
+                                    missing[k] = v;
+                                } else if (JSON.stringify(cur) !== JSON.stringify(v)) {
+                                    kept.push(k);
+                                }
+                            }
+                            const updated = merged && Object.keys(missing).length > 0
+                                ? await em.updateEntity(existing.id, missing)
+                                : merged;
+                            const keptNote = kept.length > 0
+                                ? ` (kept existing ${kept.join(', ')}; proposed values differ)`
+                                : '';
+                            lines.push(updated
+                                ? `✓ Merged into existing ${data.type}: **${updated.label}**${keptNote}`
+                                : `⚠ Skipped (locked): **${existing.label}**`);
+                            continue;
+                        }
                         if (isFTMSchema(String(data.type))) {
                             await this.plugin.entityManager.createFTMEntity(data.type, properties, osintOpts);
                         } else {
