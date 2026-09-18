@@ -8,7 +8,8 @@ import type { QueryParseResult } from '@such-n-such/tangent-query-parser'
 import type { UrlData } from './urlData'
 import type { LicenseStatus } from './license'
 import type {
-	BasemapOpenResult, BasemapRange, ExecOptions, ExecResult, HttpRequest, HttpResponse,
+	BasemapOpenResult, BasemapRange, ExecOptions, ExecResult, ExtensionPairing, ExtensionStatus,
+	HttpRequest, HttpResponse, InboxBundle, InboxClaimResult, InboxOutcome, InboxState,
 	PlatformInfo, SecretRef, StatDto
 } from '../osint/host/types'
 
@@ -238,6 +239,34 @@ export default interface WindowAPI {
 			forget(): Promise<void>
 			read(handleId: string, offset: number, length: number): Promise<BasemapRange>
 			close(handleId: string): Promise<void>
+		}
+
+		/**
+		 * The browser extension's inbox for this window's investigation. No call names a
+		 * workspace: main uses the calling window's own. One window per investigation
+		 * holds the lease; list, step and finish refuse any other.
+		 */
+		inbox: {
+			claim(): Promise<InboxClaimResult>
+			release(): Promise<void>
+			/** Pending bundles, each with its MAC re-verified by main. */
+			list(): Promise<InboxBundle[]>
+			/** Records (or merges into) one journal step in the bundle's state.json. */
+			step(bundleId: string, step: string, data: unknown): Promise<InboxState>
+			/** 'removed' also applies to a bundle already done. */
+			finish(bundleId: string, outcome: InboxOutcome): Promise<void>
+			/** Fires when a bundle arrives or is settled. Returns an unsubscribe. */
+			onChanged(callback: () => void): () => void
+		}
+
+		/** The settings page's controls for the extension channel. No call returns a key. */
+		extension: {
+			status(): Promise<ExtensionStatus>
+			setEnabled(enabled: boolean): Promise<ExtensionStatus>
+			/** A one-time pairing string, valid for five minutes. Needs the channel on. */
+			pairBegin(): Promise<ExtensionPairing>
+			pairCancel(): Promise<void>
+			revoke(clientId: string): Promise<boolean>
 		}
 	}
 }

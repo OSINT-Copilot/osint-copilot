@@ -20,6 +20,31 @@ import type { StatDto, WatchEvent } from '../../../osint/host/types';
 
 const SELF_WRITE_TTL_MS = 2000;
 
+/**
+ * The browser extension's inbox, at a workspace root. Main alone writes there: a bundle in
+ * it carries extension provenance, and its state.json records what was applied. None of
+ * the vault channels may reach it, so the renderer can neither forge a bundle nor edit
+ * the journal through them. Matched case-insensitively and without trailing dots and
+ * spaces, which Windows and macOS map onto the same folder, and without an NTFS stream
+ * suffix.
+ */
+export const INBOX_FOLDER = '.osint-inbox';
+
+function isInboxName(name: string): boolean {
+    return name.split(':')[0].replace(/[. ]+$/, '').toLowerCase() === INBOX_FOLDER;
+}
+
+/**
+ * `target` is an inbox folder or inside one, at any depth below `base`. Any depth, not just
+ * the top: a vault opened on /cases reaches the inbox of a workspace nested at /cases/acme.
+ * Both absolute, target inside base.
+ */
+function isUnderInbox(base: string, target: string): boolean {
+    const rel = nodePath.relative(base, target);
+    if (rel === '') return false;
+    return rel.split(/[\\/]/).some(isInboxName);
+}
+
 /** `child` is `base` or somewhere beneath it. Both must be absolute. */
 function isInside(base: string, child: string): boolean {
     const rel = nodePath.relative(base, child);
@@ -72,6 +97,9 @@ async function walk(dir: string, realRoot: string, out: StatDto[], toStat: (abso
         // .git and node_modules would balloon the index for no benefit; Obsidian's own
         // config folder is likewise not part of the OSINT data model.
         if (entry.isDirectory() && (entry.name === '.git' || entry.name === 'node_modules')) continue;
+        // Listed, an inbox (this workspace's, or a nested one's) would be files the shim
+        // can see and never read.
+        if (isInboxName(entry.name)) continue;
         let stats: fs.Stats;
         try {
             stats = await fsp.lstat(absolute);
@@ -156,6 +184,9 @@ export class OpenVault {
      * -- lexically (`..`), and through a symlink inside the vault that points out of it.
      * The lexical check alone let `link -> /etc` turn `link/passwd` into a read outside
      * the vault, and page text from the browser extension ends up in these paths.
+     *
+     * The inbox folder is refused the same two ways: by name, and by where a symlink
+     * inside the vault really leads.
      */
     private resolve(vaultPath: string): string {
         const normalized = vaultPath === '/' ? '' : vaultPath.replace(/^\/+/, '');
@@ -166,6 +197,9 @@ export class OpenVault {
         const real = realpathOfDeepestExisting(absolute);
         if (real === null || !isInside(this.realRoot, real)) {
             throw new Error(`Path escapes the vault root: ${vaultPath}`);
+        }
+        if (isUnderInbox(this.root, absolute) || isUnderInbox(this.realRoot, real)) {
+            throw new Error(`The browser extension's inbox is managed by the app: ${vaultPath}`);
         }
         return absolute;
     }
@@ -190,6 +224,10 @@ export class OpenVault {
         const realParent = realpathOfDeepestExisting(nodePath.dirname(absolute));
         if (realParent === null || !isInside(this.realRoot, realParent)) {
             throw new Error(`Path escapes the vault root: ${vaultPath}`);
+        }
+        if (isUnderInbox(this.root, absolute)
+            || isUnderInbox(this.realRoot, nodePath.join(realParent, nodePath.basename(absolute)))) {
+            throw new Error(`The browser extension's inbox is managed by the app: ${vaultPath}`);
         }
         return absolute;
     }

@@ -9,6 +9,7 @@
  * renderer never links the Node implementation. Everything else (tests included)
  * gets the Node one, which is why the existing suites keep passing untouched.
  */
+import type { Manifest } from '../../main/osint/extension/protocol';
 
 export interface PlatformInfo {
     /** NodeJS.Platform: 'darwin' | 'linux' | 'win32' | ... */
@@ -174,6 +175,82 @@ export type BasemapProblem =
 export type BasemapOpenResult =
     | { ok: true; archive: BasemapArchive }
     | { ok: false; problem: BasemapProblem; path: string };
+
+// ------------------------------------------------------------ browser-extension inbox
+
+/**
+ * A manifest as the extension sent it, after main validated and cleaned it. The wire
+ * types live with the protocol in main; they do no I/O, so both sides share them.
+ */
+export type InboxManifest = Manifest;
+
+/** What main stamped on a bundle when it arrived. Never supplied by the extension. */
+export interface InboxServerStamp {
+    /** ISO 8601, main's clock. */
+    receivedAt: string;
+    clientId: string;
+    /** The extension's `chrome-extension://…` origin, as recorded at pairing. */
+    origin: string;
+    extVersion: string;
+}
+
+/** One journal step the renderer recorded while applying a bundle. */
+export interface InboxStepRecord {
+    step: string;
+    /** ISO 8601, main's clock at the last write of this step. */
+    at: string;
+    data: unknown;
+}
+
+/** `<bundle>/state.json`. Main owns the file; the renderer only appends through `step`. */
+export interface InboxState {
+    v: 1;
+    steps: InboxStepRecord[];
+}
+
+/** A pending bundle whose MAC main has just re-verified. */
+export interface InboxBundle {
+    bundleId: string;
+    manifest: InboxManifest;
+    server: InboxServerStamp;
+    state: InboxState | null;
+}
+
+export type InboxOutcome = 'done' | 'rejected' | 'removed';
+
+/** One window applies a workspace's inbox at a time; the others are told no. */
+export type InboxClaimResult = { ok: true } | { ok: false; reason: 'held' };
+
+/** A paired extension, as the settings page shows it. Its key never leaves main. */
+export interface ExtensionClientInfo {
+    clientId: string;
+    origin: string;
+    extVersion: string;
+    createdAt: string;
+    lastSeenAt: string | null;
+}
+
+export interface ExtensionStatus {
+    /** The user's switch, persisted. */
+    enabled: boolean;
+    /** Whether the loopback server is listening right now. */
+    running: boolean;
+    port: number | null;
+    /** The licence carries the osint entitlement. */
+    licensed: boolean;
+    /** False when the OS keychain is unavailable and the keys sit in a 0600 plain file. */
+    secretsEncrypted: boolean;
+    clients: ExtensionClientInfo[];
+    /** Set when the channel could not be set up at all, e.g. an unreadable key file. */
+    problem?: string;
+}
+
+/** The one-time string the user pastes into the extension. */
+export interface ExtensionPairing {
+    pairingString: string;
+    /** Unix ms. */
+    expiresAt: number;
+}
 
 export interface Host {
     /**

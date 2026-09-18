@@ -18,6 +18,9 @@ import { app, BrowserWindow, dialog, safeStorage, shell } from 'electron'
 import Logger from 'js-logger'
 
 import { contentsMap, workspaceMap } from 'main/workspaces'
+import { getDocumentationPath } from 'main/documentation'
+import { licenseStatus, onLicenseChanged } from 'main/license'
+import { mode } from 'main/environment'
 import { host, requestFor } from './impl'
 import * as vaultFs from './node/vault'
 import * as basemap from './node/basemap'
@@ -32,6 +35,10 @@ import {
 import { handle, on } from './guarded-ipc'
 import { registerVaultHandlers } from './vault-ipc'
 import { setApplicationWindowPredicate } from './sender-guard'
+import { ExtensionController } from './extension/controller'
+import type { ConfirmPairing } from './extension/pairing'
+import { registerExtensionHandlers, registerInboxHandlers } from './inbox/ipc'
+import { tangentInboxHost, workspacePathOf } from './inbox/tangent-host'
 import type { ExecOptions, HttpRequest, PlatformInfo, SecretRef } from '../../osint/host/types'
 
 setWorkspaceRootsProvider(() => [...workspaceMap.keys()])
@@ -172,5 +179,89 @@ handle('osint:basemap.forget', () => basemap.forget())
 handle('osint:basemap.read', (_e, handleId: string, offset: number, length: number) =>
 	basemap.read(handleId, offset, length))
 handle('osint:basemap.close', (_e, handleId: string) => basemap.close(handleId))
+
+// -------------------------------------------------------------- browser extension
+/**
+ * The loopback channel the OSINT Copilot browser extension sends notes and entities
+ * over, and the inbox they land in. The protocol and its threat model are in
+ * extension/PROTOCOL.md; what decides whether the port is open is ExtensionController.
+ *
+ * Wired here because it needs Tangent's workspaceMap and contentsMap, the licence and
+ * Electron's dialog and safeStorage, none of which the electron-free modules import.
+ */
+const RECONCILE_EVERY_MS = 10 * 60_000
+
+/**
+ * The native "allow this extension?" dialog, on the focused window. Deny is the default
+ * and the cancel answer. End-to-end tests may skip it, but never in a packaged build:
+ * `mode` comes from NODE_ENV at run time, so it alone would let an environment variable
+ * switch the dialog off in a shipped app.
+ */
+const confirmPairing: ConfirmPairing = async ({ origin, extVersion }) => {
+	if (process.env.OC_TEST_AUTO_CONFIRM_PAIR === '1' && mode !== 'production' && !app.isPackaged) return true
+	const options: Electron.MessageBoxOptions = {
+		type: 'question',
+		buttons: ['Allow', 'Deny'],
+		defaultId: 1,
+		cancelId: 1,
+		noLink: true,
+		title: 'Pair a browser extension',
+		message: 'Allow this browser extension to add notes and entities to your investigations?',
+		detail: `Extension: ${origin}\nVersion: ${extVersion}\n\n`
+			+ 'Allow only if you have just pasted a pairing string from OSINT Copilot into the extension.',
+	}
+	const focused = BrowserWindow.getFocusedWindow()
+	const result = focused
+		? await dialog.showMessageBox(focused, options)
+		: await dialog.showMessageBox(options)
+	return result.response === 0
+}
+
+async function hasOsintEntitlement(): Promise<boolean> {
+	const status = await licenseStatus()
+	return status.valid && status.entitlements?.osint === true
+}
+
+const inboxHost = tangentInboxHost({
+	workspaceMap,
+	contentsMap,
+	documentationPath: () => getDocumentationPath(),
+})
+
+// safeStorage, like the keychain above, is only usable once the app is ready.
+const extensionReady: Promise<ExtensionController> = app.whenReady().then(() =>
+	ExtensionController.open({
+		userDataDir: app.getPath('userData'),
+		encryptor: safeStorage,
+		confirm: confirmPairing,
+		licensed: hasOsintEntitlement,
+		host: inboxHost,
+		appVersion: app.getVersion(),
+		log: Logger.get('osint-extension'),
+	}))
+
+extensionReady.then(controller => {
+	void controller.reconcile()
+	onLicenseChanged(() => { void controller.reconcile() })
+	// A subscription can lapse with no event to hear, so look again now and then.
+	setInterval(() => { void controller.reconcile() }, RECONCILE_EVERY_MS).unref?.()
+	// On 'quit', not 'before-quit': Tangent's will-quit can still cancel a quit while its
+	// workspaces close, and stop() keeps the port shut for good.
+	app.on('quit', () => { void controller.stop() })
+}, err => {
+	Logger.error('[osint] the browser extension channel could not be set up:', err)
+})
+
+registerInboxHandlers({
+	handle,
+	inbox: () => extensionReady.then(c => c.inbox),
+	// The sender's own window, from main's own map: never a path the renderer names.
+	workspacePathOf: sender => workspacePathOf(contentsMap.get(sender as Electron.WebContents)),
+})
+
+registerExtensionHandlers({
+	handle,
+	control: () => extensionReady,
+})
 
 Logger.info('[osint] main-process handlers registered')

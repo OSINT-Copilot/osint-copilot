@@ -331,5 +331,20 @@ Every error body is JSON `{"error": "<code>", "detail"?: "<text>"}`.
 |---|---|
 | `userData/osint-extension.json` | `{port, instanceId, enabled, clients: [{clientId, origin, extVersion, createdAt, lastSeenAt}]}`. No keys. |
 | `userData/osint-extension.secrets` | per-client `K`, `workspaceIdKey` and the inbox `manifestKey`. Encrypted with the OS keychain (Electron `safeStorage`), mode 0600. Where no keychain is available, it is plain JSON, mode 0600, and the settings page shows a warning. |
+| `<workspace>/.osint-inbox/` | received bundles (§12). Written only by the app's main process. |
 
 The secrets file has no IPC channel, and the renderer's secret resolver cannot reach it.
+
+## 12. What the app does with a bundle (informative)
+
+Nothing in this section changes the wire format; it says what the replies in §7.4 mean on disk.
+
+The app checks, in order: the manifest (§8, again, in the module that writes), the licence (`403 unlicensed`), the `workspaceId` (`404 unknown_workspace`), whether this `bundleId` was already received (`200 duplicate`), and the inbox budget (`507 budget_exceeded`). The duplicate check comes before the budget so that a retry of a stored bundle hears that it was stored even when the inbox has since filled. A refusal writes nothing.
+
+An accepted bundle lands in the chosen workspace at `.osint-inbox/pending/<bundleId>/manifest.json`. It is written into `.osint-inbox/.staging/<bundleId>/` first (exclusive create, fsync) and the folder is then renamed into `pending/` whole, so a reader never sees half a bundle. Staging folders older than an hour are the remains of a write that died, and are removed when the server starts and when a workspace's inbox is first used.
+
+The stored manifest is the cleaned manifest plus `server: {receivedAt, clientId, origin, extVersion}`, stamped by the app, plus `mac = b64url(HMAC(manifestKey, canonicalJSON(everything but mac)))`. `canonicalJSON` sorts object keys recursively and has no whitespace. `manifestKey` never leaves the app. Before the app applies a bundle it re-verifies the MAC and re-validates the manifest; a bundle that fails is moved to `.osint-inbox/rejected/` with a `reason.json` and is not applied.
+
+A bundle then moves to `done/`, `rejected/` or `removed/`. A `bundleId` found in any of `pending/`, `done/`, `rejected/` or `removed/` is a duplicate. The budget is 2 GB of files under `.osint-inbox/` per workspace; the app never deletes a bundle to make room.
+
+The app's own file APIs for the investigation (`osint:vault.*`) refuse every path under `.osint-inbox/`, whatever its case, so the app's renderer cannot forge a bundle or edit its journal.

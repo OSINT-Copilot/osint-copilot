@@ -62,6 +62,39 @@ interface StoredLicense {
 /** Avoids re-reading and re-verifying on every call; invalidated whenever we write. */
 let cached: { stored: StoredLicense, status: LicenseStatus } | null = null
 
+const changeListeners = new Set<() => void>()
+
+/**
+ * Called after anything that may have changed the licence: activate, refresh, clear, and
+ * an answer from the dashboard that changes the verdict. Listeners call licenseStatus()
+ * for the new verdict; the browser-extension channel uses this to close its port the
+ * moment the entitlement goes.
+ */
+export function onLicenseChanged(listener: () => void): () => void {
+	changeListeners.add(listener)
+	return () => changeListeners.delete(listener)
+}
+
+function notifyLicenseChanged(): void {
+	for (const listener of changeListeners) {
+		try {
+			listener()
+		}
+		catch (e) {
+			log.error('A licence-change listener failed:', e)
+		}
+	}
+}
+
+/**
+ * What a listener could act on: valid or not, and what it allows. The reason, message and
+ * plan details are left out, since a change to those alone changes nothing a listener does.
+ */
+function verdictOf(status: LicenseStatus | undefined): string | null {
+	if (!status) return null
+	return JSON.stringify([status.valid, status.tier ?? null, status.entitlements ?? null])
+}
+
 function readStored(): StoredLicense | null {
 	let parsed: any
 	try {
@@ -138,9 +171,14 @@ function bypassStatus(): LicenseStatus {
  * by simply going offline, which is what dropping the cache on failure would allow.
  */
 function remember(stored: StoredLicense, status: LicenseStatus): LicenseStatus {
+	const previous = cached?.status
 	const next: StoredLicense = { ...stored, subscription: status.subscription ?? stored.subscription }
 	writeStored(next)
 	cached = { stored: next, status }
+	// Only on a change of verdict. A listener asks licenseStatus() again, and a refusal
+	// (401) keeps the old `checkedAt`, so that ask goes back to the dashboard: notifying on
+	// every answer would turn one refusal into requests without end.
+	if (verdictOf(previous) !== verdictOf(status)) notifyLicenseChanged()
 	return status
 }
 
@@ -241,6 +279,7 @@ export async function activateLicense(key: string): Promise<LicenseStatus> {
 
 	cached = { stored, status }
 	log.info(`Licence activated: ${kind}, tier ${status.tier}`)
+	notifyLicenseChanged()
 	return status
 }
 
@@ -251,7 +290,9 @@ export async function activateLicense(key: string): Promise<LicenseStatus> {
  * up their credits does not have to wait out the revalidation window or restart.
  */
 export async function refreshLicense(): Promise<LicenseStatus> {
-	return licenseStatus(true)
+	const status = await licenseStatus(true)
+	notifyLicenseChanged()
+	return status
 }
 
 export function clearLicense(): void {
@@ -262,6 +303,7 @@ export function clearLicense(): void {
 	catch (e) {
 		log.error('Could not remove the stored licence:', e)
 	}
+	notifyLicenseChanged()
 }
 
 export function initLicense() {

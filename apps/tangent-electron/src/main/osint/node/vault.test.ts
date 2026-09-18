@@ -321,3 +321,82 @@ describe('vault IPC handlers', () => {
 		expect(fs.readdirSync(root)).toEqual([])
 	})
 })
+
+describe('the browser extension inbox', () => {
+	/** A vault whose inbox already holds a bundle main wrote. */
+	async function vaultWithInbox(name: string) {
+		const root = freshDir(name)
+		const bundle = path.join(root, '.osint-inbox', 'pending', 'b1')
+		fs.mkdirSync(bundle, { recursive: true })
+		fs.writeFileSync(path.join(bundle, 'manifest.json'), '{"signed":true}')
+		const opened = await OpenVault.open(root, { watch: false })
+		return { root, bundle, ...opened }
+	}
+
+	it('osint:vault.write refuses .osint-inbox/x and .OSINT-INBOX/x', async () => {
+		const root = freshDir('inbox-ipc')
+		const handlers = new Map<string, (event: VaultIpcEvent, ...args: any[]) => any>()
+		registerVaultHandlers({
+			handle: (channel, listener) => { handlers.set(channel, listener) },
+			assertIsOpenWorkspace() { /* open */ },
+			async trashItem() { /* unused */ },
+		})
+		const sender = fakeSender()
+		await handlers.get('osint:vault.open')!({ sender }, root)
+		const write = (p: string) => Promise.resolve().then(() => handlers.get('osint:vault.write')!({ sender }, p, 'forged'))
+
+		for (const p of ['.osint-inbox/x', '.OSINT-INBOX/x', '/.osint-inbox/pending/b/manifest.json', 'a/../.Osint-Inbox/x', '.osint-inbox.. /x']) {
+			await expect(write(p), p).rejects.toThrow(/inbox is managed by the app/)
+		}
+		expect(fs.readdirSync(root)).toEqual([])
+		// A folder that merely starts with the name is an ordinary folder.
+		await write('.osint-inbox-notes/x.md')
+		expect(fs.existsSync(path.join(root, '.osint-inbox-notes/x.md'))).toBe(true)
+	})
+
+	it('refuses every operation on the inbox, and leaves the bundle as main wrote it', async () => {
+		const { vault, bundle } = await vaultWithInbox('inbox-ops')
+		const inside = '.osint-inbox/pending/b1/manifest.json'
+		await expect(vault.read(inside)).rejects.toThrow(/inbox/)
+		await expect(vault.readBinary(inside)).rejects.toThrow(/inbox/)
+		await expect(vault.write(inside, 'x')).rejects.toThrow(/inbox/)
+		await expect(vault.writeBinary('.osint-inbox/pending/b1/state.json', new Uint8Array([1]))).rejects.toThrow(/inbox/)
+		await expect(vault.create('.osint-inbox/pending/b2/manifest.json', 'x')).rejects.toThrow(/inbox/)
+		await expect(vault.mkdir('.osint-inbox/pending/b3')).rejects.toThrow(/inbox/)
+		await expect(vault.remove('.osint-inbox/pending/b1')).rejects.toThrow(/inbox/)
+		await expect(vault.remove('.osint-inbox')).rejects.toThrow(/inbox/)
+		await expect(vault.rename('.osint-inbox/pending/b1', 'b1')).rejects.toThrow(/inbox/)
+		await expect(vault.rename('elsewhere', '.osint-inbox/pending/b4')).rejects.toThrow(/inbox/)
+		expect(() => vault.absolutePathOf('.osint-inbox/pending/b1')).toThrow(/inbox/)
+		expect(await vault.stat(inside)).toBeNull()
+		expect(fs.readFileSync(path.join(bundle, 'manifest.json'), 'utf-8')).toBe('{"signed":true}')
+		expect(fs.readdirSync(path.dirname(bundle))).toEqual(['b1'])
+	})
+
+	it('refuses a symlink inside the vault that leads into the inbox', async () => {
+		const { root, vault, bundle } = await vaultWithInbox('inbox-link')
+		fs.symlinkSync(path.join(root, '.osint-inbox'), path.join(root, 'innocent'), 'dir')
+		await expect(vault.write('innocent/pending/b1/manifest.json', 'forged')).rejects.toThrow(/inbox/)
+		await expect(vault.write('innocent/pending/new/manifest.json', 'forged')).rejects.toThrow(/inbox/)
+		await expect(vault.read('innocent/pending/b1/manifest.json')).rejects.toThrow(/inbox/)
+		expect(fs.readFileSync(path.join(bundle, 'manifest.json'), 'utf-8')).toBe('{"signed":true}')
+	})
+
+	it('refuses a nested workspace inbox reached from a vault opened on its parent', async () => {
+		const parent = freshDir('inbox-nested')
+		const bundle = path.join(parent, 'acme', '.osint-inbox', 'pending', 'b1')
+		fs.mkdirSync(bundle, { recursive: true })
+		fs.writeFileSync(path.join(bundle, 'state.json'), '{"v":1,"steps":[]}')
+		const { vault, snapshot } = await OpenVault.open(parent, { watch: false })
+		await expect(vault.write('acme/.osint-inbox/pending/b1/state.json', 'forged')).rejects.toThrow(/inbox/)
+		await expect(vault.remove('acme/.OSINT-INBOX/pending/b1')).rejects.toThrow(/inbox/)
+		await expect(vault.mkdir('acme/.osint-inbox/pending/b2')).rejects.toThrow(/inbox/)
+		expect(snapshot.some(s => s.path.toLowerCase().includes('osint-inbox'))).toBe(false)
+		expect(fs.readFileSync(path.join(bundle, 'state.json'), 'utf-8')).toBe('{"v":1,"steps":[]}')
+	})
+
+	it('leaves the inbox out of the opening snapshot', async () => {
+		const { snapshot } = await vaultWithInbox('inbox-snapshot')
+		expect(snapshot.some(s => s.path.toLowerCase().includes('osint-inbox'))).toBe(false)
+	})
+})

@@ -345,6 +345,36 @@ const bridge: WindowApi = {
 			read: (handleId, offset, length) =>
 				ipcRenderer.invoke('osint:basemap.read', handleId, offset, length),
 			close: handleId => ipcRenderer.invoke('osint:basemap.close', handleId)
+		},
+
+		// None of these name a workspace: main uses the calling window's own.
+		inbox: {
+			claim: () => ipcRenderer.invoke('osint:inbox.claim'),
+			release: () => ipcRenderer.invoke('osint:inbox.release'),
+			list: () => ipcRenderer.invoke('osint:inbox.list'),
+			step: (bundleId, step, data) => ipcRenderer.invoke('osint:inbox.step', bundleId, step, data),
+			finish: (bundleId, outcome) => ipcRenderer.invoke('osint:inbox.finish', bundleId, outcome),
+			onChanged(callback) {
+				// Its own listener, so the returned function removes exactly this one.
+				const listener = () => {
+					try {
+						callback()
+					}
+					catch (err) {
+						console.error('osint:inbox.changed handler failed', err)
+					}
+				}
+				ipcRenderer.on('osint:inbox.changed', listener)
+				return () => { ipcRenderer.removeListener('osint:inbox.changed', listener) }
+			}
+		},
+
+		extension: {
+			status: () => ipcRenderer.invoke('osint:extension.status'),
+			setEnabled: enabled => ipcRenderer.invoke('osint:extension.setEnabled', enabled),
+			pairBegin: () => ipcRenderer.invoke('osint:extension.pairBegin'),
+			pairCancel: () => ipcRenderer.invoke('osint:extension.pairCancel'),
+			revoke: clientId => ipcRenderer.invoke('osint:extension.revoke', clientId)
 		}
 	}
 }
