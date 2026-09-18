@@ -15,7 +15,10 @@ npm run build       # bundles into dist/
 npm run watch       # rebuilds on change; reload the extension in chrome://extensions afterwards
 npm run typecheck
 npm test
+npm run e2e         # builds, then drives the extension in Chromium against the app's real server
 ```
+
+`npm run e2e` runs `e2e/smoke.spec.ts` headless: it pairs from the side panel, sends a note and an entity, and checks they reach a temporary investigation's inbox with valid MACs. It uses the Chromium Playwright was built for, or else the newest one in `~/.cache/ms-playwright`; set `OC_E2E_CHROMIUM` to choose another binary and `OC_E2E_HEADED=1` to watch.
 
 `dist/` is generated and not committed. To redraw the icons after the app's icon changes, run `python3 scripts/make-icons.py` (needs Pillow).
 
