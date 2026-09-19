@@ -10,7 +10,8 @@
 		"watch": "node build.mjs --watch",
 		"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p test/tsconfig.json",
 		"test": "vitest run",
-		"e2e": "node build.mjs && playwright test -c playwright.config.ts"
+		"e2e": "node build.mjs && playwright test -c playwright.config.ts",
+		"zip": "node scripts/zip.mjs"
 	},
 	"dependencies": {
 		"approx-string-match": "2.0.0"

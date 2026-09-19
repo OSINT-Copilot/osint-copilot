@@ -38,7 +38,8 @@ import { createHash } from 'node:crypto';
 import { startExtensionHarness, type ExtensionHarness } from '../../tangent-electron/src/main/osint/inbox/extension-harness';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const dist = path.resolve(here, '../dist');
+// OC_E2E_DIST tests another build, e.g. the unzipped store package (which has no dev key).
+const dist = process.env.OC_E2E_DIST ? path.resolve(process.env.OC_E2E_DIST) : path.resolve(here, '../dist');
 
 /**
  * The Chromium to launch: OC_E2E_CHROMIUM, else the one this Playwright was built for,

@@ -22,6 +22,16 @@ npm run e2e         # builds, then drives the extension in Chromium against the 
 
 `dist/` is generated and not committed. To redraw the icons after the app's icon changes, run `python3 scripts/make-icons.py` (needs Pillow).
 
+## Store package
+
+```sh
+npm run zip         # builds, then writes release/osint-copilot-extension-<version>.zip
+```
+
+The zip is what the Chrome Web Store and Edge Add-ons take. It is `dist/` with one difference: the manifest has no `key`, because a store assigns its own id and refuses an upload that carries one. The app pins whichever id pairs with it, so a store copy pairs like the development one. The zip is reproducible (sorted entries, fixed timestamps), and carries `LICENSE` and `NOTICE`. To check a package in a browser, unzip it and run the end-to-end suite against it: `OC_E2E_DIST=<unzipped folder> npx playwright test -c playwright.config.ts`.
+
+`STORE.md` has the listing text, the permission justifications and the privacy answers the store asks for, with a checklist; `PRIVACY.md` is the privacy policy, to be published at a public URL before submitting.
+
 ## Load it in Chrome
 
 1. Open `chrome://extensions` and turn on **Developer mode**.
@@ -74,7 +84,7 @@ The keyboard shortcut is a manifest `commands` entry, which needs no permission.
 - **What a page can do.** Page text (a selection, a title) is treated as data. It fills a form field, and nothing is sent until you press Send. The panel never renders it as HTML.
 - **Captures are of the page you meant.** The tab is read before and after the archive is made. If it navigated meanwhile, the capture is dropped. The screenshot shows whatever is on screen, so it is taken only while the same tab, at the same address, is still the one in front of its window, and checked again after; otherwise it is left out and the queue item says why. The files are hashed (SHA-256) in the extension and declared before they are sent, and each upload is signed over its bytes, so the app stores exactly what was captured.
 
-## What this version does and does not do (Phases 1 to 3)
+## What this version does and does not do
 
 Does:
 
@@ -88,9 +98,10 @@ Does:
 Does not yet:
 
 - Highlight inside frames (an embedded post, a comment widget): the highlight script runs in the page's top frame only. Text selected in a frame is also attributed, for entities, to the page around it.
-- A Web Store build or a privacy policy: Phase 4.
+- Publish itself. The store package, listing text and privacy policy are ready (see Store package), but submitting it, and hosting the privacy policy, are done by hand.
 - Retry on a schedule while the panel is closed. That would need the `alarms` permission, so for now queued items go when the extension next wakes: at browser start, when you open the panel, or when you send something.
-- Run in Firefox (no `chrome.pageCapture`). Edge and Brave are untested.
+- Run in Firefox (no `chrome.pageCapture`).
+- Get tested in Microsoft Edge or Opera. The end-to-end suite passes in Chromium 153 (Chrome for Testing), Brave 1.95 and Helium 0.17. To run it in another browser, set `OC_E2E_CHROMIUM` to its binary; a browser installed as a snap cannot see `/tmp`, so point `TMPDIR` at a folder in your home as well.
 
 ## Layout
 
