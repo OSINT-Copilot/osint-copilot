@@ -2187,7 +2187,9 @@ ${(entity.properties.notes as string) || ''}
     }
 
     /**
-     * Update an existing connection's properties.
+     * Replace an existing connection's properties.
+     * `properties` is the connection's complete property set, not a patch: a key missing
+     * from it is removed, so a field cleared or deleted in the editor stays gone.
      * Updates both the in-memory connection and the connection note file.
      */
     async updateConnection(connectionId: string, properties: Record<string, unknown>): Promise<Connection | null> {
@@ -2201,8 +2203,8 @@ ${(entity.properties.notes as string) || ''}
 
         if (!this.assertPathWritable(connection.filePath, 'update connection')) return null;
 
-        // Update properties
-        connection.properties = { ...connection.properties, ...properties };
+        // Replace, not merge: a merge brought back every key the caller had removed.
+        connection.properties = { ...properties };
 
         // Update the connection note file
         if (connection.filePath) {

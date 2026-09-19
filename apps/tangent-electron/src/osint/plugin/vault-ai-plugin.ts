@@ -225,6 +225,7 @@ export default class VaultAIPlugin extends Plugin {
     this.entityManager.setWaybackArchiveService(this.waybackArchiveService);
     this.schemaCatalogService = new SchemaCatalogService(this.app);
     this.entityManager.setSchemaCatalogService(this.schemaCatalogService);
+    this.customTypesService.setSchemaCatalogService(this.schemaCatalogService);
     try {
       await this.schemaCatalogService.rebuild();
     } catch (e) {
@@ -428,6 +429,21 @@ export default class VaultAIPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("create", (file) => {
         if (file instanceof TFile && isUnderEntitySchemas(file.path)) {
+          scheduleSchemaCatalogRebuild();
+        }
+      }),
+    );
+    // A removed or moved schema file must take its types with it, not keep them until restart.
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        if (isUnderEntitySchemas(file.path)) {
+          scheduleSchemaCatalogRebuild();
+        }
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        if (isUnderEntitySchemas(file.path) || isUnderEntitySchemas(oldPath)) {
           scheduleSchemaCatalogRebuild();
         }
       }),

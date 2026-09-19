@@ -2,6 +2,7 @@ import { App, Notice, Vault, normalizePath } from 'obsidian';
 import { ftmSchemaService, type FTMSchemaDefinition } from './ftm-schema-service';
 import { CUSTOM_TYPES_CONFIG_DIR, CUSTOM_TYPES_FILE_NAME } from '../constants/vault-layout';
 import { ensureFolderChain } from '../utils/vault-bootstrap-fs';
+import type { SchemaCatalogService } from './schema-catalog-service';
 
 /** JSON-backed FTM extensions. Non-FTM families use YAML under OSINTCopilot/schemas/ (see schema catalog). */
 
@@ -13,10 +14,30 @@ export class CustomTypesService {
     private app: App;
     private vault: Vault;
     private customSchemas: Map<string, Partial<FTMSchemaDefinition>> = new Map();
+    private schemaCatalog: SchemaCatalogService | null = null;
 
     constructor(app: App) {
         this.app = app;
         this.vault = app.vault;
+    }
+
+    /**
+     * Wired from plugin after SchemaCatalogService is constructed. The type pickers read
+     * the catalog, not ftmSchemaService, and the catalog is a snapshot; its vault watcher
+     * does not cover custom-types.json.
+     */
+    setSchemaCatalogService(catalog: SchemaCatalogService | null): void {
+        this.schemaCatalog = catalog;
+    }
+
+    /** Rebuilds the catalog so a picker reopened after a save lists the change. */
+    private async refreshCatalog(): Promise<void> {
+        try {
+            await this.schemaCatalog?.rebuild();
+        } catch (e) {
+            // The type is saved either way; a stale picker is not worth failing the save for.
+            console.warn('[CustomTypesService] Schema catalog rebuild failed:', e);
+        }
     }
 
     async initialize(): Promise<void> {
@@ -78,6 +99,7 @@ export class CustomTypesService {
         this.customSchemas.set(schema.name, schema);
         ftmSchemaService.registerSchema(schema);
         await this.saveCustomTypes();
+        await this.refreshCatalog();
         new Notice(`Custom entity type '${schema.label}' added.`);
     }
 
@@ -87,6 +109,7 @@ export class CustomTypesService {
             // immediately instead of lingering until the next restart.
             ftmSchemaService.unregisterSchema(name);
             await this.saveCustomTypes();
+            await this.refreshCatalog();
             new Notice(`Custom entity type '${name}' removed.`);
         }
     }

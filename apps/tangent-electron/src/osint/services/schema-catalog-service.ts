@@ -37,15 +37,32 @@ export class SchemaCatalogService {
 	private app: App;
 	private entities = new Map<string, CatalogEntityType>();
 	private relationships = new Map<string, CatalogRelationshipType>();
+	private rebuildQueue: Promise<void> = Promise.resolve();
 
 	constructor(app: App) {
 		this.app = app;
 	}
 
-	/** Full rebuild: FTM from service + vault YAML. */
-	async rebuild(): Promise<void> {
-		this.entities.clear();
-		this.relationships.clear();
+	/**
+	 * Full rebuild: FTM from service + vault YAML.
+	 *
+	 * Rebuilds run while a type picker is open (a custom type saved from it), so the new
+	 * catalog is built aside and swapped in whole: a picker reading mid-rebuild sees the
+	 * old catalog, not the FTM types alone. They also run one at a time, so an older
+	 * rebuild that finishes late cannot swap in a snapshot taken before a newer change.
+	 */
+	rebuild(): Promise<void> {
+		const run = this.rebuildQueue.then(async () => {
+			const next = new SchemaCatalogService(this.app);
+			await next.load();
+			this.entities = next.entities;
+			this.relationships = next.relationships;
+		});
+		this.rebuildQueue = run.catch(() => undefined);
+		return run;
+	}
+
+	private async load(): Promise<void> {
 		this.registerFtmEntities();
 		this.registerFtmRelationships();
 		await this.loadVaultStix2();

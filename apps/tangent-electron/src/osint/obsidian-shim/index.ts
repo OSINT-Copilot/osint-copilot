@@ -25,5 +25,5 @@ export { ItemView } from './workspace/view';
 // --- ui --------------------------------------------------------------------
 export {
     ButtonComponent, DropdownComponent, MarkdownRenderer, Menu, Modal, Notice,
-    PluginSettingTab, Setting, TextComponent, setIcon,
+    PluginSettingTab, Setting, TextComponent, ToggleComponent, setIcon,
 } from './ui';

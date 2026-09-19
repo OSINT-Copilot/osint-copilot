@@ -4,7 +4,7 @@
  */
 
 import { App, Modal, Notice } from 'obsidian';
-import { type Entity, type Connection, EntityType, ENTITY_CONFIGS, COMMON_PROPERTIES, getFTMEntityConfig, getAvailableFTMEntityTypes, getAvailableFTMIntervalTypes, validateEntityName, getEntityIcon } from '../entities/types';
+import { type Entity, type Connection, type FTMEntityConfig, EntityType, ENTITY_CONFIGS, COMMON_PROPERTIES, getFTMEntityConfig, getAvailableFTMEntityTypes, getAvailableFTMIntervalTypes, validateEntityName, getEntityIcon } from '../entities/types';
 import { createEntityPictureField } from './entity-picture-field';
 import { ENTITY_IMAGE_KEY } from '../services/entity-image-service';
 
@@ -26,7 +26,7 @@ function renderFilePathBlock(container: HTMLElement, heading: string, path: stri
 }
 import { EntityManager } from '../services/entity-manager';
 import { GeocodingService, GeocodingError, GeocodingErrorType, geocodingService } from '../services/geocoding-service';
-import { type FTMPropertyDefinition } from '../services/ftm-schema-service';
+import { ftmSchemaService, type FTMPropertyDefinition } from '../services/ftm-schema-service';
 import { CustomTypeCreationModal } from './custom-type-modal';
 import type { CatalogEntityType, CatalogRelationshipType, EnabledSchemaFamilies, SchemaFamily } from '../services/schema-catalog-types';
 
@@ -3129,10 +3129,48 @@ color: var(--text - muted);
 }
 
 /**
+ * Entity references every Thing carries (an address note, a proof document). They come
+ * first in any Thing-derived interval's property order -- Event, Project, Message -- and
+ * are never what the connection links.
+ */
+const NON_ENDPOINT_ENTITY_PROPERTIES = new Set(['addressEntity', 'proof']);
+
+/**
+ * The two properties an FTM interval's edge runs between, in order: from, then to.
+ *
+ * A connection is one edge, so it keeps only these two; the schema's other entity
+ * references (Payment's accounts, EconomicActivity's banks) have nowhere to go. The
+ * order is featured, then required, then the schema's own properties, then inherited
+ * ones: allProperties lists parents first, which made Payment payer -> payerAccount and
+ * Event Thing's addressEntity -> proof.
+ *
+ * Fewer than two comes back for every custom type (a custom property cannot reference an
+ * entity) and for single-reference types such as Sanction; the modal then shows plain
+ * From/To selects.
+ */
+function intervalEndpointProps(schemaName: string, config: FTMEntityConfig): string[] {
+    const own = Object.keys(ftmSchemaService.getSchema(schemaName)?.properties ?? {});
+    const ordered = [
+        ...config.featuredProperties,
+        ...config.requiredProperties,
+        ...own,
+        ...Object.keys(config.propertyDefinitions),
+    ];
+    const endpoints: string[] = [];
+    for (const name of ordered) {
+        if (endpoints.includes(name) || NON_ENDPOINT_ENTITY_PROPERTIES.has(name)) continue;
+        if (config.propertyDefinitions[name]?.type !== 'entity') continue;
+        endpoints.push(name);
+        if (endpoints.length === 2) break;
+    }
+    return endpoints;
+}
+
+/**
  * FTM Interval Creation Modal - allows users to create FTM interval/relationship entities.
  * This modal provides a form for creating connections using FTM interval schemas.
  */
-class FTMIntervalCreationModal extends Modal {
+export class FTMIntervalCreationModal extends Modal {
     private entityManager: EntityManager;
     private intervalType: string; // FTM schema name (e.g., 'Associate', 'Ownership')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3205,19 +3243,24 @@ class FTMIntervalCreationModal extends Modal {
         // Create form container
         const formContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-form' });
 
-        // Add entity selection dropdowns for entity-type properties
-        // These are properties that reference other entities (type: 'entity')
-        const entityProperties = Object.entries(config.propertyDefinitions)
-            .filter(([_, def]) => def.type === 'entity')
-            .map(([name, _]) => name);
-
-        for (const propName of entityProperties) {
-            this.createEntityDropdown(formContainer, propName, config.propertyDefinitions[propName]);
+        // Entity selection dropdowns for the connection's two endpoints, prefilled by
+        // position with the entities the connection was dragged between
+        const endpoints = intervalEndpointProps(this.intervalType, config);
+        if (endpoints.length < 2) {
+            this.renderEndpointSelects(formContainer);
+        } else {
+            this.createEntityDropdown(formContainer, endpoints[0], config.propertyDefinitions[endpoints[0]], this.sourceEntityId);
+            this.createEntityDropdown(formContainer, endpoints[1], config.propertyDefinitions[endpoints[1]], this.targetEntityId);
         }
 
-        // Add fields for other required and featured properties
-        const nonEntityProps = [...config.requiredProperties, ...config.featuredProperties]
-            .filter(prop => !entityProperties.includes(prop));
+        // Properties that reference other entities (type: 'entity') get no field: a
+        // connection stores only its endpoints
+        const isEntityProperty = (propName: string) => config.propertyDefinitions[propName]?.type === 'entity';
+
+        // Add fields for other required and featured properties (once each: a property
+        // can be both)
+        const nonEntityProps = [...new Set([...config.requiredProperties, ...config.featuredProperties])]
+            .filter(prop => !isEntityProperty(prop));
 
         for (const propName of nonEntityProps) {
             const propDef = config.propertyDefinitions[propName];
@@ -3233,7 +3276,7 @@ class FTMIntervalCreationModal extends Modal {
 
             for (const propName of config.optionalProperties) {
                 const propDef = config.propertyDefinitions[propName];
-                if (propDef && !propDef.hidden && !entityProperties.includes(propName)) {
+                if (propDef && !propDef.hidden && !isEntityProperty(propName)) {
                     this.createPropertyField(optionalContainer, propName, propDef, false);
                 }
             }
@@ -3274,7 +3317,38 @@ class FTMIntervalCreationModal extends Modal {
         }
 
         const formContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-form' });
+        this.renderEndpointSelects(formContainer);
 
+        const ordered = [...rel.required, ...rel.featured, ...Object.keys(rel.properties)];
+        const seen = new Set<string>();
+        for (const propName of ordered) {
+            if (seen.has(propName)) continue;
+            seen.add(propName);
+            if (!rel.properties[propName]) continue;
+            this.createCatalogRelPropertyField(
+                formContainer,
+                propName,
+                rel,
+                rel.required.includes(propName),
+            );
+        }
+
+        const buttonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-modal-buttons' });
+        const createBtn = buttonContainer.createEl('button', {
+            text: `Create ${rel.label}`,
+            cls: 'mod-cta',
+        });
+        createBtn.onclick = () => void this.handleCreate();
+        const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+        cancelBtn.onclick = () => this.close();
+    }
+
+    /**
+     * Plain From/To selects over every entity: the form for STIX, MITRE and user
+     * relationship types, and for an FTM type whose schema does not name two endpoints.
+     * They write catalogSourceId/catalogTargetId, seeded with the preselection.
+     */
+    private renderEndpointSelects(formContainer: HTMLElement): void {
         const fromWrap = formContainer.createDiv({ cls: 'graph_copilot-entity-field' });
         fromWrap.createEl('label', { text: 'From entity *' });
         const fromSel = fromWrap.createEl('select', { cls: 'graph_copilot-entity-input' });
@@ -3314,29 +3388,6 @@ class FTMIntervalCreationModal extends Modal {
         toSel.onchange = () => {
             this.catalogTargetId = toSel.value || null;
         };
-
-        const ordered = [...rel.required, ...rel.featured, ...Object.keys(rel.properties)];
-        const seen = new Set<string>();
-        for (const propName of ordered) {
-            if (seen.has(propName)) continue;
-            seen.add(propName);
-            if (!rel.properties[propName]) continue;
-            this.createCatalogRelPropertyField(
-                formContainer,
-                propName,
-                rel,
-                rel.required.includes(propName),
-            );
-        }
-
-        const buttonContainer = contentEl.createDiv({ cls: 'graph_copilot-entity-modal-buttons' });
-        const createBtn = buttonContainer.createEl('button', {
-            text: `Create ${rel.label}`,
-            cls: 'mod-cta',
-        });
-        createBtn.onclick = () => void this.handleCreate();
-        const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
-        cancelBtn.onclick = () => this.close();
     }
 
     private createCatalogRelPropertyField(
@@ -3364,19 +3415,32 @@ class FTMIntervalCreationModal extends Modal {
             input = fieldContainer.createEl('input', { type: 'text' }) as HTMLInputElement;
         }
         input.addClass('graph_copilot-entity-input');
-        input.addEventListener('input', () => {
-            if (input.type === 'number') {
-                const value = parseFloat((input as HTMLInputElement).value);
-                if (!isNaN(value)) {
-                    this.properties[propertyName] = value;
-                }
-            } else {
-                this.properties[propertyName] = input.value;
-            }
-        });
+        input.addEventListener('input', () => this.storeFieldValue(propertyName, input));
     }
 
-    private createEntityDropdown(container: HTMLElement, propertyName: string, propDef: FTMPropertyDefinition): void {
+    /**
+     * Stores a field's value, or drops the key when the field is cleared. Keeping the last
+     * parsed number after the field was emptied saved a value the form no longer showed.
+     */
+    private storeFieldValue(propertyName: string, input: HTMLInputElement | HTMLTextAreaElement): void {
+        if (input.type === 'number') {
+            const value = parseFloat(input.value);
+            if (!isNaN(value)) {
+                this.properties[propertyName] = value;
+            } else {
+                delete this.properties[propertyName];
+            }
+        } else {
+            const value = input.value.trim();
+            if (value) {
+                this.properties[propertyName] = value;
+            } else {
+                delete this.properties[propertyName];
+            }
+        }
+    }
+
+    private createEntityDropdown(container: HTMLElement, propertyName: string, propDef: FTMPropertyDefinition, preselectedId: string | null): void {
         const fieldContainer = container.createDiv({ cls: 'graph_copilot-entity-field' });
         fieldContainer.createEl('label', { text: propDef.label + ' *' });
 
@@ -3387,36 +3451,48 @@ class FTMIntervalCreationModal extends Modal {
             value: ''
         });
         placeholderOption.disabled = true;
-
-        // Check if this property has a preselected value
-        const preselectedId = (propertyName === 'person' || propertyName === 'owner' || propertyName === 'employee' || propertyName === 'director')
-            ? this.sourceEntityId
-            : (propertyName === 'associate' || propertyName === 'asset' || propertyName === 'employer' || propertyName === 'organization')
-                ? this.targetEntityId
-                : null;
-
         placeholderOption.selected = !preselectedId;
 
-        // Filter entities by range if specified
+        // The range orders the list rather than filtering it. Most FTM ranges are abstract
+        // parents (LegalEntity, Organization, Asset, Thing) that no entity's own type
+        // equals, and custom, STIX and MITRE entities match no FTM range at all, so an exact
+        // filter left out the very entities the connection was dragged between.
         const range = propDef.range;
-        const filteredEntities = range
-            ? this.entities.filter(e => e.type === range || e.ftmSchema === range)
-            : this.entities;
+        const inRange = (e: Entity) => !range || range === 'Thing'
+            || ftmSchemaService.extendsParent(e.ftmSchema || String(e.type), range);
+        const matching = this.entities.filter(inRange);
+        const others = this.entities.filter(e => !inRange(e));
 
-        for (const entity of filteredEntities) {
-            const option = select.createEl('option', {
+        const addOption = (parent: HTMLElement, entity: Entity) => {
+            const option = parent.createEl('option', {
                 text: `${entity.label} (${entity.type})`,
                 value: entity.id
             });
             if (preselectedId && entity.id === preselectedId) {
                 option.selected = true;
-                this.properties[propertyName] = entity.id;
+            }
+        };
+        for (const entity of matching) {
+            addOption(select, entity);
+        }
+        if (others.length > 0) {
+            const otherGroup = select.createEl('optgroup', { attr: { label: 'Other entities' } });
+            for (const entity of others) {
+                addOption(otherGroup, entity);
             }
         }
 
-        select.onchange = () => {
-            this.properties[propertyName] = select.value || null;
+        // Store what the select shows. A preselected id that was not in the list left the
+        // select showing another entity while nothing was stored.
+        const store = () => {
+            if (select.value) {
+                this.properties[propertyName] = select.value;
+            } else {
+                delete this.properties[propertyName];
+            }
         };
+        store();
+        select.onchange = store;
     }
 
     private createPropertyField(container: HTMLElement, propertyName: string, propDef: FTMPropertyDefinition, isRequired: boolean): void {
@@ -3456,16 +3532,7 @@ class FTMIntervalCreationModal extends Modal {
         input.addClass('graph_copilot-entity-input');
 
         // Store value on change
-        input.addEventListener('input', () => {
-            if (input.type === 'number') {
-                const value = parseFloat((input as HTMLInputElement).value);
-                if (!isNaN(value)) {
-                    this.properties[propertyName] = value;
-                }
-            } else {
-                this.properties[propertyName] = input.value;
-            }
-        });
+        input.addEventListener('input', () => this.storeFieldValue(propertyName, input));
     }
 
     private async handleCreate(): Promise<void> {
@@ -3516,47 +3583,51 @@ class FTMIntervalCreationModal extends Modal {
         try {
             // For now, we'll create this as a connection with the interval type as the relationship
             // In the future, this could be enhanced to create actual FTM interval entities
-            const entityProps = Object.entries(config.propertyDefinitions)
-                .filter(([_, def]) => def.type === 'entity')
-                .map(([name, _]) => name);
+            // The endpoints are the same two properties onOpen drew dropdowns for; a type
+            // without two got the plain From/To selects instead.
+            const endpoints = intervalEndpointProps(this.intervalType, config);
+            const sourceId = endpoints.length >= 2 ? this.properties[endpoints[0]] : this.catalogSourceId;
+            const targetId = endpoints.length >= 2 ? this.properties[endpoints[1]] : this.catalogTargetId;
 
-            if (entityProps.length >= 2) {
-                const sourceId = this.properties[entityProps[0]];
-                const targetId = this.properties[entityProps[1]];
+            if (!sourceId || !targetId) {
+                new Notice('Please select both entities for the connection');
+                return;
+            }
 
-                if (!sourceId || !targetId) {
-                    new Notice('Please select both entities for the connection');
-                    return;
+            if (sourceId === targetId) {
+                new Notice('Source and target entities must be different');
+                return;
+            }
+
+            // Everything typed into the form goes on the connection, except the entity
+            // references: the endpoints are its from/to, and one edge cannot hold others
+            const props: Record<string, unknown> = {};
+            for (const [key, value] of Object.entries(this.properties)) {
+                if (config.propertyDefinitions[key]?.type === 'entity') continue;
+                if (value === undefined || value === null || value === '') continue;
+                props[key] = value;
+            }
+
+            // Create connection with interval type as relationship
+            const connection = await this.entityManager.createConnection(
+                sourceId,
+                targetId,
+                this.intervalType,
+                props,
+                { schemaFamily: 'ftm' },
+            );
+
+            if (connection) {
+                const sourceEntity = this.entityManager.getEntity(sourceId);
+                const targetEntity = this.entityManager.getEntity(targetId);
+                new Notice(`Created: ${sourceEntity?.label} → ${this.intervalType} → ${targetEntity?.label} `);
+
+                if (this.onConnectionCreated) {
+                    this.onConnectionCreated(connection.id);
                 }
-
-                if (sourceId === targetId) {
-                    new Notice('Source and target entities must be different');
-                    return;
-                }
-
-                // Create connection with interval type as relationship
-                const connection = await this.entityManager.createConnection(
-                    sourceId,
-                    targetId,
-                    this.intervalType,
-                    undefined,
-                    { schemaFamily: 'ftm' },
-                );
-
-                if (connection) {
-                    const sourceEntity = this.entityManager.getEntity(sourceId);
-                    const targetEntity = this.entityManager.getEntity(targetId);
-                    new Notice(`Created: ${sourceEntity?.label} → ${this.intervalType} → ${targetEntity?.label} `);
-
-                    if (this.onConnectionCreated) {
-                        this.onConnectionCreated(connection.id);
-                    }
-                    this.close();
-                } else {
-                    new Notice('Failed to create connection');
-                }
+                this.close();
             } else {
-                new Notice('This interval type requires at least two entity references');
+                new Notice('Failed to create connection');
             }
         } catch (error) {
             new Notice(`Failed to create ${config.label}: ${error} `);

@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Setting, TextComponent, DropdownComponent, ButtonComponent } from 'obsidian';
+import { App, Modal, Notice, Setting, TextComponent, DropdownComponent, ButtonComponent, type ToggleComponent } from 'obsidian';
 import { type FTMSchemaDefinition, type FTMPropertyDefinition } from '../services/ftm-schema-service';
 import { CustomTypesService } from '../services/custom-types-service';
 
@@ -95,6 +95,13 @@ export class CustomTypeCreationModal extends Modal {
         const section = container.createDiv({ cls: 'graph_copilot-section' });
         section.createEl('h3', { text: '1. General information' });
 
+        // The label and plural follow the type name until the user types in them. They
+        // used to be filled only while empty, which fixed them at the name's first letter.
+        let labelInput: TextComponent | null = null;
+        let pluralInput: TextComponent | null = null;
+        let labelEdited = false;
+        let pluralEdited = false;
+
         new Setting(section)
             .setName('Type name')
             .setDesc('Internal name (CamelCase, e.g. "MyCustomType")')
@@ -107,30 +114,50 @@ export class CustomTypeCreationModal extends Modal {
                     const sanitized = value.replace(/[^a-zA-Z0-9]/g, '');
                     this.schema.name = sanitized;
 
-                    // Auto-fill label and plural if empty
-                    if (!this.schema.label) this.schema.label = value;
-                    if (!this.schema.plural) this.schema.plural = value + 's';
+                    if (!labelEdited) {
+                        this.schema.label = value;
+                        labelInput?.setValue(value);
+                    }
+                    if (!pluralEdited) {
+                        this.schema.plural = value ? value + 's' : '';
+                        pluralInput?.setValue(this.schema.plural);
+                    }
                 }));
 
         new Setting(section)
             .setName('Display label')
             .setDesc('Human readable label')
-            .addText(text => text
-                .setPlaceholder('My custom type')
-                .onChange(value => this.schema.label = value));
+            .addText(text => {
+                labelInput = text;
+                text
+                    .setPlaceholder('My custom type')
+                    .setValue(this.schema.label ?? '')
+                    .onChange(value => {
+                        labelEdited = true;
+                        this.schema.label = value;
+                    });
+            });
 
         new Setting(section)
             .setName('Plural label')
             .setDesc('Plural formatted label')
-            .addText(text => text
-                .setPlaceholder('My custom types')
-                .onChange(value => this.schema.plural = value));
+            .addText(text => {
+                pluralInput = text;
+                text
+                    .setPlaceholder('My custom types')
+                    .setValue(this.schema.plural ?? '')
+                    .onChange(value => {
+                        pluralEdited = true;
+                        this.schema.plural = value;
+                    });
+            });
 
         new Setting(section)
             .setName('Description')
             .setDesc('Short description of what this entity represents')
             .addTextArea(text => text
                 .setPlaceholder('Description...')
+                .setValue(this.schema.description ?? '')
                 .onChange(value => this.schema.description = value));
 
         new Setting(section)
@@ -145,7 +172,10 @@ export class CustomTypeCreationModal extends Modal {
         const section = container.createDiv({ cls: 'graph_copilot-section' });
         section.addClass('graph_copilot-section--properties');
         section.createEl('h3', { text: '2. Properties' });
-        section.createEl('p', { text: 'Define custom properties for this entity type.', cls: 'setting-item-description' });
+        const intro = this.baseType === 'Interval'
+            ? 'A connection of this type always links a From entity to a To entity. The properties here are extra fields on the connection.'
+            : 'Define custom properties for this entity type.';
+        section.createEl('p', { text: intro, cls: 'setting-item-description' });
 
         const propertiesContainer = section.createDiv({ cls: 'graph_copilot-properties-list' });
 
@@ -209,6 +239,10 @@ export class CustomTypeCreationModal extends Modal {
 
         const formGrid = addPropSection.createDiv({ cls: 'graph_copilot-form-grid' });
 
+        // The key follows the label until the user types in the key field. It used to be
+        // filled only while empty, so 'Birth date' got the key 'b'.
+        let keyEdited = false;
+
         // Label Input
         const nameContainer = formGrid.createDiv();
         nameContainer.createDiv({ text: 'Label *', cls: 'setting-item-name' });
@@ -218,7 +252,7 @@ export class CustomTypeCreationModal extends Modal {
         nameInput.onChange(val => {
             newProp.label = val;
             // Auto-generate key
-            if (!keyInput.getValue()) {
+            if (!keyEdited) {
                 const key = val.toLowerCase().replace(/[^a-z0-9]/g, '');
                 newProp.key = key;
                 keyInput.setValue(key);
@@ -231,7 +265,10 @@ export class CustomTypeCreationModal extends Modal {
         const keyInput = new TextComponent(keyContainer);
         keyInput.setPlaceholder('E.g. birthDate');
         keyInput.inputEl.addClass('graph_copilot-input-full');
-        keyInput.onChange(val => newProp.key = val);
+        keyInput.onChange(val => {
+            keyEdited = true;
+            newProp.key = val;
+        });
 
         // Type Select
         const typeContainer = formGrid.createDiv();
@@ -252,8 +289,16 @@ export class CustomTypeCreationModal extends Modal {
         // Flags
         const flagsContainer = addPropSection.createDiv({ cls: 'graph_copilot-flags-container' });
 
-        new Setting(flagsContainer).setName('Required').addToggle(t => t.onChange(v => newProp.required = v));
-        new Setting(flagsContainer).setName('Key property (featured)').addToggle(t => t.onChange(v => newProp.featured = v));
+        let requiredToggle: ToggleComponent | null = null;
+        let featuredToggle: ToggleComponent | null = null;
+        new Setting(flagsContainer).setName('Required').addToggle(t => {
+            requiredToggle = t;
+            t.onChange(v => newProp.required = v);
+        });
+        new Setting(flagsContainer).setName('Key property (featured)').addToggle(t => {
+            featuredToggle = t;
+            t.onChange(v => newProp.featured = v);
+        });
 
         // Add Button
         const btnContainer = addPropSection.createDiv({ cls: 'graph_copilot-btn-container' });
@@ -278,10 +323,13 @@ export class CustomTypeCreationModal extends Modal {
                 newProp.required = false;
                 newProp.featured = false;
 
+                keyEdited = false;
+
                 nameInput.setValue('');
                 keyInput.setValue('');
                 descInput.setValue('');
-                // Toggles hard to reset without reference, but ok
+                requiredToggle?.setValue(false);
+                featuredToggle?.setValue(false);
             });
     }
 
@@ -325,6 +373,16 @@ export class CustomTypeCreationModal extends Modal {
         if (!this.schema.label) {
             new Notice('Display label is required');
             return;
+        }
+
+        // Two rows with one key would save as one property, the first silently lost.
+        const keys = new Set<string>();
+        for (const row of this.propertyRows) {
+            if (keys.has(row.key)) {
+                new Notice(`Two properties have the key '${row.key}'. Remove or rename one.`);
+                return;
+            }
+            keys.add(row.key);
         }
 
         // Build properties object

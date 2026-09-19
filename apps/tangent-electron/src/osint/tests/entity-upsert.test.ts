@@ -730,6 +730,26 @@ describe('undo is all or nothing', () => {
     });
 });
 
+describe('editing a connection', () => {
+    it('drops a property the editor removed, in memory and in the note', async () => {
+        const app = createTestApp();
+        const manager = new EntityManager(app as never, 'OSINTCopilot', null);
+        await manager.initialize();
+        const a = await manager.createFTMEntity('Person', { name: 'Ann' }, { skipAutoGeocode: true });
+        const acme = await manager.createFTMEntity('Company', { name: 'Acme' }, { skipAutoGeocode: true });
+        const conn = (await manager.createConnection(a.id, acme.id, 'Employment', { role: 'clerk', fee: '10' }))!;
+
+        // The connection editor passes the whole property set, with the cleared field gone.
+        await manager.updateConnection(conn.id, { role: 'clerk' });
+
+        expect(manager.getConnection(conn.id)!.properties).toEqual({ role: 'clerk' });
+        const note = getContent(app, conn.filePath!)!;
+        expect(frontmatterOf(note).role).toBe('clerk');
+        expect(frontmatterOf(note)).not.toHaveProperty('fee');
+        expect(note).not.toContain('**Fee**');
+    });
+});
+
 describe('usernames are keyed by platform', () => {
     it('normalizePlatform folds the spellings of one platform together', () => {
         for (const [raw, want] of [
