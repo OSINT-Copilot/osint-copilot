@@ -35,6 +35,7 @@
     "test:unit": "vitest run --project tangent-electron-unit-core --project tangent-electron-unit-web",
     "test:integration": "vitest --project integration",
     "test:end-to-end": "playwright test --project Tests",
+    "demo": "playwright test --project Demo",
     "svelte-dev": "webpack watch",
     "screenshots": "playwright test --project Screenshots"
   },

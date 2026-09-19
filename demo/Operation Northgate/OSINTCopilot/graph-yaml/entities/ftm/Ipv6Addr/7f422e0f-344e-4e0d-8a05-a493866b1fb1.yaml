@@ -1,0 +1,23 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: 7f422e0f-344e-4e0d-8a05-a493866b1fb1
+type: Ipv6Addr
+label: 2001:db8::47
+properties:
+  value: 2001:db8::47
+  IPv6: 2001:db8::47
+ftmSchema: Ipv6Addr
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Ipv6Addr/2001-db8--47.md
+osint_sources:
+  - id: ext_3c0d2685-111a-4164-815a-e61fc094310c
+    source_url: http://medsupply-direct.example/
+    archive_status: skipped
+    inferred: false
+    rationale: 'Sent from the OSINT Copilot browser extension: "Status line in the footer"'
+    captured_at: 2026-09-19T14:16:04.590Z
+    via: extension
+    client_id: ZKns-7oISN8aot10CJqY8A
+    received_at: 2026-09-19T14:16:04.590Z
+osint_confidence: low
+

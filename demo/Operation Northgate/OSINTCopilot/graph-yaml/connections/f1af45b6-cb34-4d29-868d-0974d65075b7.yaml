@@ -1,0 +1,14 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: f1af45b6-cb34-4d29-868d-0974d65075b7
+fromEntityId: d3e0a000-0000-4000-8000-000000000024
+toEntityId: d3e0a000-0000-4000-8000-000000000015
+fromLabel: Rotterdam customs seize 38 parcels
+toLabel: Northgate warehouse, Waalhaven
+relationship: OCCURRED_AT
+label: Rotterdam customs seize 38 parcels → OCCURRED_AT → Northgate warehouse, Waalhaven
+properties: {}
+ftmSchema: OCCURRED_AT
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/Rotterdam customs seize 38 parcels - OCCURRED_AT - Northgate warehouse, Waalhaven.md
+

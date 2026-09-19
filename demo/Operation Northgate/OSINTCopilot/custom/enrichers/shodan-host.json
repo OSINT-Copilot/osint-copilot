@@ -1,0 +1,30 @@
+{
+  "id": "shodan-host",
+  "name": "Shodan host (draft)",
+  "description": "Open ports and banners for an IP address",
+  "status": "draft",
+  "enabled": false,
+  "allowedDomains": [
+    "api.shodan.io"
+  ],
+  "auth": {
+    "type": "query_env",
+    "envVar": "SHODAN_API_KEY",
+    "queryParam": "key"
+  },
+  "request": {
+    "method": "GET",
+    "urlTemplate": "https://api.shodan.io/shodan/host/{{query}}",
+    "headers": {}
+  },
+  "inputHints": [
+    "ip"
+  ],
+  "skillInstructions": "Draft: needs a key before it is enabled.",
+  "limits": {
+    "timeoutMs": 15000,
+    "retries": 1,
+    "maxResponseChars": 8000
+  },
+  "updatedAt": "2026-09-17T10:15:00.000Z"
+}

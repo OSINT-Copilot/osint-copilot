@@ -1,0 +1,20 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000009
+type: Domain
+label: northgate-freight.example
+properties:
+  name: northgate-freight.example
+  Hostname: northgate-freight.example
+ftmSchema: Domain
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Domain/northgate-freight.example.md
+osint_sources:
+  - id: src_7f843b3f44dd5f88
+    source_url: https://kvk-register.example/company/81234567
+    archive_status: skipped
+    inferred: false
+    rationale: Website listed in the trade register
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

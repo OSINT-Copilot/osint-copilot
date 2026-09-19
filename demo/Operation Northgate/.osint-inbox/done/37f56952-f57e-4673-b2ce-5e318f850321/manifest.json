@@ -1,0 +1,63 @@
+{
+  "v": 1,
+  "bundleId": "37f56952-f57e-4673-b2ce-5e318f850321",
+  "workspaceId": "00WlkSIWAtI9LX-qaRxRi4",
+  "page": {
+    "url": "http://medsupply-direct.example/",
+    "title": "MedSupply Direct · Oncology generics without prescription"
+  },
+  "clientTime": "2026-09-19T14:16:10.753Z",
+  "kind": "highlight",
+  "highlight": {
+    "annotation": {
+      "id": "urn:uuid:e81c01cb-d428-47ca-bc0d-e9115e31d014",
+      "textModel": "v1",
+      "created": "2026-09-19T14:16:10.753Z",
+      "modified": "2026-09-19T14:16:10.753Z",
+      "target": {
+        "source": "http://medsupply-direct.example/",
+        "selector": [
+          {
+            "type": "TextQuoteSelector",
+            "exact": "All orders are dispatched by Northgate Freight BV from Rotterdam.",
+            "prefix": "No prescription, no questions.\n\t",
+            "suffix": "\n\tContact\n\tOrders and support: s"
+          },
+          {
+            "type": "TextPositionSelector",
+            "start": 169,
+            "end": 234
+          },
+          {
+            "type": "RangeSelector",
+            "startSelector": {
+              "type": "XPathSelector",
+              "value": "/html[1]/body[1]/main[1]/p[2]",
+              "refinedBy": {
+                "type": "TextPositionSelector",
+                "start": 0,
+                "end": 0
+              }
+            },
+            "endSelector": {
+              "type": "XPathSelector",
+              "value": "/html[1]/body[1]/main[1]/p[2]",
+              "refinedBy": {
+                "type": "TextPositionSelector",
+                "start": 65,
+                "end": 65
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "server": {
+    "receivedAt": "2026-09-19T14:16:10.760Z",
+    "clientId": "ZKns-7oISN8aot10CJqY8A",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0"
+  },
+  "mac": "RLqOp3wJRVd9hd1JJi0b7YxOk7pHoNkV1aYqSlIyKpM"
+}

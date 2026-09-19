@@ -1,0 +1,29 @@
+{
+  "id": "leakcheck",
+  "name": "Breach lookup (keyed)",
+  "description": "Whether an e-mail address appears in known breaches",
+  "status": "active",
+  "enabled": true,
+  "allowedDomains": [
+    "leakcheck.io"
+  ],
+  "auth": {
+    "type": "bearer_vault",
+    "vaultRelativePath": "leakcheck/api-key.txt"
+  },
+  "request": {
+    "method": "GET",
+    "urlTemplate": "https://leakcheck.io/api/v2/query/{{query}}",
+    "headers": {}
+  },
+  "inputHints": [
+    "email"
+  ],
+  "skillInstructions": "Use for an e-mail address; report breach names and dates only.",
+  "limits": {
+    "timeoutMs": 15000,
+    "retries": 0,
+    "maxResponseChars": 6000
+  },
+  "updatedAt": "2026-09-17T10:10:00.000Z"
+}

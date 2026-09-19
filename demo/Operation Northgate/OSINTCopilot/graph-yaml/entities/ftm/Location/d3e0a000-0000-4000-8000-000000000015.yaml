@@ -1,0 +1,32 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000015
+type: Location
+label: Northgate warehouse, Waalhaven
+properties:
+  name: Northgate warehouse, Waalhaven
+  address: Waalhaven Zuidzijde
+  city: Rotterdam
+  country: Netherlands
+  latitude: 51.8835
+  longitude: 4.4389
+  location_type: warehouse
+  significance: Where the seized pallets were consolidated
+  City: Rotterdam
+  Country: Netherlands
+  Name: Northgate warehouse, Waalhaven
+  Address: Waalhaven Zuidzijde
+  Latitude: 51.8835
+  Longitude: 4.4389
+ftmSchema: Address
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Address/Northgate warehouse, Waalhaven.md
+osint_sources:
+  - id: src_d24c31c0acedf739
+    source_url: https://news.example/2024/06/21/rotterdam-customs-seize-counterfeit-cancer-drugs
+    archive_status: skipped
+    inferred: false
+    rationale: Warehouse named in the seizure article
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

@@ -1,0 +1,115 @@
+{
+  "v": 1,
+  "steps": [
+    {
+      "step": "placement",
+      "at": "2026-09-19T14:16:34.327Z",
+      "data": {
+        "brightwater-holdings-ltd-he-412345-company-registry-5bf9875d.mhtml": "5bf9875d74aa775bcb1d6979c57bb017c0f909be2d55de2112e08d93f203b408",
+        "brightwater-holdings-ltd-he-412345-company-registry-5bf9875d.png": "19f23c8cd9452811f65912e98abd8a0fed4373a8415976fbaa1f8f675e87fbe1",
+        "brightwater-holdings-ltd-he-412345-company-registry-5bf9875d.viewport.png": "2cf735581218dbf5b32f69d4722b564e5488861cb8d51dcda1f922e885a57013",
+        "brightwater-holdings-ltd-he-412345-company-registry-5bf9875d.md": "9530e578c107cce947b9440c3f94c990bf0d146f1b2f1a3af002a2c8a8dbb35e"
+      }
+    },
+    {
+      "step": "place",
+      "at": "2026-09-19T14:16:34.354Z",
+      "data": {
+        "bundleId": "cf13b64f-e183-42e6-8d94-fd218d3e80d8",
+        "files": [
+          {
+            "role": "archive",
+            "path": "OSINTCopilot/Evidence/brightwater-holdings-ltd-he-412345-company-registry-5bf9875d.mhtml",
+            "sha256": "5bf9875d74aa775bcb1d6979c57bb017c0f909be2d55de2112e08d93f203b408",
+            "created": true
+          },
+          {
+            "role": "fullpage",
+            "path": "OSINTCopilot/Evidence/brightwater-holdings-ltd-he-412345-company-registry-5bf9875d.png",
+            "sha256": "19f23c8cd9452811f65912e98abd8a0fed4373a8415976fbaa1f8f675e87fbe1",
+            "created": true
+          },
+          {
+            "role": "viewport",
+            "path": "OSINTCopilot/Evidence/brightwater-holdings-ltd-he-412345-company-registry-5bf9875d.viewport.png",
+            "sha256": "2cf735581218dbf5b32f69d4722b564e5488861cb8d51dcda1f922e885a57013",
+            "created": true
+          },
+          {
+            "role": "markdown",
+            "path": "OSINTCopilot/Evidence/brightwater-holdings-ltd-he-412345-company-registry-5bf9875d.md",
+            "sha256": "9530e578c107cce947b9440c3f94c990bf0d146f1b2f1a3af002a2c8a8dbb35e",
+            "created": true
+          }
+        ]
+      }
+    },
+    {
+      "step": "entity-plan",
+      "at": "2026-09-19T14:16:34.369Z",
+      "data": {
+        "plannedEntityId": "eef3f65f-069f-462c-b368-f89228ad92bb"
+      }
+    },
+    {
+      "step": "entity",
+      "at": "2026-09-19T14:16:34.393Z",
+      "data": {
+        "entityId": "eef3f65f-069f-462c-b368-f89228ad92bb",
+        "created": true,
+        "label": "BRIGHTWATER HOLDINGS LTD · HE 412345 · Company Registry",
+        "addedSourceIds": [
+          "ext_cf13b64f-e183-42e6-8d94-fd218d3e80d8",
+          "ext_cf13b64f-e183-42e6-8d94-fd218d3e80d8_archive"
+        ]
+      }
+    },
+    {
+      "step": "sources-note",
+      "at": "2026-09-19T14:16:34.415Z",
+      "data": {
+        "path": "OSINTCopilot/Sources/brightwater-holdings-ltd-he-412345-company-registry-bbc33d08c675.md"
+      }
+    },
+    {
+      "step": "applied",
+      "at": "2026-09-19T14:16:34.432Z",
+      "data": {
+        "entityId": "eef3f65f-069f-462c-b368-f89228ad92bb",
+        "entityLabel": "BRIGHTWATER HOLDINGS LTD · HE 412345 · Company Registry",
+        "created": true,
+        "addedSourceIds": [
+          "ext_cf13b64f-e183-42e6-8d94-fd218d3e80d8",
+          "ext_cf13b64f-e183-42e6-8d94-fd218d3e80d8_archive"
+        ],
+        "sourcesNotePath": "OSINTCopilot/Sources/brightwater-holdings-ltd-he-412345-company-registry-bbc33d08c675.md",
+        "placedFiles": [
+          {
+            "role": "archive",
+            "path": "OSINTCopilot/Evidence/brightwater-holdings-ltd-he-412345-company-registry-5bf9875d.mhtml",
+            "sha256": "5bf9875d74aa775bcb1d6979c57bb017c0f909be2d55de2112e08d93f203b408",
+            "created": true
+          },
+          {
+            "role": "fullpage",
+            "path": "OSINTCopilot/Evidence/brightwater-holdings-ltd-he-412345-company-registry-5bf9875d.png",
+            "sha256": "19f23c8cd9452811f65912e98abd8a0fed4373a8415976fbaa1f8f675e87fbe1",
+            "created": true
+          },
+          {
+            "role": "viewport",
+            "path": "OSINTCopilot/Evidence/brightwater-holdings-ltd-he-412345-company-registry-5bf9875d.viewport.png",
+            "sha256": "2cf735581218dbf5b32f69d4722b564e5488861cb8d51dcda1f922e885a57013",
+            "created": true
+          },
+          {
+            "role": "markdown",
+            "path": "OSINTCopilot/Evidence/brightwater-holdings-ltd-he-412345-company-registry-5bf9875d.md",
+            "sha256": "9530e578c107cce947b9440c3f94c990bf0d146f1b2f1a3af002a2c8a8dbb35e",
+            "created": true
+          }
+        ]
+      }
+    }
+  ]
+}

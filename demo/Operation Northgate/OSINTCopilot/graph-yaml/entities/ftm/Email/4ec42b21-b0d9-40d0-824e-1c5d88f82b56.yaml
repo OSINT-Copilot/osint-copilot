@@ -1,0 +1,23 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: 4ec42b21-b0d9-40d0-824e-1c5d88f82b56
+type: Email
+label: sales@medsupply-direct.example
+properties:
+  address: sales@medsupply-direct.example
+  Address: sales@medsupply-direct.example
+ftmSchema: Email
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Email/sales@medsupply-direct.example.md
+osint_sources:
+  - id: ext_f04c344f-2930-471b-a331-527f01ee1625
+    source_url: http://medsupply-direct.example/
+    archive_status: skipped
+    inferred: false
+    rationale: 'Sent from the OSINT Copilot browser extension: "Orders and support"'
+    captured_at: 2026-09-19T14:15:54.422Z
+    via: extension
+    client_id: ZKns-7oISN8aot10CJqY8A
+    received_at: 2026-09-19T14:15:54.422Z
+osint_confidence: low
+

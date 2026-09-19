@@ -1,0 +1,15 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: acb72989-d73f-42f0-8f42-780ab322874a
+fromEntityId: d3e0a000-0000-4000-8000-000000000005
+toEntityId: d3e0a000-0000-4000-8000-000000000008
+fromLabel: Northgate Freight BV
+toLabel: Delivery van VX-492-K
+relationship: UnknownLink
+label: Northgate Freight BV → UnknownLink → Delivery van VX-492-K
+properties:
+  role: Company van
+ftmSchema: UnknownLink
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/Northgate Freight BV - UnknownLink - Delivery van VX-492-K.md
+

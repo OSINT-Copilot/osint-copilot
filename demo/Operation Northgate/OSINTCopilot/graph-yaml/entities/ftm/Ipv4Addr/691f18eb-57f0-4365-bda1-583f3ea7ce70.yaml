@@ -1,0 +1,23 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: 691f18eb-57f0-4365-bda1-583f3ea7ce70
+type: Ipv4Addr
+label: 203.0.113.47
+properties:
+  value: 203.0.113.47
+  IPv4: 203.0.113.47
+ftmSchema: Ipv4Addr
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Ipv4Addr/203.0.113.47.md
+osint_sources:
+  - id: ext_1f7c2f6b-848d-4c98-b85e-f07320fd67b8
+    source_url: http://harbourmarket.example/thread/4471
+    archive_status: skipped
+    inferred: false
+    rationale: "Sent from the OSINT Copilot browser extension: \"Upstream named by the shop's checkout error (post #2)\""
+    captured_at: 2026-09-19T14:15:39.064Z
+    via: extension
+    client_id: ZKns-7oISN8aot10CJqY8A
+    received_at: 2026-09-19T14:15:39.064Z
+osint_confidence: low
+

@@ -1,0 +1,23 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: 20e720e7-21fe-4268-a8d7-32aaab472a5d
+type: indicator
+label: Checkout error page leaks its upstream
+properties:
+  name: Checkout error page leaks its upstream
+  pattern: "[url:value MATCHES '/checkout' AND network-traffic:dst_ref.value = '203.0.113.47']"
+  description: The shop's checkout error names its upstream host.
+  Name: Checkout error page leaks its upstream
+  Pattern: "[url:value MATCHES '/checkout' AND network-traffic:dst_ref.value = '203.0.113.47']"
+  Description: The shop's checkout error names its upstream host.
+schemaFamily: stix2
+notePath: OSINTCopilot/stix2/indicator/Checkout error page leaks its upstream.md
+osint_sources:
+  - id: src_3794eaf19f42243a
+    source_url: http://harbourmarket.example/thread/4471
+    archive_status: skipped
+    inferred: false
+    rationale: Case analysis
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

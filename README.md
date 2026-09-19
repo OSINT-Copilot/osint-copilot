@@ -20,6 +20,11 @@ toolset on top of it. See [NOTICE](./NOTICE) for attribution and a statement of 
   secrets resolved in the main process, and an SSRF guard.
 * **Skills** and **task agents** — vault-authored, schema-constrained agents with a double
   write allowlist.
+* **Browser extension** — sends notes, entities, page captures and highlights from web pages
+  into an investigation, over an authenticated channel to the app on the same computer.
+
+[demo/](./demo/README.md) holds *Operation Northgate*, a fictional investigation that uses all of
+it.
 
 Everything is stored as markdown and YAML under an `OSINTCopilot/` folder in your workspace,
 so the same folder can also be opened by the
@@ -33,6 +38,8 @@ Inherited from Tangent's monorepo.
 ### Applications
 * [tangent-electron](./apps/tangent-electron/README.md) — the Electron application. OSINT Copilot's
   own code lives under `src/osint/` (renderer) and `src/main/osint/` (main process).
+* [osint-copilot-extension](./apps/osint-copilot-extension/README.md) — the browser extension
+  (Chrome and other Chromium browsers).
 * [tangent-website](./apps/tangent-website/README.md) — upstream's website source.
 * [tangent-test-workspace-generator](./apps/tangent-test-workspace-generator/README.md) — CLI tool for
   generating test content.

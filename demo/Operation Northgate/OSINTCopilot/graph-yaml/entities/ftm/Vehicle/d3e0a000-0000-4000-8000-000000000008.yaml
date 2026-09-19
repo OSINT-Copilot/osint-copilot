@@ -1,0 +1,24 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000008
+type: Vehicle
+label: Delivery van VX-492-K
+properties:
+  name: Delivery van VX-492-K
+  registrationNumber: VX-492-K
+  model: Ford Transit Custom
+  Name: Delivery van VX-492-K
+  Registration number: VX-492-K
+  Model: Ford Transit Custom
+ftmSchema: Vehicle
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Vehicle/Delivery van VX-492-K.md
+osint_sources:
+  - id: src_1ef6bc138aefa56c
+    source_url: https://news.example/2024/06/21/rotterdam-customs-seize-counterfeit-cancer-drugs
+    archive_status: skipped
+    inferred: false
+    rationale: Photographed at the warehouse gate in the seizure article
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

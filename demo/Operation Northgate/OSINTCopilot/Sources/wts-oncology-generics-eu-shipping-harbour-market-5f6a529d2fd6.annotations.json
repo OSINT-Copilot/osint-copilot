@@ -1,0 +1,60 @@
+{
+	"version": 1,
+	"normalised_url": "http://harbourmarket.example/thread/4471",
+	"highlights": {
+		"urn:uuid:18112571-1d64-4913-b0a3-3a53b0663f6e": {
+			"annotation": {
+				"id": "urn:uuid:18112571-1d64-4913-b0a3-3a53b0663f6e",
+				"textModel": "v1",
+				"created": "2026-09-19T14:15:45.509Z",
+				"modified": "2026-09-19T14:15:47.573Z",
+				"target": {
+					"source": "http://harbourmarket.example/thread/4471",
+					"selector": [
+						{
+							"type": "TextQuoteSelector",
+							"exact": "Shipping from our Rotterdam partner within 48 hours, tracked to your door.",
+							"prefix": "sters, no prescription needed.\n\t",
+							"suffix": "\n\tPayment in crypto only. BTC: b"
+						},
+						{
+							"type": "TextPositionSelector",
+							"start": 234,
+							"end": 308
+						},
+						{
+							"type": "RangeSelector",
+							"startSelector": {
+								"type": "XPathSelector",
+								"value": "/html[1]/body[1]/main[1]/div[1]/p[2]",
+								"refinedBy": {
+									"type": "TextPositionSelector",
+									"start": 0,
+									"end": 0
+								}
+							},
+							"endSelector": {
+								"type": "XPathSelector",
+								"value": "/html[1]/body[1]/main[1]/div[1]/p[2]",
+								"refinedBy": {
+									"type": "TextPositionSelector",
+									"start": 74,
+									"end": 74
+								}
+							}
+						}
+					]
+				},
+				"body": {
+					"type": "TextualBody",
+					"purpose": "commenting",
+					"value": "Rotterdam partner: the shop names Northgate Freight BV. Check the Waalhaven warehouse."
+				}
+			},
+			"section": "e2002b86-0a3c-4e41-b3d8-043e8755c7f0",
+			"modified": "2026-09-19T14:15:47.573Z",
+			"receivedAt": "2026-09-19T14:15:45.517Z",
+			"deleted": false
+		}
+	}
+}

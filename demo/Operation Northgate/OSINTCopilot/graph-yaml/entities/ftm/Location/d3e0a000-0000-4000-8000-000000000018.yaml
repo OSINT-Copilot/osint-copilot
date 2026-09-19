@@ -1,0 +1,28 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000018
+type: Location
+label: Suspected stash, Antwerp
+properties:
+  name: Suspected stash, Antwerp
+  address: Noorderlaan
+  city: Antwerp
+  country: Belgium
+  location_type: suspected storage
+  significance: Mentioned once on the forum; not yet located
+  City: Antwerp
+  Country: Belgium
+  Name: Suspected stash, Antwerp
+  Address: Noorderlaan
+ftmSchema: Address
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Address/Suspected stash, Antwerp.md
+osint_sources:
+  - id: src_7a3ad69ef080144b
+    source_url: http://harbourmarket.example/thread/4471
+    archive_status: skipped
+    inferred: false
+    rationale: A buyer mentions an Antwerp pickup
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

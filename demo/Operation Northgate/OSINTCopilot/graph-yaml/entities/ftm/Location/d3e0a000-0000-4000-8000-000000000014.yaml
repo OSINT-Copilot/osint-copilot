@@ -1,0 +1,32 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000014
+type: Location
+label: Brightwater registered office
+properties:
+  name: Brightwater registered office
+  address: Arch. Makariou III Avenue
+  city: Limassol
+  country: Cyprus
+  latitude: 34.6786
+  longitude: 33.0413
+  location_type: registered office
+  significance: A registered agent's address, shared by about 200 companies
+  City: Limassol
+  Country: Cyprus
+  Name: Brightwater registered office
+  Address: Arch. Makariou III Avenue
+  Latitude: 34.6786
+  Longitude: 33.0413
+ftmSchema: Address
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Address/Brightwater registered office.md
+osint_sources:
+  - id: src_a5822ecc5f2a92a1
+    source_url: http://registry.cy.example/company/HE412345
+    archive_status: skipped
+    inferred: false
+    rationale: Registered office in the registry extract
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

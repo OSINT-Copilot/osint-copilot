@@ -21,6 +21,8 @@ node_modules/
 # vaults legitimately contain an OSINTCopilot/ folder, and test workspaces a .tangent/.
 /apps/tangent-electron/OSINTCopilot/
 /apps/tangent-electron/.tangent/
+# ...except the demo investigation's, which are part of it (graph workspaces, persona).
+!/demo/*/.osint-copilot/
 
 # Licence signing key. NEVER commit: anyone holding it can mint valid licence keys.
 .license-signing-key.pem

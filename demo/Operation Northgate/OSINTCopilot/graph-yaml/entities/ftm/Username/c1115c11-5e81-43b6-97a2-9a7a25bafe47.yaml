@@ -1,0 +1,24 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: c1115c11-5e81-43b6-97a2-9a7a25bafe47
+type: Username
+label: "@harbor_pharma"
+properties:
+  username: "@harbor_pharma"
+  platform: harbourmarket.example
+  Username: "@harbor_pharma"
+ftmSchema: UserAccount
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/UserAccount/@harbor_pharma.md
+osint_sources:
+  - id: ext_7dc4486b-c346-4144-a5c1-46ea4eb97050
+    source_url: http://harbourmarket.example/thread/4471
+    archive_status: skipped
+    inferred: false
+    rationale: 'Sent from the OSINT Copilot browser extension: "Vendor account of the thread"'
+    captured_at: 2026-09-19T14:15:27.888Z
+    via: extension
+    client_id: ZKns-7oISN8aot10CJqY8A
+    received_at: 2026-09-19T14:15:27.888Z
+osint_confidence: low
+

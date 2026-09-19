@@ -1,0 +1,22 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-00000000001f
+type: Event
+label: medsupply-direct.example registered
+properties:
+  name: medsupply-direct.example registered
+  add_to_timeline: true
+  start_date: 2023-09-18
+  Name: medsupply-direct.example registered
+ftmSchema: Event
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Event/medsupply-direct.example registered.md
+osint_sources:
+  - id: src_e33c6dd6504d5d8d
+    source_url: http://harbourmarket.example/thread/4471
+    archive_status: skipped
+    inferred: false
+    rationale: Reported here
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

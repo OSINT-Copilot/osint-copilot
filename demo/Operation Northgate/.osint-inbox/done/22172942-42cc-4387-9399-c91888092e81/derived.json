@@ -1,0 +1,20 @@
+{
+  "v": 1,
+  "bundleId": "22172942-42cc-4387-9399-c91888092e81",
+  "status": "done",
+  "archiveSha256": "4dee2553b49977a627369a987c6ff259adee0dcf561f85bc852746cefb3df97e",
+  "contentLocation": "http://northgate-freight.example/contact",
+  "urlMismatch": false,
+  "title": "Contact · Northgate Freight BV",
+  "errors": [],
+  "derivedAt": "2026-09-19T14:16:49.358Z",
+  "markdown": {
+    "file": "page.markdown",
+    "sha256": "595a77abd09cf2da99545d4a16921e1e41785c5e2de5ab2df8d2e6d86f081163"
+  },
+  "fullpage": {
+    "file": "fullpage.png",
+    "sha256": "86ffed274fdba6e12ef46995f181074ba947314f96ec80e7234a9759c7b3c36c"
+  },
+  "mac": "-qtr994j9kFCd_ucyJp25FVLzzbHf2yxsHJ5epstBt0"
+}

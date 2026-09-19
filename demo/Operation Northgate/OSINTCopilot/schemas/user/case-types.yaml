@@ -1,0 +1,21 @@
+version: 1
+family: user
+entityTypes:
+  - name: parcel-batch
+    label: Parcel batch
+    plural: Parcel batches
+    description: A consolidated batch of parcels, as the forwarder's manifest lists it
+    color: "#00695c"
+    labelField: name
+    required: [name]
+    featured: [name, parcels, declared_as, seized_at]
+    properties:
+      name: { label: Name, type: string }
+      parcels: { label: Parcels, type: number }
+      declared_as: { label: Declared as, type: string }
+      seized_at: { label: Seized at, type: date }
+relationshipTypes:
+  - name: shipped-via
+    label: Shipped via
+    properties:
+      description: { label: Notes, type: text }

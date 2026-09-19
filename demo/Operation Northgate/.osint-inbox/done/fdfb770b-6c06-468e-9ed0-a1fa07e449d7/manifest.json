@@ -1,0 +1,40 @@
+{
+  "v": 1,
+  "bundleId": "fdfb770b-6c06-468e-9ed0-a1fa07e449d7",
+  "workspaceId": "00WlkSIWAtI9LX-qaRxRi4",
+  "page": {
+    "url": "http://harbourmarket.example/thread/4471",
+    "title": "[WTS] Oncology generics, EU shipping · Harbour Market"
+  },
+  "clientTime": "2026-09-19T14:15:49.244Z",
+  "kind": "capture",
+  "capture": {
+    "files": {
+      "page.mhtml": {
+        "size": 5675,
+        "sha256": "6443dc4c78599253405725be15de424deee9ed43b8d87a2c22df5e59e237b978"
+      },
+      "viewport.png": {
+        "size": 51349,
+        "sha256": "cc513026b7b9ed1f8f3b3a2663a4daec2962c615c6635bb1dc505cafa6d7798c"
+      }
+    }
+  },
+  "server": {
+    "receivedAt": "2026-09-19T14:15:49.249Z",
+    "clientId": "ZKns-7oISN8aot10CJqY8A",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0",
+    "files": {
+      "page.mhtml": {
+        "size": 5675,
+        "sha256": "6443dc4c78599253405725be15de424deee9ed43b8d87a2c22df5e59e237b978"
+      },
+      "viewport.png": {
+        "size": 51349,
+        "sha256": "cc513026b7b9ed1f8f3b3a2663a4daec2962c615c6635bb1dc505cafa6d7798c"
+      }
+    }
+  },
+  "mac": "vxon0qmIDyJ1_FKc5j5fx1wxksLG5dEaALE2B5mao7s"
+}

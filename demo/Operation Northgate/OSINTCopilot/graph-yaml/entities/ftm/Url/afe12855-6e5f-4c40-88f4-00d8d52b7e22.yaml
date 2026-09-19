@@ -1,0 +1,23 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: afe12855-6e5f-4c40-88f4-00d8d52b7e22
+type: Url
+label: http://medsupply-direct.example/checkout
+properties:
+  value: http://medsupply-direct.example/checkout
+  URL: http://medsupply-direct.example/checkout
+ftmSchema: Url
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Url/http---medsupply-direct.example-checkout.md
+osint_sources:
+  - id: ext_89b60a43-4beb-4c7f-b93f-0cc06c7f3a0a
+    source_url: http://medsupply-direct.example/
+    archive_status: skipped
+    inferred: false
+    rationale: 'Sent from the OSINT Copilot browser extension: "Checkout page"'
+    captured_at: 2026-09-19T14:16:01.537Z
+    via: extension
+    client_id: ZKns-7oISN8aot10CJqY8A
+    received_at: 2026-09-19T14:16:01.537Z
+osint_confidence: low
+

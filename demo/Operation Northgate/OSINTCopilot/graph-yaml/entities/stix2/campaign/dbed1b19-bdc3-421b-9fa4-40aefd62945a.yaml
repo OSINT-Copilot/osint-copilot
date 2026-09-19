@@ -1,0 +1,21 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: dbed1b19-bdc3-421b-9fa4-40aefd62945a
+type: campaign
+label: Counterfeit oncology shop
+properties:
+  name: Counterfeit oncology shop
+  description: Sells counterfeit cancer medicines through a forum and a clearnet shop, shipped from Rotterdam.
+  Name: Counterfeit oncology shop
+  Description: Sells counterfeit cancer medicines through a forum and a clearnet shop, shipped from Rotterdam.
+schemaFamily: stix2
+notePath: OSINTCopilot/stix2/campaign/Counterfeit oncology shop.md
+osint_sources:
+  - id: src_3794eaf19f42243a
+    source_url: http://harbourmarket.example/thread/4471
+    archive_status: skipped
+    inferred: false
+    rationale: Case analysis
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

@@ -1,0 +1,22 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: 781133cf-030e-455f-a8e4-005b14dbf3ec
+type: Phone
+label: +44 20 7946 0958
+properties:
+  number: +44 20 7946 0958
+ftmSchema: LegalEntity
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/LegalEntity/+44 20 7946 0958.md
+osint_sources:
+  - id: ext_40587c6c-e216-4d4a-aab7-48f224f487a3
+    source_url: http://northgate-freight.example/contact
+    archive_status: skipped
+    inferred: false
+    rationale: 'Sent from the OSINT Copilot browser extension: "UK sales line"'
+    captured_at: 2026-09-19T14:16:39.854Z
+    via: extension
+    client_id: ZKns-7oISN8aot10CJqY8A
+    received_at: 2026-09-19T14:16:39.854Z
+osint_confidence: low
+

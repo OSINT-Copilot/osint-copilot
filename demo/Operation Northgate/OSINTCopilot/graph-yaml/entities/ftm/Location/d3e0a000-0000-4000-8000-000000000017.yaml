@@ -1,0 +1,31 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000017
+type: Location
+label: Aurelia registered agent, Victoria
+properties:
+  name: Aurelia registered agent, Victoria
+  address: Corpserve (Seychelles) Ltd
+  city: Victoria
+  country: Seychelles
+  latitude: -4.6191
+  longitude: 55.4513
+  location_type: registered agent
+  City: Victoria
+  Country: Seychelles
+  Name: Aurelia registered agent, Victoria
+  Address: Corpserve (Seychelles) Ltd
+  Latitude: -4.6191
+  Longitude: 55.4513
+ftmSchema: Address
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Address/Aurelia registered agent, Victoria.md
+osint_sources:
+  - id: src_35d29bc068445757
+    source_url: https://corpserve-seychelles.example/nominees
+    archive_status: skipped
+    inferred: false
+    rationale: Registered agent's own listing
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

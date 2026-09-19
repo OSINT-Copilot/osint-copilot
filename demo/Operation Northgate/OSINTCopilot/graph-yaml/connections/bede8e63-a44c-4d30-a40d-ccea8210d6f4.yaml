@@ -1,0 +1,15 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: bede8e63-a44c-4d30-a40d-ccea8210d6f4
+fromEntityId: a8ff08ac-973f-406f-b587-db8a9e750f20
+toEntityId: d3e0a000-0000-4000-8000-000000000022
+fromLabel: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4
+toLabel: First BTC payment reaches the seller wallet
+relationship: PARTICIPATED_IN
+label: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4 → PARTICIPATED_IN → First BTC payment reaches the seller wallet
+properties: {}
+ftmSchema: PARTICIPATED_IN
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4 - PARTICIPATED_IN - First BTC payment
+  reaches the~11oe3c4.md
+

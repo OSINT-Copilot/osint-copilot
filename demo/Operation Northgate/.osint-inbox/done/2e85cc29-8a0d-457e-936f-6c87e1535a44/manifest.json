@@ -1,0 +1,23 @@
+{
+  "v": 1,
+  "bundleId": "2e85cc29-8a0d-457e-936f-6c87e1535a44",
+  "workspaceId": "00WlkSIWAtI9LX-qaRxRi4",
+  "page": {
+    "url": "http://northgate-freight.example/contact",
+    "title": "Contact · Northgate Freight BV"
+  },
+  "clientTime": "2026-09-19T14:16:41.878Z",
+  "kind": "entity",
+  "entity": {
+    "kind": "email",
+    "value": "m.koval@brightwater-holdings.example",
+    "context": "Board contact"
+  },
+  "server": {
+    "receivedAt": "2026-09-19T14:16:41.883Z",
+    "clientId": "ZKns-7oISN8aot10CJqY8A",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0"
+  },
+  "mac": "1D9dyMEDXJQbkjNqjmhpcepOo9Cox8MYeUrI6zvW0UI"
+}

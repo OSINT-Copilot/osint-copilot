@@ -1,0 +1,23 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000023
+type: Event
+label: Koval and Arendt meet at the Waalhaven warehouse
+properties:
+  name: Koval and Arendt meet at the Waalhaven warehouse
+  add_to_timeline: true
+  start_date: 2024-05-02 14:00
+  end_date: 2024-05-02 16:00
+  Name: Koval and Arendt meet at the Waalhaven warehouse
+ftmSchema: Event
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Event/Koval and Arendt meet at the Waalhaven warehouse.md
+osint_sources:
+  - id: src_26820258473dc6c7
+    source_url: https://news.example/2024/06/21/rotterdam-customs-seize-counterfeit-cancer-drugs
+    archive_status: skipped
+    inferred: false
+    rationale: Reported here
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

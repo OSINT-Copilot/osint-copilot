@@ -1,0 +1,23 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000025
+type: Event
+label: Rumoured second supplier in Riga
+properties:
+  name: Rumoured second supplier in Riga
+  add_to_timeline: true
+  description: "Undated: one forum post, no corroboration yet."
+  Name: Rumoured second supplier in Riga
+  Description: "Undated: one forum post, no corroboration yet."
+ftmSchema: Event
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Event/Rumoured second supplier in Riga.md
+osint_sources:
+  - id: src_e33c6dd6504d5d8d
+    source_url: http://harbourmarket.example/thread/4471
+    archive_status: skipped
+    inferred: false
+    rationale: Reported here
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

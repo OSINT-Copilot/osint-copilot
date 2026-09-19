@@ -1,0 +1,20 @@
+{
+  "v": 1,
+  "bundleId": "fdfb770b-6c06-468e-9ed0-a1fa07e449d7",
+  "status": "done",
+  "archiveSha256": "6443dc4c78599253405725be15de424deee9ed43b8d87a2c22df5e59e237b978",
+  "contentLocation": "http://harbourmarket.example/thread/4471",
+  "urlMismatch": false,
+  "title": "[WTS] Oncology generics, EU shipping · Harbour Market",
+  "errors": [],
+  "derivedAt": "2026-09-19T14:15:49.670Z",
+  "markdown": {
+    "file": "page.markdown",
+    "sha256": "0e563c9f668b0ff72c0c0cebcb7d6938f33659b8fcf5ad0b2a57c86d97560420"
+  },
+  "fullpage": {
+    "file": "fullpage.png",
+    "sha256": "0f2efd8f60867567d19c1cddd3259927722b731145c4f5321b320b0bd5e3e91f"
+  },
+  "mac": "NprFN32CVTz2oZ0OYgn8rf9D4SjjfPxuIO-IFLVt1zs"
+}

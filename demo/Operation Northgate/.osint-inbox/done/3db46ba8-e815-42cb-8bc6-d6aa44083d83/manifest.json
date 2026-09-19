@@ -1,0 +1,48 @@
+{
+  "v": 1,
+  "bundleId": "3db46ba8-e815-42cb-8bc6-d6aa44083d83",
+  "workspaceId": "00WlkSIWAtI9LX-qaRxRi4",
+  "page": {
+    "url": "http://files.northgate-freight.example/reports/q2-2024-consolidation.pdf",
+    "title": "q2-2024-consolidation.pdf"
+  },
+  "clientTime": "2026-09-19T14:16:52.305Z",
+  "kind": "capture",
+  "capture": {
+    "files": {
+      "page.mhtml": {
+        "size": 65551,
+        "sha256": "0771747537a86be4de66b373382f94ec363f3d2a106b95a137b45b5a603a7683"
+      },
+      "viewport.png": {
+        "size": 47464,
+        "sha256": "f8dd70c0ae8ce5daf416763b4e31eb038c60f33811c1ebc78d5a056dac03d01e"
+      },
+      "page.pdf": {
+        "size": 1211,
+        "sha256": "a5c9f0abc0f9bbc0b8e0f9cb8cc6c4fc946c58ce0750961823c493576dce342b"
+      }
+    }
+  },
+  "server": {
+    "receivedAt": "2026-09-19T14:16:52.310Z",
+    "clientId": "ZKns-7oISN8aot10CJqY8A",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0",
+    "files": {
+      "page.mhtml": {
+        "size": 65551,
+        "sha256": "0771747537a86be4de66b373382f94ec363f3d2a106b95a137b45b5a603a7683"
+      },
+      "viewport.png": {
+        "size": 47464,
+        "sha256": "f8dd70c0ae8ce5daf416763b4e31eb038c60f33811c1ebc78d5a056dac03d01e"
+      },
+      "page.pdf": {
+        "size": 1211,
+        "sha256": "a5c9f0abc0f9bbc0b8e0f9cb8cc6c4fc946c58ce0750961823c493576dce342b"
+      }
+    }
+  },
+  "mac": "cd5gZZwdhwjGZm_rM2M0dksvEIlc4Kk1TNFamD2TqVs"
+}

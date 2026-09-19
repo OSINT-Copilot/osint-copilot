@@ -1,0 +1,68 @@
+{
+  "v": 1,
+  "bundleId": "16fe5959-ae5d-483f-9a13-85faf8d9fe57",
+  "workspaceId": "00WlkSIWAtI9LX-qaRxRi4",
+  "page": {
+    "url": "http://harbourmarket.example/thread/4471",
+    "title": "[WTS] Oncology generics, EU shipping · Harbour Market"
+  },
+  "clientTime": "2026-09-19T14:15:47.573Z",
+  "kind": "highlight.update",
+  "highlight": {
+    "annotation": {
+      "id": "urn:uuid:18112571-1d64-4913-b0a3-3a53b0663f6e",
+      "textModel": "v1",
+      "created": "2026-09-19T14:15:45.509Z",
+      "modified": "2026-09-19T14:15:47.573Z",
+      "target": {
+        "source": "http://harbourmarket.example/thread/4471",
+        "selector": [
+          {
+            "type": "TextQuoteSelector",
+            "exact": "Shipping from our Rotterdam partner within 48 hours, tracked to your door.",
+            "prefix": "sters, no prescription needed.\n\t",
+            "suffix": "\n\tPayment in crypto only. BTC: b"
+          },
+          {
+            "type": "TextPositionSelector",
+            "start": 234,
+            "end": 308
+          },
+          {
+            "type": "RangeSelector",
+            "startSelector": {
+              "type": "XPathSelector",
+              "value": "/html[1]/body[1]/main[1]/div[1]/p[2]",
+              "refinedBy": {
+                "type": "TextPositionSelector",
+                "start": 0,
+                "end": 0
+              }
+            },
+            "endSelector": {
+              "type": "XPathSelector",
+              "value": "/html[1]/body[1]/main[1]/div[1]/p[2]",
+              "refinedBy": {
+                "type": "TextPositionSelector",
+                "start": 74,
+                "end": 74
+              }
+            }
+          }
+        ]
+      },
+      "body": {
+        "type": "TextualBody",
+        "purpose": "commenting",
+        "value": "Rotterdam partner: the shop names Northgate Freight BV. Check the Waalhaven warehouse."
+      }
+    }
+  },
+  "server": {
+    "receivedAt": "2026-09-19T14:15:47.581Z",
+    "clientId": "ZKns-7oISN8aot10CJqY8A",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0"
+  },
+  "mac": "_GfKlZi4t0UbW5IaVwBAZvdWieFMCXsWIQ-I4qGg_gQ"
+}
