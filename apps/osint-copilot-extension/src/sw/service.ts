@@ -3,13 +3,14 @@
 
 /**
  * What the service worker does for the side panel: pairing, the investigation list,
- * queueing items and the queue's actions. Wired to Chrome in index.ts; kept free of
- * chrome.* itself so the tests can drive it.
+ * queueing items, page capture and the queue's actions. Wired to Chrome in index.ts; kept
+ * free of chrome.* itself so the tests can drive it.
  */
 import { describeError } from '../shared/errors';
 import { buildManifest } from '../shared/manifest';
-import type { PanelRequest, PanelState, QueueEntry, Reply } from '../shared/messages';
+import type { CaptureStatus, PanelRequest, PanelState, QueueEntry, Reply } from '../shared/messages';
 import { WORKSPACE_ID, type Manifest, type WorkspaceInfo } from '../shared/protocol';
+import { CaptureError, type CapturedPage } from './capture';
 import type { Channel } from './channel';
 import { ItemTooLargeError, QueueFullError, type Queue, type QueueItem } from './queue';
 import { KEYS, type KV, type WorkspaceCache } from './storage';
@@ -22,9 +23,24 @@ export interface ServiceDeps {
 	now: () => number;
 	/** Tells every open panel that what they show may be stale. */
 	onChange?: () => void;
+	/** Captures a tab (capture.ts over Chrome). Without it, capture is refused. */
+	capture?: (tabId: number) => Promise<CapturedPage>;
+	/** Whether pageCapture and <all_urls> are granted. Only checked: asking needs a gesture. */
+	hasCapturePermission?: () => Promise<boolean>;
+	/** The active tab of the focused window, for a command that came without one. */
+	activeTabId?: () => Promise<number | undefined>;
+}
+
+function mb(bytes: number): string {
+	const n = bytes / (1024 * 1024);
+	return n < 10 ? n.toFixed(1) : String(Math.round(n));
 }
 
 function label(manifest: Manifest): string {
+	if (manifest.kind === 'capture') {
+		const title = manifest.page.title || manifest.page.url;
+		return `Page: ${title.length > 80 ? `${title.slice(0, 79)}…` : title}`;
+	}
 	if (manifest.kind === 'note') {
 		const line = manifest.note.text.split('\n')[0];
 		return line.length > 80 ? `${line.slice(0, 79)}…` : line;
@@ -34,11 +50,14 @@ function label(manifest: Manifest): string {
 	return `${kind}: ${e.value.length > 80 ? `${e.value.slice(0, 79)}…` : e.value}`;
 }
 
-function toEntry(item: QueueItem): QueueEntry {
+function toEntry(item: QueueItem, queue: Queue): QueueEntry {
 	return {
 		bundleId: item.bundleId,
 		kind: item.manifest.kind,
 		label: label(item.manifest),
+		size: item.size,
+		progress: item.state === 'sending' ? queue.progress(item.bundleId) ?? null : null,
+		notes: item.notes ?? [],
 		workspaceId: item.workspaceId,
 		state: item.state,
 		attempts: item.attempts,
@@ -59,6 +78,9 @@ function isWorkspaceList(body: unknown): body is { workspaces: WorkspaceInfo[] }
 
 export class Service {
 	private workspacesLive = false;
+	/** The latest capture, as the panel shows it. Held in memory: it is progress, not data. */
+	private captureStatus: CaptureStatus | null = null;
+	private capturing = false;
 
 	constructor(private readonly deps: ServiceDeps) {}
 
@@ -68,6 +90,7 @@ export class Service {
 		const cache = await storage.get<WorkspaceCache>(KEYS.workspaces);
 		const selected = (await storage.get<string>(KEYS.selectedWorkspace)) ?? null;
 		const connected = channel.connectedPort !== null;
+		const items = await queue.list();
 		return {
 			paired: pairing ? { instanceId: pairing.instanceId, pairedAt: pairing.pairedAt } : null,
 			connection: !pairing ? 'unpaired' : connected ? 'connected' : 'offline',
@@ -77,8 +100,95 @@ export class Service {
 			workspacesLive: connected && this.workspacesLive,
 			workspacesFetchedAt: cache?.fetchedAt ?? null,
 			selectedWorkspaceId: selected,
-			queue: (await queue.list()).map(toEntry),
+			queue: items.map(item => toEntry(item, queue)),
+			capture: this.captureView(items),
 		};
+	}
+
+	/** The capture status, brought up to date with what has become of its queue item. */
+	private captureView(items: QueueItem[]): CaptureStatus | null {
+		const status = this.captureStatus;
+		if (!status || !status.bundleId || status.phase === 'done' || status.phase === 'failed') return status;
+		const item = items.find(i => i.bundleId === status.bundleId);
+		let next: CaptureStatus;
+		if (!item) {
+			next = { ...status, phase: 'done', message: 'Page capture delivered to OSINT Copilot.', progress: null };
+		} else if (item.state === 'failed') {
+			next = { ...status, phase: 'failed', message: `Page capture not sent: ${item.lastError ? describeError(item.lastError, item.lastErrorDetail) : 'refused'}`, progress: null };
+		} else if (item.state === 'sending') {
+			const progress = this.deps.queue.progress(item.bundleId) ?? null;
+			const message = progress ? `Uploading the page capture: ${mb(progress.sent)} of ${mb(progress.total)} MB.` : 'Sending the page capture…';
+			return { ...status, phase: 'uploading', message, progress };
+		} else {
+			const why = item.lastError ? ` ${describeError(item.lastError, item.lastErrorDetail)}` : '';
+			return { ...status, phase: 'queued', message: `Page capture queued; it is sent when OSINT Copilot takes it.${why}`, progress: null };
+		}
+		// Settled: kept as it is now, so it no longer depends on the queue.
+		this.captureStatus = next;
+		return next;
+	}
+
+	private setCapture(phase: CaptureStatus['phase'], message: string, bundleId: string | null = null): void {
+		this.captureStatus = { phase, message, bundleId, progress: null, at: this.deps.now() };
+		this.deps.onChange?.();
+	}
+
+	/**
+	 * Called when the user refused the capture permissions at the menu or the command:
+	 * nothing is captured, and the panel says so.
+	 */
+	captureRefused(): void {
+		this.setCapture('failed', describeError('capture_permission_refused'));
+	}
+
+	/**
+	 * Captures a tab and queues it. The permissions must already be granted; this never
+	 * asks, because asking needs a user gesture that a message from the panel or a later
+	 * turn of the worker does not carry.
+	 */
+	async capture(tabId: number | undefined, workspaceIdShown?: string): Promise<Reply> {
+		const { channel, queue, storage } = this.deps;
+		const failCapture = async (error: string, detail?: string): Promise<Reply> => {
+			this.setCapture('failed', `Page not captured: ${describeError(error, detail)}`);
+			return this.fail(error, detail);
+		};
+		if (!this.deps.capture) return failCapture('capture_failed', 'not available');
+		if (!(await channel.pairing())) return failCapture('not_paired');
+		const workspaceId = await storage.get<string>(KEYS.selectedWorkspace);
+		if (!workspaceId) return failCapture('no_workspace');
+		if (workspaceIdShown !== undefined && workspaceIdShown !== workspaceId) return failCapture('workspace_changed');
+		if (!(await this.deps.hasCapturePermission?.())) return failCapture('capture_permission_needed');
+		const target = tabId ?? await this.deps.activeTabId?.();
+		if (target === undefined) return failCapture('capture_tab_gone');
+		// One at a time: two archives at once double the memory for no gain, and the
+		// status line can only speak of one.
+		if (this.capturing) return this.fail('capture_busy');
+		this.capturing = true;
+		try {
+			this.setCapture('preparing', 'Capturing the page…');
+			let captured: CapturedPage;
+			try {
+				captured = await this.deps.capture(target);
+			} catch (err) {
+				if (err instanceof CaptureError) return failCapture(err.code, err.detail);
+				return failCapture('capture_failed', err instanceof Error ? err.message : String(err));
+			}
+			const built = buildManifest({ kind: 'capture', workspaceId, page: captured.page, capture: { files: captured.decls } });
+			if (!built.ok) return failCapture('invalid_item', built.detail);
+			try {
+				await queue.enqueue(built.value, captured.files, captured.notes);
+			} catch (err) {
+				if (err instanceof QueueFullError) return failCapture('queue_full');
+				if (err instanceof ItemTooLargeError) return failCapture('too_large');
+				throw err;
+			}
+			this.setCapture('queued', 'Page captured and queued.', built.value.bundleId);
+			void queue.drain();
+			const note = ['Page captured and queued.', ...captured.notes].join(' ');
+			return { ok: true, state: await this.state(), note };
+		} finally {
+			this.capturing = false;
+		}
 	}
 
 	/**
@@ -193,8 +303,14 @@ export class Service {
 				return { ok: true, state: await this.state() };
 			}
 
+			case 'capture':
+				if (typeof request.tabId !== 'number' || !Number.isInteger(request.tabId) || request.tabId < 0) return this.fail('capture_tab_gone');
+				return this.capture(request.tabId, request.workspaceId);
+
 			case 'queue.delete':
 				await queue.remove(request.bundleId);
+				// Gone from the queue by the user's hand, not delivered: the status must not say it was.
+				if (this.captureStatus?.bundleId === request.bundleId) this.captureStatus = null;
 				return { ok: true, state: await this.state() };
 		}
 	}

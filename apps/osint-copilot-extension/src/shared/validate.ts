@@ -15,7 +15,13 @@ import { domainToAscii, isIpAddress, normalisePageUrl, isHttpUrl } from './url';
 import { keccak256, sha256Sync } from './hashes';
 import { toHex } from './b64url';
 import {
+	CAPTURE_FILE_CAPS,
+	CAPTURE_FILE_NAMES,
 	ENTITY_KINDS,
+	REQUIRED_CAPTURE_FILE,
+	SHA256_HEX,
+	type CaptureFileDecl,
+	type CaptureFiles,
 	LIMITS,
 	PLATFORM,
 	WALLET_CHAINS,
@@ -28,9 +34,9 @@ import {
 
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; detail: string };
 
-/** Every kind the protocol names; this version sends only the first two. */
+/** Every kind the protocol names; this version sends the first three. */
 const ALL_KINDS = ['note', 'entity', 'capture', 'highlight', 'highlight.update', 'highlight.delete'] as const;
-const SUPPORTED_KINDS = ['note', 'entity'] as const;
+const SUPPORTED_KINDS = ['note', 'entity', 'capture'] as const;
 export const KIND_NOT_SUPPORTED = 'kind not supported by this app version';
 
 class Invalid extends Error {
@@ -277,6 +283,34 @@ function entity(value: unknown): EntityPayload {
 	return out;
 }
 
+// --- captures ------------------------------------------------------------------------
+
+function captureFile(value: unknown, path: string, cap: number): CaptureFileDecl {
+	if (!isRecord(value)) fail(path, 'must be an object');
+	onlyKeys(value, path, ['size', 'sha256']);
+	const size = value.size;
+	if (typeof size !== 'number' || !Number.isSafeInteger(size) || size < 1) fail(`${path}.size`, 'must be a whole number of bytes, at least 1');
+	if (size > cap) fail(`${path}.size`, `larger than ${cap} bytes`);
+	if (typeof value.sha256 !== 'string' || !SHA256_HEX.test(value.sha256)) fail(`${path}.sha256`, 'must be 64 lowercase hex characters');
+	return { size, sha256: value.sha256 };
+}
+
+/** The files a capture declares before sending them (§8.3), in the app's fixed order. */
+function capture(value: unknown): { files: CaptureFiles } {
+	if (!isRecord(value)) fail('capture', 'must be an object');
+	onlyKeys(value, 'capture', ['files']);
+	const files = value.files;
+	if (!isRecord(files)) fail('capture.files', 'must be an object');
+	onlyKeys(files, 'capture.files', CAPTURE_FILE_NAMES);
+	if (files[REQUIRED_CAPTURE_FILE] === undefined) fail(`capture.files.${REQUIRED_CAPTURE_FILE}`, 'required');
+	const out: Partial<CaptureFiles> = {};
+	for (const name of CAPTURE_FILE_NAMES) {
+		if (files[name] === undefined) continue;
+		out[name] = captureFile(files[name], `capture.files.${name}`, CAPTURE_FILE_CAPS[name]);
+	}
+	return { files: out as CaptureFiles };
+}
+
 // --- manifest ------------------------------------------------------------------------
 
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/;
@@ -325,6 +359,7 @@ function manifest(value: unknown): Manifest {
 		onlyKeys(note, 'note', ['text']);
 		return { ...base, kind, note: { text: text(note.text, 'note.text', LIMITS.noteText, { multiline: true }) } };
 	}
+	if (kind === 'capture') return { ...base, kind, capture: capture(value.capture) };
 	return { ...base, kind, entity: entity(value.entity) };
 }
 

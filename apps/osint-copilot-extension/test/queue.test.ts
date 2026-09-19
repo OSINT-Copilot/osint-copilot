@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Manifest } from '../src/shared/protocol';
 import { ChannelError, type Channel } from '../src/sw/channel';
 import {
+	DB_VERSION,
 	MAX_BACKOFF_MS,
 	MAX_ITEMS,
 	Queue,
@@ -216,7 +217,7 @@ describe('delivery', () => {
 		const item = await queue.enqueue(note());
 		// Simulate the worker dying mid-send: the item is stuck in 'sending'.
 		const db = await new Promise<IDBDatabase>((resolve, reject) => {
-			const r = deps.indexedDB.open('oc', 1);
+			const r = deps.indexedDB.open('oc', DB_VERSION);
 			r.onsuccess = () => resolve(r.result);
 			r.onerror = () => reject(r.error);
 		});

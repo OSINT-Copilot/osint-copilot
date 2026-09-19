@@ -23,6 +23,20 @@ const MESSAGES: Record<string, string> = {
 	item_busy: 'That item is being sent right now, or is not waiting to be sent elsewhere. Try again in a moment.',
 	workspace_changed: 'The investigation was changed in another window. Check the one chosen above, then send again.',
 	queue_full: 'The send queue is full (100 items or 300 MB). Nothing was dropped; delete failed items or wait for the app to take the rest.',
+	// Page capture.
+	capture_permission_needed: 'Page capture needs Chrome\'s permission to read and save the pages you visit. Press Capture page in the side panel, or use the menu item or shortcut, and allow it when Chrome asks.',
+	capture_permission_refused: 'Page capture was not allowed, so nothing was captured. It needs permission to read and save the pages you visit; you can allow it the next time you capture.',
+	capture_browser_page: 'Chrome does not let extensions capture its own pages (chrome://, settings, other extensions) or the Chrome Web Store.',
+	capture_not_web: 'Only web pages (http or https) can be captured into OSINT Copilot. This tab is not one.',
+	capture_file_access: 'This is a file on your computer. Chrome lets extensions read files only when "Allow access to file URLs" is on for the extension in chrome://extensions, and OSINT Copilot accepts web pages (http or https) only.',
+	capture_policy: 'Your organisation\'s browser policy does not allow extensions to read this site, so it cannot be captured.',
+	capture_navigated: 'The tab went to another page while it was being captured, so the capture was dropped. Wait for the page to settle, then capture again.',
+	capture_too_big: 'This page is too big to capture: the archive would be over the 50 MB OSINT Copilot accepts.',
+	capture_tab_gone: 'The tab to capture was closed or could not be found.',
+	capture_permission: 'Chrome did not let the extension read this page, so it cannot be captured.',
+	capture_failed: 'Chrome could not capture this page.',
+	capture_busy: 'A page is already being captured. Wait for it to finish.',
+	blob_missing: 'The captured files are no longer stored in the browser (site data may have been cleared). Delete this item and capture the page again.',
 	// Protocol codes (PROTOCOL.md §9).
 	pair_expired: 'That pairing string has expired or was already used. Start a new pairing in the app and paste the new string.',
 	pair_denied: 'Pairing was declined in OSINT Copilot.',
@@ -41,6 +55,9 @@ const MESSAGES: Record<string, string> = {
 	bad_host: 'The app refused the request address.',
 	bad_proto: 'This extension and OSINT Copilot speak different protocol versions. Update whichever is older.',
 	internal: 'OSINT Copilot hit an internal error. Will retry.',
+	unknown_bundle: 'OSINT Copilot no longer holds the partly sent capture. It will be sent again from the start.',
+	conflict: 'OSINT Copilot is still receiving this capture on another connection. Will retry.',
+	incomplete: 'OSINT Copilot is missing files of this capture. The missing ones will be sent again.',
 };
 
 export function describeError(code: string, detail?: string): string {

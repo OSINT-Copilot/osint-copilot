@@ -29,5 +29,14 @@
 	"permissions": ["storage", "sidePanel", "contextMenus", "activeTab", "scripting"],
 	"optional_permissions": ["pageCapture", "webNavigation"],
 	"host_permissions": ["http://127.0.0.1/*"],
-	"optional_host_permissions": ["<all_urls>"]
+	"optional_host_permissions": ["<all_urls>"],
+	"commands": {
+		"capture-page": {
+			"suggested_key": {
+				"default": "Ctrl+Shift+Y",
+				"mac": "Command+Shift+Y"
+			},
+			"description": "Capture this page to OSINT Copilot"
+		}
+	}
 }

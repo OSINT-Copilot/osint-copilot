@@ -2,8 +2,8 @@
 // Copyright 2026 Probe Point Analytics LLC
 
 /**
- * The side panel: pairing, the investigation picker, the page items attach to, a quick
- * note, the entity form and the queue.
+ * The side panel: pairing, the investigation picker, the page items attach to, page
+ * capture, a quick note, the entity form and the queue.
  *
  * Plain DOM. Everything that came from a page or from the app is written with
  * textContent, never as HTML, because page text is hostile and the panel runs with the
@@ -11,7 +11,7 @@
  */
 import { classify } from '../shared/classify';
 import { describeError } from '../shared/errors';
-import { CHANGED, PENDING_SELECTION, type PanelState, type PendingSelection, type QueueEntry, type Reply } from '../shared/messages';
+import { CAPTURE_PERMISSIONS, CHANGED, PENDING_SELECTION, type CaptureStatus, type PanelState, type PendingSelection, type QueueEntry, type Reply } from '../shared/messages';
 import type { EntityKind, EntityPayload, WalletChain } from '../shared/protocol';
 import { platformFromUrl } from '../shared/url';
 import { validateEntity } from '../shared/validate';
@@ -55,6 +55,11 @@ const ui = {
 	entityContext: $<HTMLTextAreaElement>('entity-context'),
 	entityProblem: $<HTMLParagraphElement>('entity-problem'),
 	useSelection: $<HTMLButtonElement>('use-selection'),
+	capture: $<HTMLButtonElement>('capture'),
+	capturePermission: $<HTMLParagraphElement>('capture-permission'),
+	captureShortcut: $<HTMLSpanElement>('capture-shortcut'),
+	captureStatus: $<HTMLParagraphElement>('capture-status'),
+	captureProgress: $<HTMLProgressElement>('capture-progress'),
 	queue: $<HTMLUListElement>('queue'),
 	refresh: $<HTMLButtonElement>('refresh'),
 	unpair: $<HTMLButtonElement>('unpair'),
@@ -127,7 +132,40 @@ function render(next: PanelState): void {
 	// Not while the user is picking: a rebuilt select would reset their choice. The send
 	// carries what the select shows, so a stale one is refused rather than misfiled.
 	if (document.activeElement !== ui.workspace) renderWorkspaces(next);
+	renderCapture(next.capture);
 	renderQueue(next.queue);
+}
+
+function renderCapture(status: CaptureStatus | null): void {
+	ui.captureStatus.hidden = !status;
+	ui.captureStatus.textContent = status?.message ?? '';
+	ui.captureStatus.className = `hint ${status?.phase ?? ''}`;
+	const progress = status?.progress;
+	ui.captureProgress.hidden = !(status && (status.phase === 'preparing' || status.phase === 'uploading'));
+	if (progress && progress.total > 0) {
+		ui.captureProgress.max = progress.total;
+		ui.captureProgress.value = progress.sent;
+	} else {
+		// Indeterminate while the archive is made.
+		ui.captureProgress.removeAttribute('value');
+	}
+	ui.capture.disabled = status?.phase === 'preparing';
+}
+
+/** Shows the permission explanation until the permissions are granted. */
+async function refreshCapturePermission(): Promise<void> {
+	let granted = false;
+	try {
+		granted = await chrome.permissions.contains(CAPTURE_PERMISSIONS);
+	} catch {
+		granted = false;
+	}
+	ui.capturePermission.hidden = granted;
+}
+
+function mb(bytes: number): string {
+	const n = bytes / (1024 * 1024);
+	return n < 0.1 ? '<0.1' : n < 10 ? n.toFixed(1) : String(Math.round(n));
 }
 
 function renderWorkspaces(next: PanelState): void {
@@ -169,12 +207,15 @@ function renderQueue(items: QueueEntry[]): void {
 		return;
 	}
 	for (const item of items) {
-		const meta = item.state === 'sending' ? 'Sending…'
+		const meta = item.state === 'sending'
+			? item.progress ? `Uploading ${mb(item.progress.sent)} of ${mb(item.progress.total)} MB…` : 'Sending…'
 			: item.state === 'failed' ? `Not sent: ${item.problem ?? 'refused'}`
 			: `Waiting, next try ${describeWhen(item.nextAttemptAt)}${item.attempts ? ` (attempt ${item.attempts + 1})` : ''}${item.problem ? `. ${item.problem}` : ''}`;
+		const size = item.kind === 'capture' ? ` (${mb(item.size)} MB)` : '';
 		const li = h('li', { className: item.state },
-			h('div', { className: 'label', textContent: item.label }),
+			h('div', { className: 'label', textContent: `${item.label}${size}` }),
 			h('div', { className: 'meta', textContent: `To ${workspaceName(item.workspaceId)}. ${meta}` }));
+		if (item.notes.length) li.append(h('ul', { className: 'notes' }, ...item.notes.map(n => h('li', { textContent: n }))));
 		const actions = h('div', { className: 'actions' });
 		if (item.state === 'failed') {
 			const others = (state?.workspaces ?? []).filter(w => w.id !== item.workspaceId);
@@ -372,6 +413,26 @@ ui.entityForm.addEventListener('submit', async event => {
 	}
 });
 
+ui.capture.addEventListener('click', () => {
+	// Asked here, synchronously in the click: Chrome allows permissions.request only
+	// during a user gesture, and an await first would end it. Already granted, it
+	// resolves true without a prompt.
+	const asked = chrome.permissions.request(CAPTURE_PERMISSIONS);
+	void (async () => {
+		let granted = false;
+		try {
+			granted = await asked;
+		} catch {
+			granted = false;
+		}
+		void refreshCapturePermission();
+		if (!granted) return flash(describeError('capture_permission_refused'), true);
+		await refreshPage();
+		if (page.tabId === null) return flash(page.problem ?? describeError('no_page'), true);
+		await act({ type: 'capture', tabId: page.tabId, workspaceId: ui.workspace.value });
+	})();
+});
+
 ui.refresh.addEventListener('click', () => void act({ type: 'refresh' }));
 ui.unpair.addEventListener('click', () => {
 	if (confirm('Unpair from OSINT Copilot? Items still in the queue stay here and are sent after you pair again.')) {
@@ -398,6 +459,8 @@ chrome.tabs.onRemoved.addListener(tabId => {
 	if (pending && pending.tabId === tabId) pending = null;
 });
 window.addEventListener('focus', () => void refreshPage());
+chrome.permissions.onAdded.addListener(() => void refreshCapturePermission());
+chrome.permissions.onRemoved.addListener(() => void refreshCapturePermission());
 
 // The queue's "next try in" text ages, so fetch it again now and then. Asking also keeps
 // the service worker awake while the panel is open, so its retry timer can fire.
@@ -409,6 +472,11 @@ setInterval(() => {
 }, 15_000);
 
 void (async () => {
+	void refreshCapturePermission();
+	void chrome.commands.getAll().then(commands => {
+		const shortcut = commands.find(c => c.name === 'capture-page')?.shortcut;
+		ui.captureShortcut.textContent = shortcut ? `with ${shortcut}` : 'with a keyboard shortcut you can set in chrome://extensions/shortcuts';
+	}).catch(() => {});
 	await takePending();
 	await refreshPage();
 	// Cheap first paint from what the worker already knows, then prove the app and send.

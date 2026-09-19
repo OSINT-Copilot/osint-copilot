@@ -24,8 +24,8 @@ export interface FakeAppOptions {
 	pairSecret?: Buffer;
 	serverNonce?: string;
 	newClientId?: string;
-	/** Answers signed routes; the reply is signed by the fake. */
-	route?: (method: string, path: string, body: string) => { status: number; body: unknown };
+	/** Answers signed routes; the reply is signed by the fake. `raw` is the body's bytes, for uploads. */
+	route?: (method: string, path: string, body: string, raw: Buffer, headers: Record<string, string>) => { status: number; body: unknown };
 }
 
 function headersOf(init: RequestInit): Record<string, string> {
@@ -95,7 +95,7 @@ export class FakeApp {
 		const s = ['OC1', this.endpoint, method, pathWithQuery, h['x-oc-ts'], h['x-oc-nonce'], h['x-oc-client'], contentLength, h['x-oc-body-sha256']].join('\n');
 		if (h['x-oc-sig'] !== b64(mac(key, s))) return json(401, { error: 'bad_signature' });
 		if (hex(bytes) !== h['x-oc-body-sha256']) return this.sign(h['x-oc-nonce'], 422, { error: 'hash_mismatch' });
-		const out = this.opts.route?.(method, pathWithQuery, bytes.toString('utf8')) ?? { status: 404, body: { error: 'not_found' } };
+		const out = this.opts.route?.(method, pathWithQuery, bytes.toString('utf8'), bytes, h) ?? { status: 404, body: { error: 'not_found' } };
 		return this.sign(h['x-oc-nonce'], out.status, out.body);
 	}
 

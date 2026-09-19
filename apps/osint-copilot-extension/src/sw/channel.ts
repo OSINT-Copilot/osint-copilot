@@ -54,6 +54,7 @@ export interface ChannelDeps {
 	/** A probe that hangs must not stall discovery of the port the app really holds. */
 	probeTimeoutMs?: number;
 	requestTimeoutMs?: number;
+	uploadTimeoutMs?: number;
 }
 
 export type ChannelErrorCode = 'not_paired' | 'unreachable' | 'unverified' | 'bad_response';
@@ -80,6 +81,7 @@ export interface SignedResponse {
 }
 
 const JSON_TYPE = 'application/json';
+const OCTET_TYPE = 'application/octet-stream';
 
 export function webDeps(storage: KV): ChannelDeps {
 	return {
@@ -298,6 +300,27 @@ export class Channel {
 	 * must treat that as "no answer", which for a bundle means retry with the same bundleId.
 	 */
 	async request(method: 'GET' | 'POST', pathWithQuery: string, body?: unknown): Promise<SignedResponse> {
+		const bytes = method === 'POST' ? utf8(JSON.stringify(body ?? {})) : null;
+		return this.signed(method, pathWithQuery, bytes, JSON_TYPE, this.deps.requestTimeoutMs ?? 30_000);
+	}
+
+	/**
+	 * Sends one capture file (§7.5): the raw bytes as application/octet-stream, signed
+	 * exactly like a JSON request, so Content-Length and the body digest are what the MAC
+	 * covers. The reply is verified the same way.
+	 */
+	async upload(pathWithQuery: string, bytes: Uint8Array<ArrayBuffer>): Promise<SignedResponse> {
+		// Loopback moves 50 MB in well under a second; the long timeout is for a busy disk.
+		return this.signed('POST', pathWithQuery, bytes, OCTET_TYPE, this.deps.uploadTimeoutMs ?? 5 * 60_000);
+	}
+
+	private async signed(
+		method: 'GET' | 'POST',
+		pathWithQuery: string,
+		bytes: Uint8Array<ArrayBuffer> | null,
+		contentType: string,
+		timeoutMs: number,
+	): Promise<SignedResponse> {
 		const pairing = await this.pairing();
 		if (!pairing) throw new ChannelError('not_paired');
 		const key = fromB64url(pairing.key);
@@ -305,7 +328,6 @@ export class Channel {
 		const port = await this.connect();
 		const endpoint = endpointFor(port);
 
-		const bytes = method === 'POST' ? utf8(JSON.stringify(body ?? {})) : null;
 		const ts = String(this.deps.now());
 		const nonce = this.nonce();
 		const bodySha256 = bytes ? await sha256Hex(bytes) : EMPTY_SHA256;
@@ -328,7 +350,7 @@ export class Channel {
 			[HEADER.bodySha256]: bodySha256,
 			[HEADER.sig]: sig,
 		};
-		if (bytes) headers['Content-Type'] = JSON_TYPE;
+		if (bytes) headers['Content-Type'] = contentType;
 
 		let res: Response;
 		let responseBytes: Uint8Array<ArrayBuffer>;
@@ -341,7 +363,7 @@ export class Channel {
 				credentials: 'omit',
 				cache: 'no-store',
 				redirect: 'error',
-				signal: AbortSignal.timeout(this.deps.requestTimeoutMs ?? 30_000),
+				signal: AbortSignal.timeout(timeoutMs),
 			});
 			responseBytes = new Uint8Array(await res.arrayBuffer());
 		} catch {

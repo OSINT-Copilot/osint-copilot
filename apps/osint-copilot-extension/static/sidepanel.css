@@ -128,3 +128,8 @@ button:disabled { opacity: 0.5; cursor: default; }
 .queue .failed .meta { color: var(--bad); }
 .queue .actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .queue .actions select { width: auto; flex: 1; margin-top: 8px; }
+.notice { margin: 6px 0 0; padding: 6px 8px; border-left: 3px solid var(--warn); color: var(--text); }
+#capture-status.failed { color: var(--bad); }
+#capture-status.done { color: var(--ok); }
+progress { width: 100%; margin-top: 6px; }
+.queue .notes { color: var(--muted); font-size: 12px; margin: 2px 0 0; padding-left: 16px; }

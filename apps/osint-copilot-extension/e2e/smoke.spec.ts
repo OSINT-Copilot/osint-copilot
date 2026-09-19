@@ -6,7 +6,8 @@
  * running under node over a throwaway workspace (the app's extension-harness.ts, with the
  * pairing confirm answered yes). It pairs from the side panel, picks the investigation,
  * sends a note and an entity, and checks both bundles landed in the workspace's
- * .osint-inbox/pending with MACs that verify. It also checks that an ordinary web page
+ * .osint-inbox/pending with MACs that verify. It captures a page the same way, through
+ * the three-step upload, and checks the committed archive's digest. It also checks that an ordinary web page
  * cannot read the app's port.
  *
  * The side panel is opened as a tab (chrome-extension://<id>/sidepanel.html), since
@@ -17,6 +18,14 @@
  *
  * Runs headless: Chrome for Testing loads unpacked extensions in its new headless mode.
  * Set OC_E2E_HEADED=1 to watch it, and OC_E2E_CHROMIUM to use another Chromium binary.
+ *
+ * Page capture needs pageCapture and <all_urls>, which the real manifest makes optional
+ * and asks for with chrome.permissions.request. Chrome answers that with a browser dialog
+ * Playwright cannot reach (it stays pending, headless or not, and no command-line switch
+ * accepts it), so the capture test loads a copy of the build whose manifest grants the two
+ * at install instead. The request the panel makes then resolves true without a prompt,
+ * as it does for a user who allowed it before; everything after it is the shipped code.
+ * The request itself, and a refusal, are covered by the unit tests (test/capture.test.ts).
  */
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
 import * as fs from 'node:fs';
@@ -25,6 +34,7 @@ import type { AddressInfo } from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import { startExtensionHarness, type ExtensionHarness } from '../../tangent-electron/src/main/osint/inbox/extension-harness';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -49,13 +59,16 @@ function chromiumPath(): string | undefined {
 }
 
 /** An ordinary web page on another 127.0.0.1 port, standing in for any site the user visits. */
-function startWebsite(): Promise<{ url: string; close(): Promise<void> }> {
-	const server = http.createServer((_req, res) => {
+const ARTICLE = '<!doctype html><title>Leak report</title><h1>Leak report</h1><p>Wallet 0x52908400098527886E0F7030069857D2E4169EE7 was seen on the forum.</p>';
+
+function startWebsite(): Promise<{ url: string; origin: string; close(): Promise<void> }> {
+	const server = http.createServer((req, res) => {
 		res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-		res.end('<!doctype html><title>Profile of alice</title><p>Contact: alice@example.com</p>');
+		res.end(req.url === '/article' ? ARTICLE : '<!doctype html><title>Profile of alice</title><p>Contact: alice@example.com</p>');
 	});
 	return new Promise(resolve => {
 		server.listen(0, '127.0.0.1', () => resolve({
+			origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
 			url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/profile/alice`,
 			close: () => new Promise<void>(done => server.close(() => done())),
 		}));
@@ -63,20 +76,24 @@ function startWebsite(): Promise<{ url: string; close(): Promise<void> }> {
 }
 
 let harness: ExtensionHarness;
-let website: { url: string; close(): Promise<void> };
+let website: { url: string; origin: string; close(): Promise<void> };
 let context: BrowserContext;
 let profile: string;
+
+function launch(profileDir: string, extensionDir: string): Promise<BrowserContext> {
+	return chromium.launchPersistentContext(profileDir, {
+		executablePath: chromiumPath(),
+		headless: process.env.OC_E2E_HEADED !== '1',
+		args: [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`],
+	});
+}
 
 test.beforeAll(async () => {
 	if (!fs.existsSync(path.join(dist, 'manifest.json'))) throw new Error(`No build in ${dist}: run "npm run e2e", which builds first.`);
 	harness = await startExtensionHarness();
 	website = await startWebsite();
 	profile = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-e2e-profile-'));
-	context = await chromium.launchPersistentContext(profile, {
-		executablePath: chromiumPath(),
-		headless: process.env.OC_E2E_HEADED !== '1',
-		args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`],
-	});
+	context = await launch(profile, dist);
 });
 
 test.afterAll(async () => {
@@ -86,8 +103,8 @@ test.afterAll(async () => {
 	if (profile) fs.rmSync(profile, { recursive: true, force: true });
 });
 
-async function extensionId(): Promise<string> {
-	const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
+async function extensionId(ctx: BrowserContext = context): Promise<string> {
+	const worker = ctx.serviceWorkers()[0] ?? await ctx.waitForEvent('serviceworker');
 	const id = new URL(worker.url()).host;
 	expect(id).toMatch(/^[a-p]{32}$/);
 	return id;
@@ -180,4 +197,73 @@ test('an ordinary web page cannot read the app\'s port', async () => {
 	expect(result.cors).toEqual({ rejected: expect.stringContaining('Failed to fetch') });
 	expect(result.preflighted).toEqual({ rejected: expect.stringContaining('Failed to fetch') });
 	expect(result.opaque).toEqual({ type: 'opaque', status: 0, text: '' });
+});
+
+test('captures a page into the investigation: create, upload, commit', async () => {
+	// The build, with the two optional permissions granted at install (see the top).
+	const granted = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-e2e-granted-'));
+	fs.cpSync(dist, granted, { recursive: true });
+	const manifestPath = path.join(granted, 'manifest.json');
+	const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	manifest.permissions.push('pageCapture');
+	manifest.host_permissions.push('<all_urls>');
+	fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+	const captureProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-e2e-profile-'));
+	const ctx = await launch(captureProfile, granted);
+	try {
+		const id = await extensionId(ctx);
+		const site = await ctx.newPage();
+		const articleUrl = `${website.origin}/article`;
+		await site.goto(articleUrl);
+		const panel = await ctx.newPage();
+		await panel.goto(`chrome-extension://${id}/sidepanel.html`);
+		await panel.fill('#pair-input', await harness.pairingString());
+		await panel.click('#pair-form button[type=submit]');
+		await expect(panel.locator('#connection')).toHaveText('Connected');
+		await expect(panel.locator('#workspace-current')).toHaveText('To: Case Alpha');
+		// Granted already, so the panel does not explain the prompt.
+		await expect(panel.locator('#capture-permission')).toBeHidden();
+
+		await site.bringToFront();
+		await expect(panel.locator('#page .page-url')).toHaveText(articleUrl);
+		const before = new Set((await harness.pending()).map(b => b.bundleId));
+		await panel.click('#capture');
+		let bundle: Awaited<ReturnType<ExtensionHarness['pending']>>[number] | undefined;
+		await expect.poll(async () => {
+			bundle = (await harness.pending()).find(b => !before.has(b.bundleId));
+			return bundle?.stored.kind;
+		}, { timeout: 30_000 }).toBe('capture').catch(async (err: Error) => {
+			// Why the panel thinks it did not arrive is the useful part of this failure.
+			throw new Error(`${err.message}\nThe panel said: ${await panel.locator('#capture-status').textContent()}`);
+		});
+		expect(bundle!.macOk).toBe(true);
+		const stored = bundle!.stored as Record<string, any>;
+		expect(stored).toMatchObject({
+			page: { url: articleUrl, title: 'Leak report' },
+			server: { origin: `chrome-extension://${id}` },
+		});
+
+		// The archive the app holds is the one the extension declared and hashed.
+		const dir = path.join(harness.workspace, '.osint-inbox', 'pending', bundle!.bundleId);
+		const mhtml = fs.readFileSync(path.join(dir, 'page.mhtml'));
+		const digest = createHash('sha256').update(mhtml).digest('hex');
+		expect(stored.capture.files['page.mhtml']).toEqual({ size: mhtml.length, sha256: digest });
+		expect(stored.server.files['page.mhtml']).toEqual({ size: mhtml.length, sha256: digest });
+		expect(mhtml.toString('latin1')).toMatch(/Content-Type: multipart\/related/);
+		expect(mhtml.toString('latin1')).toContain('Leak report');
+		// The screenshot is optional: sent only if the tab stayed in front. When sent, it too must match.
+		if (stored.capture.files['viewport.png']) {
+			const png = fs.readFileSync(path.join(dir, 'viewport.png'));
+			expect(createHash('sha256').update(png).digest('hex')).toBe(stored.capture.files['viewport.png'].sha256);
+		}
+		test.info().annotations.push({ type: 'capture files', description: Object.keys(stored.capture.files).join(', ') });
+
+		// Delivered: the panel says so, and the queue (and its stored files) is empty.
+		await expect(panel.locator('#capture-status')).toHaveText('Page capture delivered to OSINT Copilot.');
+		await expect(panel.locator('#queue li.hint')).toBeVisible();
+	} finally {
+		await ctx.close();
+		fs.rmSync(captureProfile, { recursive: true, force: true });
+		fs.rmSync(granted, { recursive: true, force: true });
+	}
 });

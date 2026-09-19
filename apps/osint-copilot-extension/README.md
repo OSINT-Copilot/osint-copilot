@@ -1,6 +1,6 @@
 # OSINT Copilot extension
 
-A Chrome extension (Manifest V3, Chrome 140 or later) that sends notes and entities from web pages into an investigation in the OSINT Copilot desktop app on the same computer. Items go straight into the investigation, labelled "via extension". The app then shows a notice from which you can review them and remove any you did not mean to add.
+A Chrome extension (Manifest V3, Chrome 140 or later) that sends notes, entities and page captures from web pages into an investigation in the OSINT Copilot desktop app on the same computer. Items go straight into the investigation, labelled "via extension". The app then shows a notice from which you can review them and remove any you did not mean to add.
 
 The extension talks only to the app, over `http://127.0.0.1`, and only after pairing. Nothing leaves the computer. The wire protocol is specified in [`apps/tangent-electron/src/main/osint/extension/PROTOCOL.md`](../tangent-electron/src/main/osint/extension/PROTOCOL.md).
 
@@ -18,7 +18,7 @@ npm test
 npm run e2e         # builds, then drives the extension in Chromium against the app's real server
 ```
 
-`npm run e2e` runs `e2e/smoke.spec.ts` headless: it pairs from the side panel, sends a note and an entity, and checks they reach a temporary investigation's inbox with valid MACs. It uses the Chromium Playwright was built for, or else the newest one in `~/.cache/ms-playwright`; set `OC_E2E_CHROMIUM` to choose another binary and `OC_E2E_HEADED=1` to watch.
+`npm run e2e` runs `e2e/smoke.spec.ts` headless: it pairs from the side panel, sends a note and an entity, captures a local page, and checks they reach a temporary investigation's inbox with valid MACs (and, for the capture, an archive whose SHA-256 is the one declared). Chrome's permission prompt cannot be answered from Playwright, so the capture test loads a copy of the build whose manifest grants `pageCapture` and `<all_urls>` at install; the prompt itself is covered by the unit tests. It uses the Chromium Playwright was built for, or else the newest one in `~/.cache/ms-playwright`; set `OC_E2E_CHROMIUM` to choose another binary and `OC_E2E_HEADED=1` to watch.
 
 `dist/` is generated and not committed. To redraw the icons after the app's icon changes, run `python3 scripts/make-icons.py` (needs Pillow).
 
@@ -45,7 +45,8 @@ The panel then shows the app as connected and lists your investigations. To stop
 - **Page.** Every item is attached to the page it came from (URL and title). The extension can see the current tab only after you click its toolbar button or its context-menu item on that tab. Until then the panel says so, rather than guessing the page.
 - **Quick note.** Type and send.
 - **Entity.** Select text on a page, right-click it and choose **Send to OSINT Copilot as entity**. You can also press **Use selected text** in the panel. The panel suggests a kind (email, phone, username, domain, URL, IP or wallet), which you can change. For wallets you choose the chain; for usernames the platform defaults to the page's site. Nothing is sent until you press **Send entity**.
-- **Queue.** Every item is queued before it is sent. If the app is closed, items wait and are sent when it is back. The extension retries when it starts, when you open the panel and when you act. While the panel is open it also retries on a timer, backing off to at most every ten minutes. If the app refuses an item (for example, the investigation no longer exists), the item stays in the queue marked as not sent. You can then retry it, send it to another investigation or delete it. The queue holds at most 100 items or 300 MB. When it is full, new items are refused; old ones are never dropped.
+- **Capture page.** Press **Capture page** in the panel, choose **Capture this page to OSINT Copilot** from the page's right-click menu, or press **Ctrl+Shift+Y** (**Command+Shift+Y** on a Mac; change it at `chrome://extensions/shortcuts`). The extension saves the tab as an MHTML archive and, if the same tab is still in front at the same address, a screenshot of what is on screen. For a PDF tab it also fetches the PDF itself, with your browser's cookies (you may be logged in to see it) but only from the exact address the tab shows, with redirects refused. The capture goes into the investigation as Evidence. The first capture asks Chrome for two permissions (see below); the panel explains this before you are asked, and if you decline, nothing is captured. Chrome's own pages, the Chrome Web Store, `file://` pages and sites your organisation's policy blocks cannot be captured, and the panel says which applies. The panel shows the capture's progress (preparing, uploading N of M MB, delivered, queued or failed).
+- **Queue.** Every item is queued before it is sent. If the app is closed, items wait and are sent when it is back. The extension retries when it starts, when you open the panel and when you act. While the panel is open it also retries on a timer, backing off to at most every ten minutes. If the app refuses an item (for example, the investigation no longer exists), the item stays in the queue marked as not sent. You can then retry it, send it to another investigation or delete it. The queue holds at most 100 items or 300 MB, a capture's files included. When it is full, new items are refused; old ones are never dropped. A capture's files are kept in the extension's IndexedDB until the app confirms it has the capture; an upload cut off by a closed app or a browser restart resumes with the files the app still lacks, under the same id. A capture the app refuses stays in the queue, files and all, marked as not sent, for you to retry or delete.
 
 ## Permissions
 
@@ -53,14 +54,15 @@ The panel then shows the app as connected and lists your investigations. To stop
 |---|---|
 | `storage` | The pairing key, the investigation list and your choice of investigation (`chrome.storage.local`), plus the context-menu selection on its way to the panel (`chrome.storage.session`). |
 | `sidePanel` | The side panel. |
-| `contextMenus` | "Send to OSINT Copilot as entity" on selected text. |
+| `contextMenus` | "Send to OSINT Copilot as entity" on selected text, and "Capture this page to OSINT Copilot" on a page. |
 | `activeTab` | Seeing the current tab's URL and title, and reading its selection, after you click the toolbar button or the menu item there. This gives no access to other tabs or later visits. |
 | `scripting` | Reading the selected text for **Use selected text**, only in a tab where you have granted `activeTab`. |
 | `http://127.0.0.1/*` | Talking to the OSINT Copilot app on this computer. |
-| `pageCapture`, `webNavigation` (optional) | Not requested yet. Page capture comes in a later version, which will ask first. |
-| `<all_urls>` (optional) | Not requested yet. Page capture without a click on each page will need it; Chrome will warn about it when asked. |
+| `pageCapture` (optional) | Saving a tab as MHTML. Asked for, together with `<all_urls>`, the first time you capture a page, from that click or key press. |
+| `<all_urls>` (optional) | Page capture: reading the tab's address and title, the screenshot of the visible part (`captureVisibleTab`), and fetching a PDF tab's own bytes. Chrome words this as reading and changing your data on all websites; the extension uses it only for a capture you ask for. You can withdraw it in `chrome://extensions`, and capture then asks again. |
+| `webNavigation` (optional) | Not requested. Reserved for a later version. |
 
-The extension does not request `tabs`, `nativeMessaging`, `unlimitedStorage`, `externally_connectable` or `onMessageExternal`.
+The keyboard shortcut is a manifest `commands` entry, which needs no permission. The extension does not request `tabs`, `nativeMessaging`, `unlimitedStorage`, `externally_connectable` or `onMessageExternal`.
 
 ## Security, briefly
 
@@ -68,21 +70,22 @@ The extension does not request `tabs`, `nativeMessaging`, `unlimitedStorage`, `e
 - **Checking the app is really the app.** Before sending anything, the service worker checks the app's identity with `hello`. It checks that the proof is from the instance it paired with, and for the exact port it dialled. So a program that grabs the app's port first, or relays to the real app on another port, is refused. Every request is signed, and every reply's signature is checked. A reply that does not verify is treated as no reply, and the item is retried later under the same id. There is no unauthenticated fallback.
 - **Who can ask the service worker to do things.** Only the extension's own pages. Messages from content scripts and from other extensions are refused.
 - **What a page can do.** Page text (a selection, a title) is treated as data. It fills a form field, and nothing is sent until you press Send. The panel never renders it as HTML.
+- **Captures are of the page you meant.** The tab is read before and after the archive is made. If it navigated meanwhile, the capture is dropped. The screenshot shows whatever is on screen, so it is taken only while the same tab, at the same address, is still the one in front of its window, and checked again after; otherwise it is left out and the queue item says why. The files are hashed (SHA-256) in the extension and declared before they are sent, and each upload is signed over its bytes, so the app stores exactly what was captured.
 
-## What this version does and does not do (Phase 1)
+## What this version does and does not do (Phases 1 and 2)
 
 Does:
 
 - Pairing, and the authenticated channel to the app, including finding the app when it moves to another of its five ports (23760-23764).
 - Choosing the investigation.
 - Quick notes, and single entities from a selection or typed.
-- A durable queue with retries.
+- Page capture (MHTML, a screenshot of the visible part, a PDF tab's original), from the panel, the page menu or a keyboard shortcut.
+- A durable queue with retries, resuming a capture's upload where it stopped.
 
 Does not yet:
 
-- Capture pages (MHTML, screenshots): Phase 2.
 - Highlight and annotate text on pages: Phase 3.
-- Keyboard shortcuts, a Web Store build or a privacy policy: Phase 4.
+- A Web Store build or a privacy policy: Phase 4.
 - Retry on a schedule while the panel is closed. That would need the `alarms` permission, so for now queued items go when the extension next wakes: at browser start, when you open the panel, or when you send something.
 - Run in Firefox (no `chrome.pageCapture`). Edge and Brave are untested.
 
@@ -92,7 +95,7 @@ Does not yet:
 |---|---|
 | `static/` | `manifest.json`, the side panel's HTML and CSS, icons. Copied into `dist/`. |
 | `src/shared/` | Protocol constants and types, base64url, signing strings (WebCrypto), the app's acceptance checks, `classify()`, URL helpers, manifest building. |
-| `src/sw/` | The service worker: channel (pair, hello, signed requests), storage, IndexedDB queue, message router, context menu, entry point. |
+| `src/sw/` | The service worker: channel (pair, hello, signed requests and uploads), storage, IndexedDB queue (items and a capture's files), page capture, message router, context menus and the capture command, entry point. |
 | `src/sidepanel/` | The side panel (plain TypeScript and DOM). |
 | `test/` | Vitest, in Node. The signing and entity tests read the app's shared vectors in `apps/tangent-electron/src/main/osint/extension/vectors/` directly. |
 | `scripts/make-icons.py` | Regenerates the icons from the app's icon. |

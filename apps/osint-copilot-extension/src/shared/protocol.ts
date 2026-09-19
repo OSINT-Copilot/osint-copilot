@@ -116,6 +116,13 @@ export interface BundleResponse {
 	receivedAt: string;
 }
 
+/** A capture created and waiting for its files (§7.4). */
+export interface CaptureCreatedResponse {
+	status: 'created';
+	bundleId: string;
+	missing: CaptureFileName[];
+}
+
 // --- manifest (§8) -------------------------------------------------------------------
 
 export const ENTITY_KINDS = ['email', 'phone', 'username', 'domain', 'url', 'ip', 'wallet'] as const;
@@ -166,7 +173,34 @@ export interface EntityManifest extends ManifestBase {
 	entity: EntityPayload;
 }
 
-export type Manifest = NoteManifest | EntityManifest;
+// --- captures (§8.3) ------------------------------------------------------------------
+
+/** The fixed names, in the order the app lists them as missing. */
+export const CAPTURE_FILE_NAMES = ['page.mhtml', 'viewport.png', 'page.pdf'] as const;
+export type CaptureFileName = typeof CAPTURE_FILE_NAMES[number];
+export const REQUIRED_CAPTURE_FILE: CaptureFileName = 'page.mhtml';
+
+export const CAPTURE_FILE_CAPS: Record<CaptureFileName, number> = {
+	'page.mhtml': 50 * 1024 * 1024,
+	'viewport.png': 25 * 1024 * 1024,
+	'page.pdf': 50 * 1024 * 1024,
+};
+
+export const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+export interface CaptureFileDecl {
+	size: number;
+	sha256: string;
+}
+
+export type CaptureFiles = { 'page.mhtml': CaptureFileDecl } & Partial<Record<'viewport.png' | 'page.pdf', CaptureFileDecl>>;
+
+export interface CaptureManifest extends ManifestBase {
+	kind: 'capture';
+	capture: { files: CaptureFiles };
+}
+
+export type Manifest = NoteManifest | EntityManifest | CaptureManifest;
 
 // --- the pairing string (§5.1) -------------------------------------------------------
 
