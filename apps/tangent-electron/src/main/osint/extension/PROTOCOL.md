@@ -484,4 +484,8 @@ The renderer then makes one Evidence entity keyed `evidence:<archive sha256>` (a
 
 A highlight is filed in the page's Sources note (`OSINTCopilot/Sources/<slug>-<hash>.md`) as its own section: the quote and the note, shown inert. Every highlight on the page is also recorded, selectors and all, in `<same name>.annotations.json` beside it, so the investigation keeps what it needs to find each one again even if the browser's copy is lost. That record keeps the quote exactly as the page had it.
 
-An edit rewrites the highlight's one section in place. A delete cuts it and leaves a tombstone in the record. Only the highlight itself (kind `highlight`) is listed in the app's activity, and Remove there takes it out and leaves a tombstone too. A later edit from the browser, with a newer `modified`, brings it back.
+An edit rewrites the highlight's one section in place. A delete cuts it and leaves a tombstone in the record; a later delete moves the tombstone forward. Remove in the app's activity takes a highlight out and leaves a tombstone too.
+
+Each highlight is listed in the app's activity once, by the bundle that put it into the investigation: the one that filed it first (normally its `highlight`, but a `highlight.update` that arrived before it counts), or a `highlight.update` newer than a tombstone, which brings the highlight back after a Remove or a delete; that one is announced, listed and can be removed again. Edits of a highlight already there, and anything a newer change or a tombstone overrides, are applied without being announced or listed.
+
+The record is `<same name>.annotations.json`. An entry that does not read is dropped and the rest are kept; a file that does not read at all is renamed aside (`.unreadable-<time>.json`), never overwritten. A page whose only record is a tombstone has the record and no note yet; the note, when it comes, is created beside it.

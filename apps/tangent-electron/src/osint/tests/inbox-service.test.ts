@@ -1425,10 +1425,13 @@ describe('highlights from the extension', () => {
         expect(sections(note())).toBe(1);
         expect(note()).toContain('edited');
         expect(sidecar()!.highlights[ID].section).toBe(editId);
-        // Remove on the create item takes out the section the edit wrote.
-        const [item] = await refreshActivity();
-        expect(item.bundleId).toBe(createId);
-        expect(await newService().remove(createId)).toBe(true);
+        // Listed once, by the bundle that filed it: the edit. The late create changed
+        // nothing, so it is neither listed nor announced; Remove on the edit takes it out.
+        const items = await refreshActivity();
+        expect(items.map((i) => i.bundleId)).toEqual([editId]);
+        expect(notices).toEqual([1]);
+        expect(await newService().remove(editId)).toBe(true);
+        expect(inbox.where(createId)).toBe('done');
         expect(sections(note())).toBe(0);
         expect(sidecar()!.highlights[ID].deleted).toBe(true);
     });
@@ -1472,6 +1475,83 @@ describe('highlights from the extension', () => {
         expect(body).not.toContain('‮');
         // ...and the record keeps the quote as the page had it, for finding it again.
         expect(sidecar()!.highlights[ID].annotation!.target.selector[0].exact).toBe(exact);
+    });
+
+    it('an edit that brings a removed highlight back is announced, listed, and can be removed again', async () => {
+        const createId = inbox.add(hl('highlight', annotation('quote', '2026-09-18T09:00:00.000Z')));
+        const service = newService();
+        await service.start();
+        expect(await service.remove(createId)).toBe(true);
+        const editId = inbox.add(hl('highlight.update', annotation('quote', new Date(Date.now() + 60_000).toISOString(), 'back again')));
+        await service.processPending();
+        expect(sections(note())).toBe(1);
+        // Announced: it put a highlight back in the investigation.
+        expect(notices).toEqual([1, 1]);
+        const listed = (await refreshActivity()).filter((i) => !i.removed);
+        expect(listed.map((i) => [i.bundleId, i.kind])).toEqual([[editId, 'highlight']]);
+        expect(await service.remove(editId)).toBe(true);
+        expect(sections(note())).toBe(0);
+    });
+
+    it('a later delete moves the tombstone forward, so an older edit cannot bring it back', async () => {
+        const createId = inbox.add(hl('highlight', annotation('quote', '2026-09-18T09:00:00.000Z')));
+        const service = newService();
+        await service.start();
+        await service.remove(createId);
+        const now = Date.now();
+        inbox.add(del(new Date(now + 120_000).toISOString()));
+        await service.processPending();
+        // Made in the browser between the Remove and the delete, delivered last.
+        inbox.add(hl('highlight.update', annotation('quote', new Date(now + 60_000).toISOString(), 'stale')));
+        await service.processPending();
+        expect(sections(note())).toBe(0);
+        expect(sidecar()!.highlights[ID]).toMatchObject({ deleted: true, modified: new Date(now + 120_000).toISOString() });
+    });
+
+    it('a create that a delete overrides is neither announced nor listed, even under another title', async () => {
+        inbox.add({ kind: 'highlight.delete', page: { url: PAGE, title: 'Old title' }, highlight: { annotationId: ID, modified: '2026-09-18T09:10:00.000Z' } });
+        await newService().start();
+        inbox.add({ kind: 'highlight', page: { url: PAGE, title: 'New title' }, highlight: { annotation: annotation('quote', '2026-09-18T09:00:00.000Z') } });
+        await newService().start();
+        // One page, one stem: the note is created beside the tombstone's sidecar.
+        const files = sourcesNotes();
+        expect(files.filter((p) => p.endsWith('.annotations.json'))).toHaveLength(1);
+        expect(files.filter((p) => p.endsWith('.md')).every((p) => p.startsWith(files.find((f) => f.endsWith('.json'))!.replace(/\.annotations\.json$/, '')))).toBe(true);
+        expect(files.filter((p) => p.endsWith('.md')).map((p) => sections(getContent(app, p)!))).toEqual(files.some((p) => p.endsWith('.md')) ? [0] : []);
+        expect(notices).toEqual([]);
+        expect(await refreshActivity()).toEqual([]);
+    });
+
+    it('keeps the entries of a sidecar that still read when one of them does not', async () => {
+        inbox.add(hl('highlight', annotation('first', '2026-09-18T09:00:00.000Z')));
+        inbox.add(hl('highlight', annotation('second', '2026-09-18T09:00:00.000Z', undefined, 'urn:uuid:6f0c6a2e-8b1d-4c3e-9f7a-1b2c3d4e5f61')));
+        await newService().start();
+        const [md] = sourcesNotes().filter((p) => p.endsWith('.md'));
+        const file = app.vault.getAbstractFileByPath(sidecarPathFor(md));
+        const damaged = JSON.parse(getContent(app, sidecarPathFor(md))!);
+        damaged.highlights['urn:uuid:6f0c6a2e-8b1d-4c3e-9f7a-1b2c3d4e5f61'] = { modified: 'not a time' };
+        await app.vault.modify(file as never, JSON.stringify(damaged));
+        // An edit of the first finds its record, and rewrites its one section in place.
+        inbox.add(hl('highlight.update', annotation('first', '2026-09-18T09:05:00.000Z', 'edited')));
+        await newService().start();
+        expect(sections(note())).toBe(2);
+        expect(sidecar()!.highlights[ID].annotation!.body?.value).toBe('edited');
+    });
+
+    it('Remove finds the item\'s own section when the sidecar had to be set aside', async () => {
+        const createId = inbox.add(hl('highlight', annotation('quote', '2026-09-18T09:00:00.000Z')));
+        const service = newService();
+        await service.start();
+        const [md] = sourcesNotes().filter((p) => p.endsWith('.md'));
+        await app.vault.modify(app.vault.getAbstractFileByPath(sidecarPathFor(md)) as never, '{broken');
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        inbox.add(hl('highlight.update', annotation('quote', '2026-09-18T09:05:00.000Z', 'edited')));
+        await service.processPending();
+        warn.mockRestore();
+        // The record was lost, so the edit filed a second section. Remove takes out both.
+        expect(sections(note())).toBe(2);
+        expect(await service.remove(createId)).toBe(true);
+        expect(sections(note())).toBe(0);
     });
 
     it('sets aside a sidecar it cannot read, rather than writing over it', async () => {

@@ -171,13 +171,21 @@ export function activityItemFor(bundle: InboxAppliedBundle): ExtensionActivityIt
     } else if (manifest.kind === 'note') {
         kind = 'note';
         summary = noteSummary(manifest.note.text);
-    } else if (manifest.kind === 'highlight') {
+    } else if (manifest.kind === 'highlight' || manifest.kind === 'highlight.update') {
+        // A highlight is listed by the bundle that put it in the investigation: the one that
+        // filed it first (its create, or an edit that got here first), or an edit that
+        // brought it back after a Remove, so that one can be removed too. Other edits, and a
+        // create that a newer change or a delete overrode, put nothing in, and have nothing
+        // of their own to show or take back.
+        const did = (steps.find((s) => s.step === 'highlight')?.data as { outcome?: unknown } | undefined)?.outcome;
+        // Before outcomes were recorded, the create was the item.
+        const listed = did === undefined ? manifest.kind === 'highlight' : PUTS_HIGHLIGHT_IN.includes(did);
+        if (!listed) return null;
         kind = 'highlight';
         summary = oneLine(displayQuote(manifest.highlight.annotation.target.selector[0].exact)).slice(0, 140);
         annotationId = manifest.highlight.annotation.id;
     } else {
-        // highlight.update and highlight.delete are edits of a highlight already in the
-        // log, not items of their own: nothing separate to show or to take back.
+        // highlight.delete: an edit of a highlight already in the log.
         return null;
     }
     const removed = bundle.where === 'removed';
@@ -509,7 +517,12 @@ export function sidecarPathFor(notePath: string): string {
     return notePath.replace(/\.md$/, '.annotations.json');
 }
 
-/** A sidecar read back, or null when it is not one this code wrote. */
+/**
+ * A sidecar read back, or null when it is not one this code wrote. One entry that does not
+ * read (a hand edit, a bad merge) is dropped, not the whole file: the others are still the
+ * record of their highlights, and without them an edit would file a second section and
+ * leave the first where Remove cannot find it.
+ */
 export function parseSidecar(raw: string): HighlightSidecar | null {
     let v: unknown;
     try {
@@ -524,7 +537,7 @@ export function parseSidecar(raw: string): HighlightSidecar | null {
     const highlights: Record<string, SidecarHighlight> = {};
     for (const [id, e] of Object.entries(h as Record<string, unknown>)) {
         const r = e as Record<string, unknown>;
-        if (!r || typeof r !== 'object' || !isString(r.modified) || typeof r.deleted !== 'boolean') return null;
+        if (!r || typeof r !== 'object' || !isString(r.modified) || Number.isNaN(Date.parse(r.modified)) || typeof r.deleted !== 'boolean') continue;
         highlights[id] = {
             ...(r.annotation && typeof r.annotation === 'object' ? { annotation: r.annotation as HighlightAnnotation } : {}),
             section: isString(r.section) ? r.section : null,
@@ -560,6 +573,16 @@ function highlightSection(annotation: HighlightAnnotation, receivedAt: string, e
 // ------------------------------------------------------------------ the service
 
 type EntityPlan = { plannedEntityId: string };
+/** What a highlight bundle did, as its `highlight` journal step records it. */
+type HighlightStep = { path: string; outcome?: HighlightOutcome };
+/**
+ * created: the first time this highlight is filed (by its create, or by an edit that got
+ * here first). revived: an edit newer than a tombstone put it back. edited: it was there,
+ * and changed. unchanged: a newer change or a delete overrides this one.
+ */
+type HighlightOutcome = 'created' | 'revived' | 'edited' | 'unchanged';
+/** The outcomes that put a highlight into the investigation: announced, listed, removable. */
+const PUTS_HIGHLIGHT_IN: readonly unknown[] = ['created', 'revived'];
 type EntityStep = { entityId: string; created: boolean; label: string; addedSourceIds: string[] };
 
 /**
@@ -839,23 +862,25 @@ export class InboxService {
                 placedFiles: placement.files,
             };
         } else if (manifest.kind === 'highlight' || manifest.kind === 'highlight.update') {
-            let done = journal.get('highlight') as { path?: unknown } | undefined;
+            let done = journal.get('highlight') as HighlightStep | undefined;
             if (!done || !isString(done.path)) {
-                const path = await this.upsertHighlight(manifest.page, manifest.highlight.annotation, bundleId, server.receivedAt);
-                done = { path };
+                done = await this.upsertHighlight(manifest.page, manifest.highlight.annotation, bundleId, server.receivedAt);
                 await step('highlight', done);
             }
-            // The item is the highlight; an update is an edit of it and is not listed or
-            // taken back on its own (see activityItemFor).
-            outcome = { entityId: null, entityLabel: null, created: false, addedSourceIds: [], sourcesNotePath: done.path as string, placedFiles: [] };
+            outcome = { entityId: null, entityLabel: null, created: false, addedSourceIds: [], sourcesNotePath: done.path, placedFiles: [] };
             if (!journal.has(APPLIED_STEP)) await step(APPLIED_STEP, outcome);
             await this.deps.inbox.finish(bundleId, 'done');
-            return manifest.kind === 'highlight' ? 'done' : 'edited';
+            // Announced (and listed, see activityItemFor) only when it put a highlight in
+            // the investigation: filed it first -- a create, or an edit that got here before
+            // its create -- or brought it back after a Remove. An edit of one already there,
+            // or anything a newer change or a delete overrides, is applied quietly.
+            // A journal from before outcomes were recorded: a create counts as one.
+            const putIn = done.outcome === undefined ? manifest.kind === 'highlight' : PUTS_HIGHLIGHT_IN.includes(done.outcome);
+            return putIn ? 'done' : 'edited';
         } else if (manifest.kind === 'highlight.delete') {
             let done = journal.get('highlight') as { path?: unknown } | undefined;
             if (!done || !isString(done.path)) {
-                const path = await this.deleteHighlight(manifest.page, manifest.highlight.annotationId, manifest.highlight.modified);
-                done = { path };
+                done = { path: await this.deleteHighlight(manifest.page, manifest.highlight.annotationId, manifest.highlight.modified) };
                 await step('highlight', done);
             }
             outcome = { entityId: null, entityLabel: null, created: false, addedSourceIds: [], sourcesNotePath: done.path as string, placedFiles: [] };
@@ -964,6 +989,10 @@ export class InboxService {
             const suffix = `-${hash}.md`;
             const hit = folder.children.find((c) => c instanceof TFile && c.name.endsWith(suffix));
             if (hit) return hit.path;
+            // A page whose only record is a highlight's tombstone has a sidecar and no note
+            // yet. The note goes beside it, so later items meet that tombstone.
+            const sidecar = folder.children.find((c) => c instanceof TFile && c.name.endsWith(`-${hash}.annotations.json`));
+            if (sidecar) return sidecar.path.replace(/\.annotations\.json$/, '.md');
         }
         let host = '';
         try { host = new URL(page.url).hostname; } catch { /* slug from the title only */ }
@@ -1072,13 +1101,14 @@ export class InboxService {
      * Files a highlight, or an edit of one: its section in the Sources note (rewritten in
      * place on an edit) and its record in the sidecar. Idempotent, and ordered by the
      * annotation's `modified`, so an edit that arrives after a newer one, or a create after
-     * a delete, changes nothing. Returns the Sources note's path.
+     * a delete, changes nothing. Says which of those it was: `revived` is an edit newer than
+     * a tombstone, which puts back a highlight removed or deleted before it was made.
      */
-    private async upsertHighlight(page: ManifestPage, annotation: HighlightAnnotation, bundleId: string, receivedAt: string): Promise<string> {
+    private async upsertHighlight(page: ManifestPage, annotation: HighlightAnnotation, bundleId: string, receivedAt: string): Promise<HighlightStep> {
         const notePath = await this.sourcesNotePathFor(page);
         const { path, sidecar } = await this.readSidecar(notePath, page);
         const held = sidecar.highlights[annotation.id];
-        if (!isNewer(annotation.modified, held)) return notePath;
+        if (!isNewer(annotation.modified, held)) return { path: notePath, outcome: 'unchanged' };
 
         const key = held && !held.deleted && held.section ? held.section : bundleId;
         const firstReceived = held && !held.deleted && held.receivedAt ? held.receivedAt : receivedAt;
@@ -1088,7 +1118,7 @@ export class InboxService {
             annotation, section: key, modified: annotation.modified, receivedAt: firstReceived, deleted: false,
         };
         await this.writeSidecar(path, sidecar);
-        return notePath;
+        return { path: notePath, outcome: !held ? 'created' : held.deleted ? 'revived' : 'edited' };
     }
 
     /**
@@ -1101,7 +1131,9 @@ export class InboxService {
         const { path, sidecar } = await this.readSidecar(notePath, page);
         const held = sidecar.highlights[annotationId];
         if (held && !held.deleted && Date.parse(held.modified) > Date.parse(modified)) return notePath;
-        if (held?.deleted) return notePath;
+        // Already deleted: a later delete still moves the tombstone forward, or an edit made
+        // between the two, delivered after this one, would bring the highlight back.
+        if (held?.deleted && Date.parse(modified) <= Date.parse(held.modified)) return notePath;
         if (held?.section) await this.cutNoteSection(notePath, held.section);
         sidecar.highlights[annotationId] = { section: held?.section ?? null, modified, deleted: true };
         await this.writeSidecar(path, sidecar);
@@ -1180,6 +1212,9 @@ export class InboxService {
         const held = sidecar.highlights[item.annotationId!];
         const section = held?.section ?? item.bundleId;
         await this.cutNoteSection(notePath, section);
+        // The item's own section too, when the record points elsewhere: a sidecar that had
+        // to be set aside loses the link, and an edit then files a section of its own.
+        if (section !== item.bundleId) await this.cutNoteSection(notePath, item.bundleId);
         if (held?.deleted) return;
         sidecar.highlights[item.annotationId!] = { section, modified: new Date().toISOString(), deleted: true };
         await this.writeSidecar(path, sidecar);
