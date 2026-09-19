@@ -127,7 +127,6 @@ export class GeocodingService {
     // Nominatim's policy requires a User-Agent that identifies the application. This
     // still named the Obsidian plugin, which is not what is making the request.
     private static readonly USER_AGENT = 'OSINTCopilot/3.0 (https://github.com/Probe-Point-Analytics-LLC/osint-copilot)';
-    private static readonly REQUEST_TIMEOUT = 10000; // 10 seconds
 
     // Rate limiting: the timestamp of the next free slot, reserved on claim.
     private lastRequestTime: number = 0;

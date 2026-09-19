@@ -262,20 +262,6 @@ export class GraphHistoryManager {
     }
 
     /**
-     * Get current position in history (for UI display).
-     */
-    getCurrentPosition(): number {
-        return this.undoStack.length;
-    }
-
-    /**
-     * Get total history size.
-     */
-    getTotalHistorySize(): number {
-        return this.undoStack.length + this.redoStack.length;
-    }
-
-    /**
      * Undo the last operation.
      */
     async undo(): Promise<boolean> {

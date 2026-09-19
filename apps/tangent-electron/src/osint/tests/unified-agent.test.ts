@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../skills/skill-executor', () => ({
     executeEnricherTool: vi.fn().mockResolvedValue('enricher-mock-result'),
-    executeVaultSkillTool: vi.fn(),
 }));
 
 import { executeEnricherTool } from '../skills/skill-executor';
@@ -194,7 +193,6 @@ describe('OrchestrationService unified path', () => {
             'The PDF cites https://embedded.example/report',
             { entities: [], connections: [] },
             [],
-            {},
             vi.fn(),
             {},
         );
@@ -232,7 +230,6 @@ describe('OrchestrationService unified path', () => {
             '',
             { entities: [], connections: [] },
             [],
-            {},
             vi.fn(),
             { abortSignal: controller.signal },
         )).rejects.toMatchObject({ name: 'AbortError' });
@@ -288,7 +285,6 @@ describe('OrchestrationService unified path', () => {
             '',
             { entities: [], connections: [] },
             [],
-            {},
             onProgress,
             {},
         );
@@ -349,7 +345,6 @@ describe('OrchestrationService unified path', () => {
             '',
             { entities: [], connections: [] },
             [],
-            {},
             onProgress,
             {},
         );

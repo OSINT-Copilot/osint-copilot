@@ -4,7 +4,7 @@ import { EntityManager } from '../services/entity-manager';
 import { createTestApp, type TestApp } from '../obsidian-shim/testing/create-test-app';
 import { getContent, snapshotPaths } from './helpers/vault-inspect';
 import {
-    identifierKey, identifierKeysForEntity, normalizeIdentifierKey, normalizePlatform, platformFromHost,
+    identifierKey, identifierKeysForEntity, normalizeIdentifierKey, normalizePlatform,
     usernameIdentifierKey,
 } from '../services/entity-identifiers';
 import { Vault } from '../obsidian-shim/vault/vault';
@@ -755,8 +755,8 @@ describe('usernames are keyed by platform', () => {
         expect(normalizePlatform('  ')).toBeNull();
         expect(normalizePlatform('!!!')).toBeNull();
         expect(normalizePlatform(42)).toBeNull();
-        expect(platformFromHost('www.twitter.com')).toBe('twitter');
-        expect(platformFromHost('mastodon.social')).toBe('mastodon.social');
+        expect(normalizePlatform('www.twitter.com')).toBe('twitter');
+        expect(normalizePlatform('mastodon.social')).toBe('mastodon.social');
     });
 
     it('a known platform goes into the key, and the forms never meet', () => {

@@ -11,7 +11,7 @@ import {
     type Entity, EntityType, type Connection, ENTITY_CONFIGS,
     getEntityLabel, generateId, isGeneratedId, sanitizeFilename, COMMON_PROPERTIES,
     getFTMEntityConfig, isFTMSchema, legacyToFTMSchema,
-    type OsintConfidence, type OsintContradiction, type OsintSource, type OsintSourceInput,
+    type OsintContradiction, type OsintSource, type OsintSourceInput,
 } from '../entities/types';
 import {
     computeOsintConfidence,
@@ -24,7 +24,7 @@ import { geocodingService, GeocodingError, GeocodingErrorType } from './geocodin
 import { ftmSchemaService } from './ftm-schema-service';
 import type { SchemaCatalogService } from './schema-catalog-service';
 import type { CatalogEntityType, SchemaFamily } from './schema-catalog-types';
-import { GRAPH_YAML_FOLDER_NAME } from '../constants/vault-layout';
+import { GRAPH_YAML_FOLDER_NAME, OSINT_COPILOT_VAULT_ROOT } from '../constants/vault-layout';
 
 const SCHEMA_FAMILY_FOLDERS: SchemaFamily[] = ['ftm', 'stix2', 'mitre', 'user'];
 const RESERVED_FRONTMATTER_KEYS = new Set([
@@ -53,7 +53,7 @@ const RESERVED_FRONTMATTER_KEYS = new Set([
  * and some YAML/Markdown readers treat them as line breaks or reject them.
  * Every front-matter string written by hand in this file goes through here.
  */
-export function yamlQuote(value: string): string {
+function yamlQuote(value: string): string {
     return JSON.stringify(value).replace(
         /[\u007f-\u009f\u2028\u2029]/g,
         (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`,
@@ -206,7 +206,7 @@ export class EntityManager {
 
     constructor(
         app: App,
-        basePath: string = 'OSINTCopilot',
+        basePath: string = OSINT_COPILOT_VAULT_ROOT,
         vaultLockService?: VaultLockService | null,
         getReservedTopLevelFolderNames?: () => string[],
     ) {
@@ -222,10 +222,6 @@ export class EntityManager {
     /** Wired from plugin after SchemaCatalogService is constructed. */
     setSchemaCatalogService(catalog: SchemaCatalogService | null): void {
         this.schemaCatalog = catalog;
-    }
-
-    setVaultLockService(service: VaultLockService | null): void {
-        this.vaultLockService = service;
     }
 
     setWaybackArchiveService(service: WaybackArchiveService | null): void {
@@ -2626,20 +2622,6 @@ ${this.buildConnectionPropertiesSection(connection)}
     }
 
     /**
-     * Get entities by type.
-     */
-    getEntitiesByType(type: EntityType): Entity[] {
-        const entities = Array.from(this.entities.values()).filter(e => e.type === type);
-        console.debug(`[EntityManager] getEntitiesByType(${type}): found ${entities.length} entities`);
-        if (type === EntityType.Location) {
-            entities.forEach(e => {
-                console.debug(`[EntityManager] Location entity: ${e.label}, lat: ${e.properties.latitude}, lng: ${e.properties.longitude}`);
-            });
-        }
-        return entities;
-    }
-
-    /**
      * Get an entity by ID.
      */
     getEntity(id: string): Entity | undefined {
@@ -2651,15 +2633,6 @@ ${this.buildConnectionPropertiesSection(connection)}
      */
     getAllConnections(): Connection[] {
         return Array.from(this.connections.values());
-    }
-
-    /**
-     * Get connections for an entity.
-     */
-    getConnectionsForEntity(entityId: string): Connection[] {
-        return Array.from(this.connections.values()).filter(
-            c => c.fromEntityId === entityId || c.toEntityId === entityId
-        );
     }
 
     /**

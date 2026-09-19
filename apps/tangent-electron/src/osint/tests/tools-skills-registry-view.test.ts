@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { BUILT_IN_ORCHESTRATION_TOOLS } from "../data/built-in-orchestration-tools";
 import { enricherJsonPathFromId, skillMarkdownPathFromId } from "../utils/registry-paths";
 import { DEFAULT_ENRICHERS_FOLDER, DEFAULT_SKILLS_FOLDER } from "../constants/vault-layout";
 
@@ -18,19 +17,5 @@ describe("registry paths", () => {
 		expect(enricherJsonPathFromId("OSINTCopilot/custom/enrichers", "foo")).toBe(
 			"OSINTCopilot/custom/enrichers/foo.json",
 		);
-	});
-});
-
-describe("built-in orchestration tool catalog", () => {
-	it("is non-empty and has expected ids", () => {
-		expect(BUILT_IN_ORCHESTRATION_TOOLS.length).toBeGreaterThan(0);
-		const ids = BUILT_IN_ORCHESTRATION_TOOLS.map((t) => t.id);
-		expect(ids).toContain("LOCAL_VAULT");
-		expect(ids).toContain("EXTRACT_TO_GRAPH");
-		expect(ids).toContain("VAULT_GRAPH_INGEST");
-		for (const t of BUILT_IN_ORCHESTRATION_TOOLS) {
-			expect(t.title.length).toBeGreaterThan(0);
-			expect(t.description.length).toBeGreaterThan(0);
-		}
 	});
 });

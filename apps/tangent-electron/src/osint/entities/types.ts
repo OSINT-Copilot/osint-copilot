@@ -3,7 +3,7 @@
  * Now integrated with FollowTheMoney (FTM) schema format.
  */
 
-import { ftmSchemaService, type ResolvedFTMSchema, type FTMPropertyDefinition } from '../services/ftm-schema-service';
+import { ftmSchemaService, type FTMPropertyDefinition } from '../services/ftm-schema-service';
 import type { OIDSFModalLayers, SchemaFamily } from '../services/schema-catalog-types';
 import { DEFAULT_OIDSF_MODAL_LAYERS } from '../services/schema-catalog-types';
 import { canonicalSchemaName } from '../services/schema-name-aliases';
@@ -23,32 +23,6 @@ export enum EntityType {
     Image = "Image",
     Text = "Text"
 }
-
-// FTM Entity Types - these are the primary entity types from FTM schema
-export type FTMEntityType =
-    | 'Person'
-    | 'LegalEntity'
-    | 'Organization'
-    | 'Company'
-    | 'Event'
-    | 'Address'
-    | 'Vehicle'
-    | 'BankAccount'
-    | 'CryptoWallet'
-    | 'OnlineAccount'
-    | 'Document'
-    | 'RealEstate'
-    | 'Sanction'
-    | 'Passport'
-    | 'Ownership'
-    | 'Employment'
-    | 'Ownership'
-    | 'Employment'
-    | 'Directorship'
-    | 'IP'
-    | 'Malware'
-    | 'Group'
-    | 'Domain';
 
 export interface EntityConfig {
     color: string;
@@ -218,7 +192,7 @@ export const ENTITY_CONFIGS: Record<EntityType, EntityConfig> = {
 };
 
 // Entity icon mapping - contextually relevant icons for each entity type
-export const ENTITY_ICONS: Record<string, string> = {
+const ENTITY_ICONS: Record<string, string> = {
     // Legacy entity types (using EntityType enum values)
     [EntityType.Person]: "👤",
     [EntityType.Event]: "📅",
@@ -405,17 +379,6 @@ export interface Entity {
     osint_contradictions?: OsintContradiction[];
 }
 
-/**
- * FTM-compliant entity interface
- */
-export interface FTMEntity {
-    id: string;
-    schema: string;  // FTM schema name (e.g., 'Person', 'Company')
-    label: string;
-    properties: Record<string, unknown>;
-    filePath?: string;
-}
-
 export interface Connection {
     id: string;
     fromEntityId: string;
@@ -430,11 +393,6 @@ export interface Connection {
     osint_sources?: OsintSource[];
     osint_confidence?: OsintConfidence;
     osint_contradictions?: OsintContradiction[];
-}
-
-export interface GraphData {
-    entities: Entity[];
-    connections: Connection[];
 }
 
 // AI Operation types matching OSINTCopilot's format
@@ -460,11 +418,6 @@ export interface AIOperation {
         current_label: string;
         new_properties: Record<string, unknown>;
     }>;
-}
-
-export interface AIResponse {
-    operations: AIOperation[];
-    message?: string;
 }
 
 export interface ProcessTextResponse {
@@ -505,15 +458,6 @@ export function getEntityLabel(type: EntityType | string, properties: Record<str
     // Last resort: return type name IF no better label found, but tagged
     return `Unknown ${type}`;
 }
-
-/**
- * Check if a label is purely generic/placeholder.
- */
-function isGenericLabel(label: string): boolean {
-    const generic = ['person', 'company', 'event', 'location', 'unknown', 'unknown person', 'unknown company', 'unknown event', 'entity'];
-    return generic.includes(label.toLowerCase().trim());
-}
-
 
 /**
  * Get the color for an entity type.
@@ -703,7 +647,7 @@ export function validateEntityName(name: string, entityType?: string): EntityNam
 /**
  * Map legacy entity types to FTM schema names.
  */
-export const LEGACY_TO_FTM_MAP: Record<EntityType, string> = {
+const LEGACY_TO_FTM_MAP: Record<EntityType, string> = {
     [EntityType.Person]: 'Person',
     [EntityType.Event]: 'Event',
     [EntityType.Location]: 'Address',

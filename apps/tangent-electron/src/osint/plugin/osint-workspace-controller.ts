@@ -12,7 +12,7 @@ import type VaultAIPlugin from './vault-ai-plugin';
 export class OsintWorkspaceController {
   constructor(private readonly plugin: VaultAIPlugin) {}
 
-  private async getMainEditorLeaf(_viewType: string, _forceNew: boolean): Promise<WorkspaceLeaf | null> {
+  private async getMainEditorLeaf(): Promise<WorkspaceLeaf | null> {
     const osintViewTypes = [GRAPH_VIEW_TYPE, TIMELINE_VIEW_TYPE, MAP_VIEW_TYPE, CHAT_VIEW_TYPE, TOOLS_SKILLS_REGISTRY_VIEW_TYPE];
 
     const mainLeaves: WorkspaceLeaf[] = [];
@@ -57,25 +57,24 @@ export class OsintWorkspaceController {
   }
   /**
    * Open the Graph View in the main editor area.
-   * @param forceNew If true, opens another instance as a new tab next to existing OSINT tabs when possible.
    */
-  async openGraphView(forceNew: boolean = false) {
+  async openGraphView() {
     if (!this.plugin.settings.enableGraphFeatures) {
       new Notice('Graph features are disabled. Enable them in Preferences → OSINT Copilot → Graph view.', 5000);
       console.warn('[VaultAIPlugin] Attempted to open graph view but graph features are disabled');
       return;
     }
 
-    console.debug('[VaultAIPlugin] Opening graph view, forceNew:', forceNew);
+    console.debug('[VaultAIPlugin] Opening graph view');
     const existing = this.plugin.app.workspace.getLeavesOfType(GRAPH_VIEW_TYPE);
 
-    // If not forcing new and one exists, reveal it
-    if (!forceNew && existing.length > 0) {
+    // If one exists, reveal it
+    if (existing.length > 0) {
       void this.plugin.app.workspace.revealLeaf(existing[0]);
       return existing[0];
     }
 
-    const leaf = await this.getMainEditorLeaf(GRAPH_VIEW_TYPE, forceNew);
+    const leaf = await this.getMainEditorLeaf();
 
     if (leaf) {
       await leaf.setViewState({ type: GRAPH_VIEW_TYPE, active: true });
@@ -178,39 +177,9 @@ export class OsintWorkspaceController {
   }
 
   /**
-   * Open the Timeline View in the main editor area.
-   * @param forceNew If true, opens another instance as a new tab next to existing OSINT tabs when possible.
-   */
-  async openTimelineView(forceNew: boolean = false) {
-    // The same gate openGraphView has. These views read the same entity store, which is
-    // only initialised when graph features are on -- without the guard they opened empty,
-    // reachable from the palette and shortcuts even though the toolbar hides them.
-    if (!this.plugin.settings.enableGraphFeatures) {
-      new Notice('Graph features are disabled. Enable them in Preferences → OSINT Copilot → Graph view.', 5000);
-      return;
-    }
-
-    const existing = this.plugin.app.workspace.getLeavesOfType(TIMELINE_VIEW_TYPE);
-
-    // If not forcing new and one exists, reveal it
-    if (!forceNew && existing.length > 0) {
-      void this.plugin.app.workspace.revealLeaf(existing[0]);
-      return;
-    }
-
-    const leaf = await this.getMainEditorLeaf(TIMELINE_VIEW_TYPE, forceNew);
-
-    if (leaf) {
-      await leaf.setViewState({ type: TIMELINE_VIEW_TYPE, active: true });
-      void this.plugin.app.workspace.revealLeaf(leaf);
-    }
-  }
-
-  /**
    * Open the Map View in the main editor area.
-   * @param forceNew If true, opens another instance as a new tab next to existing OSINT tabs when possible.
    */
-  async openMapView(forceNew: boolean = false) {
+  async openMapView() {
     // The same gate openGraphView has. These views read the same entity store, which is
     // only initialised when graph features are on -- without the guard they opened empty,
     // reachable from the palette and shortcuts even though the toolbar hides them.
@@ -221,35 +190,16 @@ export class OsintWorkspaceController {
 
     const existing = this.plugin.app.workspace.getLeavesOfType(MAP_VIEW_TYPE);
 
-    // If not forcing new and one exists, reveal it
-    if (!forceNew && existing.length > 0) {
+    // If one exists, reveal it
+    if (existing.length > 0) {
       void this.plugin.app.workspace.revealLeaf(existing[0]);
       return;
     }
 
-    const leaf = await this.getMainEditorLeaf(MAP_VIEW_TYPE, forceNew);
+    const leaf = await this.getMainEditorLeaf();
 
     if (leaf) {
       await leaf.setViewState({ type: MAP_VIEW_TYPE, active: true });
-      void this.plugin.app.workspace.revealLeaf(leaf);
-    }
-  }
-
-  /**
-   * Open the tools / skills / enrichers registry in the main editor area.
-   */
-  async openToolsSkillsRegistryView(forceNew: boolean = false) {
-    const existing = this.plugin.app.workspace.getLeavesOfType(TOOLS_SKILLS_REGISTRY_VIEW_TYPE);
-
-    if (!forceNew && existing.length > 0) {
-      void this.plugin.app.workspace.revealLeaf(existing[0]);
-      return;
-    }
-
-    const leaf = await this.getMainEditorLeaf(TOOLS_SKILLS_REGISTRY_VIEW_TYPE, forceNew);
-
-    if (leaf) {
-      await leaf.setViewState({ type: TOOLS_SKILLS_REGISTRY_VIEW_TYPE, active: true });
       void this.plugin.app.workspace.revealLeaf(leaf);
     }
   }
@@ -298,29 +248,6 @@ export class OsintWorkspaceController {
 
     if (!mapView.focusLocation(entityId)) {
       new Notice('That entity is not on the map yet. Try refreshing the map view.');
-    }
-  }
-  /**
-   * Open the Chat View in the main editor area.
-   * @param forceNew If true, opens another instance as a new tab next to existing OSINT tabs when possible.
-   */
-  async openChatView(forceNew: boolean = false) {
-    const existing = this.plugin.app.workspace.getLeavesOfType(CHAT_VIEW_TYPE);
-
-    // If not forcing new and one exists, reveal it
-    if (!forceNew && existing.length > 0) {
-      await this.plugin.app.workspace.revealLeaf(existing[0]);
-      return;
-    }
-
-    const leaf = await this.getMainEditorLeaf(CHAT_VIEW_TYPE, forceNew);
-
-    if (leaf) {
-      await leaf.setViewState({
-        type: CHAT_VIEW_TYPE,
-        active: true,
-      });
-      await this.plugin.app.workspace.revealLeaf(leaf);
     }
   }
 

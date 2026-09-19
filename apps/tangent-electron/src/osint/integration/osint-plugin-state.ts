@@ -13,7 +13,7 @@
 import type { VaultAISettings } from '../settings/vault-ai-settings';
 
 export interface OsintPluginState {
-    /** True once the plugin has finished starting; false again after dispose. */
+    /** True once the plugin has finished starting. */
     ready: boolean;
     settings: VaultAISettings | null;
     /** Set when startup threw: the message, so a view can say so instead of waiting 60s. */

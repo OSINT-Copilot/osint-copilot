@@ -122,14 +122,6 @@ export function normalizePlatform(raw: unknown): string | null {
 }
 
 /**
- * The platform a page belongs to, from its URL's host -- for ingestion code that sees an
- * account on a page and has no platform property to go on.
- */
-export function platformFromHost(host: string): string | null {
-    return normalizePlatform(host);
-}
-
-/**
  * `username:<platform>:<name>` when the platform is known, else `username:<name>`. The two
  * forms never match each other: a GitHub "john" must not merge into a Twitter "john", nor
  * into a "john" whose platform nobody recorded.

@@ -112,8 +112,8 @@ export class CodexCliService extends ClaudeCodeService {
     protected override readonly cliPathSettingLabel: string = 'Codex CLI path';
     protected override readonly defaultCliName: string = 'codex';
 
-    constructor(pluginDir: string, config?: Partial<CodexCliConfig>) {
-        super(pluginDir, {
+    constructor(config?: Partial<CodexCliConfig>) {
+        super({
             cliPath: 'codex',
             model: '',
             timeoutMs: 300_000,

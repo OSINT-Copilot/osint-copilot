@@ -21,6 +21,7 @@ import type {
 	SchemaFamily,
 } from './schema-catalog-types';
 import { DEFAULT_ENABLED_SCHEMA_FAMILIES } from './schema-catalog-types';
+import { OSINT_COPILOT_VAULT_ROOT } from '../constants/vault-layout';
 
 function ftmPropsToCatalog(
 	all: Record<string, FTMPropertyDefinition>,
@@ -34,13 +35,11 @@ function ftmPropsToCatalog(
 
 export class SchemaCatalogService {
 	private app: App;
-	private getEntityBasePath: () => string;
 	private entities = new Map<string, CatalogEntityType>();
 	private relationships = new Map<string, CatalogRelationshipType>();
 
-	constructor(app: App, getEntityBasePath: () => string) {
+	constructor(app: App) {
 		this.app = app;
-		this.getEntityBasePath = getEntityBasePath;
 	}
 
 	/** Full rebuild: FTM from service + vault YAML. */
@@ -93,13 +92,13 @@ export class SchemaCatalogService {
 	}
 
 	private async loadVaultStix2(): Promise<void> {
-		const base = normalizePath(`${this.getEntityBasePath()}/schemas/stix2`);
+		const base = normalizePath(`${OSINT_COPILOT_VAULT_ROOT}/schemas/stix2`);
 		await this.loadEntityYamlFile(`${base}/entities.yaml`, 'stix2');
 		await this.loadRelationshipYamlFile(`${base}/relationships.yaml`, 'stix2');
 	}
 
 	private async loadVaultMitre(): Promise<void> {
-		const base = normalizePath(`${this.getEntityBasePath()}/schemas/mitre`);
+		const base = normalizePath(`${OSINT_COPILOT_VAULT_ROOT}/schemas/mitre`);
 		await this.loadEntityYamlFile(`${base}/entities.yaml`, 'mitre');
 		await this.loadRelationshipYamlFile(`${base}/relationships.yaml`, 'mitre');
 	}
@@ -141,7 +140,7 @@ export class SchemaCatalogService {
 	}
 
 	private async loadVaultUser(): Promise<void> {
-		const dir = normalizePath(`${this.getEntityBasePath()}/schemas/user`);
+		const dir = normalizePath(`${OSINT_COPILOT_VAULT_ROOT}/schemas/user`);
 		const folder = this.app.vault.getAbstractFileByPath(dir);
 		if (!folder || !(folder instanceof TFolder)) return;
 
@@ -245,25 +244,6 @@ export class SchemaCatalogService {
 	getEntityType(family: SchemaFamily, name: string): CatalogEntityType | undefined {
 		const n = family === 'ftm' ? canonicalSchemaName(name) : name;
 		return this.entities.get(`${family}:${n}`);
-	}
-
-	getRelationshipType(family: SchemaFamily, name: string): CatalogRelationshipType | undefined {
-		const n = family === 'ftm' ? canonicalSchemaName(name) : name;
-		return this.relationships.get(`${family}:${n}`);
-	}
-
-	/** Resolve from persisted entity (schemaFamily + type name). */
-	resolveEntityLabelColor(entity: { schemaFamily?: SchemaFamily; type: string; ftmSchema?: string }): {
-		label: string;
-		color: string;
-	} {
-		const family = entity.schemaFamily ?? 'ftm';
-		const typeName =
-			family === 'ftm' && entity.ftmSchema ? entity.ftmSchema : String(entity.type);
-		const cat = this.getEntityType(family, typeName);
-		const label = cat?.label ?? typeName;
-		const color = cat?.color ?? '#607D8B';
-		return { label, color };
 	}
 
 	/** Display label for an entity instance (uses labelField from catalog when not FTM). */

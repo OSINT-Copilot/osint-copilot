@@ -50,18 +50,6 @@
   background-color: var(--background-modifier-hover);
 }
 
-.vault-ai-confidence.high {
-  color: var(--text-success);
-}
-
-.vault-ai-confidence.medium {
-  color: var(--text-warning);
-}
-
-.vault-ai-confidence.low {
-  color: var(--text-error);
-}
-
 /* Chat View Styles */
 .vault-ai-chat-view {
   display: flex;
@@ -104,31 +92,6 @@
 .vault-ai-chat-header button {
   padding: 4px 12px;
   font-size: 0.9em;
-}
-
-/* Mode Toggle Container */
-
-/* Mode Select Dropdown Container */
-
-/* Entity Generation Mode Toggle (Independent checkbox) */
-
-.vault-ai-entity-gen-label.active {
-  color: #000000;
-  font-weight: 600;
-  background-color: #ffffff;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-/* Graph only Mode special styling */
-.vault-ai-toggle-container.graph-only-mode {
-  background-color: var(--color-orange);
-  border-color: var(--color-orange);
-}
-
-.vault-ai-toggle-container.graph-only-mode .vault-ai-entity-gen-label {
-  color: var(--text-on-accent);
-  font-weight: 700;
 }
 
 .vault-ai-chat-messages {
@@ -320,14 +283,8 @@
   cursor: copy !important;
 }
 
-/* Force copy cursor when dragging over input area */
 .vault-ai-chat-input:hover {
   cursor: auto;
-}
-
-.vault-ai-chat-input.drag-active,
-.vault-ai-chat-input.drag-active * {
-  cursor: copy !important;
 }
 
 /* Attachments Display */
@@ -473,15 +430,6 @@
 
 .vault-ai-action-spacer {
   flex-grow: 1;
-}
-
-/* DarkWeb Investigation Message Styles */
-/* DarkWeb messages now use default assistant message styling */
-
-.vault-ai-darkweb-message .vault-ai-chat-content {
-  user-select: text;
-  -webkit-user-select: text;
-  cursor: text;
 }
 
 /* Conversation Sidebar Styles */
@@ -1173,16 +1121,14 @@
 }
 
 /* Connection Button Styles */
-.graph_copilot-connect-btn,
-.graph_copilot-connect-modal-btn {
+.graph_copilot-connect-btn {
   background: var(--background-modifier-hover) !important;
   color: var(--text-normal) !important;
   font-weight: 500;
   border: 1px solid var(--background-modifier-border) !important;
 }
 
-.graph_copilot-connect-btn:hover,
-.graph_copilot-connect-modal-btn:hover {
+.graph_copilot-connect-btn:hover {
   background: var(--background-modifier-border) !important;
 }
 
@@ -1321,24 +1267,6 @@
     width: 100%;
     justify-content: flex-start;
   }
-
-  .vault-ai-mode-select-container {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .vault-ai-mode-dropdown {
-    min-width: 120px;
-    flex: 1;
-  }
-
-  .vault-ai-toggle-container {
-    padding: 4px 8px;
-  }
-
-  .vault-ai-entity-gen-label {
-    font-size: 0.75em;
-  }
 }
 
 /* A very narrow pane */
@@ -1352,14 +1280,6 @@
     align-items: stretch;
   }
 
-  .vault-ai-mode-select-container {
-    width: 100%;
-  }
-
-  .vault-ai-mode-dropdown {
-    width: 100%;
-  }
-
   .vault-ai-new-chat-btn {
     width: 100%;
   }
@@ -1370,13 +1290,6 @@
 }
 
 /* Ensure chat area fills available space properly */
-.vault-ai-chat-container {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
 .vault-ai-chat-area {
   flex: 1;
   display: flex;
@@ -2317,60 +2230,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
   font-size: 1em;
 }
 
-/* Built-in tools column: collapsible list (default collapsed) */
-.osint-copilot-registry-built-in {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  min-height: 0;
-}
-
-.osint-copilot-registry-built-in-header {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  cursor: pointer;
-  user-select: none;
-  padding: 0.2rem 0.25rem;
-  margin: -0.2rem -0.25rem;
-  border-radius: var(--radius-s, 4px);
-}
-
-.osint-copilot-registry-built-in-header:hover {
-  background-color: var(--background-modifier-hover);
-}
-
-.osint-copilot-registry-built-in-header:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-}
-
-.osint-copilot-registry-built-in-header h3 {
-  margin: 0;
-  flex: 1;
-  font-size: 1em;
-}
-
-.osint-copilot-registry-built-in-chevron {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: var(--text-muted);
-}
-
-.osint-copilot-registry-built-in-chevron svg {
-  width: 16px;
-  height: 16px;
-}
-
-.osint-copilot-registry-built-in-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  min-height: 0;
-}
-
 .osint-copilot-registry-hint {
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
@@ -2380,37 +2239,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
 .osint-copilot-registry-empty {
   color: var(--text-muted);
   font-size: var(--font-ui-small);
-}
-
-.osint-copilot-registry-card {
-  padding: 0.5rem 0.6rem;
-  border-radius: var(--radius-s, 4px);
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-}
-
-.osint-copilot-registry-card-title {
-  font-weight: 600;
-  margin-bottom: 0.2rem;
-}
-
-.osint-copilot-registry-card-id {
-  display: block;
-  font-size: var(--font-ui-smaller);
-  margin-bottom: 0.35rem;
-}
-
-.osint-copilot-registry-card-desc {
-  font-size: var(--font-ui-small);
-  color: var(--text-normal);
-  line-height: 1.35;
-}
-
-.osint-copilot-registry-dynamic-note {
-  font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
-  line-height: 1.4;
-  margin-top: 0.35rem;
 }
 
 .osint-copilot-registry-row {

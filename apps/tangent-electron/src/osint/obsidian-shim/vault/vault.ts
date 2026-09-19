@@ -46,7 +46,6 @@ export class Vault {
     private index = new Map<string, TAbstractFile>();
     private handlers = new Map<VaultEventName, Set<Handler>>();
     private contentCache = new Map<string, { key: string; data: string }>();
-    private detachWatcher: (() => void) | null = null;
 
     readonly root: TFolder;
 
@@ -62,14 +61,7 @@ export class Vault {
         for (const stat of [...snapshot].sort((a, b) => a.path.split('/').length - b.path.split('/').length)) {
             this.upsert(stat);
         }
-        this.detachWatcher = this.storage.onChange((events) => this.applyWatchEvents(events));
-    }
-
-    close(): void {
-        this.detachWatcher?.();
-        this.detachWatcher = null;
-        this.handlers.clear();
-        this.contentCache.clear();
+        this.storage.onChange((events) => this.applyWatchEvents(events));
     }
 
     getBasePath(): string {

@@ -335,7 +335,7 @@ export class MiroImportService {
     }
 }
 
-export const miroImportService = new MiroImportService();
+const miroImportService = new MiroImportService();
 
 export interface MiroImportOutcome {
     snapshot: MiroBoardSnapshot;

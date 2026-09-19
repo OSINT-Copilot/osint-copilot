@@ -6,7 +6,6 @@ import {
     isGraphImageExtension,
     isRemoteUrl,
     nodeBackgroundColorFor,
-    nodeCaptionPlacement,
     nodeLabelFor,
     nodeShapeFor,
     nodeTextValignFor,

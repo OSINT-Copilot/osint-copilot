@@ -77,9 +77,7 @@ export const OSINT_VIEWS: readonly OsintViewDescriptor[] = [
     },
 ] as const;
 
-export const OSINT_FILE_TYPES = OSINT_VIEWS.map(v => v.fileType);
-
-export const OSINT_VIEW_FOLDER = '.tangent/osint';
+const OSINT_VIEW_FOLDER = '.tangent/osint';
 
 export function viewForFileType(fileType: string): OsintViewDescriptor | undefined {
     return OSINT_VIEWS.find(v => v.fileType === fileType);

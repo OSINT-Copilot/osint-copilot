@@ -161,12 +161,6 @@ export function computeOsintConfidence(
 	return { osint_confidence: 'high', osint_contradictions: [] };
 }
 
-let sourceIdSeq = 0;
-export function generateOsintSourceId(): string {
-	sourceIdSeq += 1;
-	return `src_${Date.now().toString(36)}_${sourceIdSeq}`;
-}
-
 /** What finalizeOsintSources stores when a source arrives without a URL or rationale. */
 const DEFAULT_SOURCE_URL = 'inferred:orchestration';
 const DEFAULT_RATIONALE = 'No rationale provided.';

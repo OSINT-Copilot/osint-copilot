@@ -81,13 +81,6 @@ export class CustomTypesService {
         new Notice(`Custom entity type '${schema.label}' added.`);
     }
 
-    async updateCustomType(schema: Partial<FTMSchemaDefinition>): Promise<void> {
-        if (!schema.name || !this.customSchemas.has(schema.name)) {
-            throw new Error(`Custom type ${schema.name} does not exist`);
-        }
-        await this.addCustomType(schema); // Same as add/overwrite
-    }
-
     async deleteCustomType(name: string): Promise<void> {
         if (this.customSchemas.delete(name)) {
             // Drop it from the live registry too, so the type disappears from pickers
@@ -96,10 +89,6 @@ export class CustomTypesService {
             await this.saveCustomTypes();
             new Notice(`Custom entity type '${name}' removed.`);
         }
-    }
-
-    getCustomSchemas(): Partial<FTMSchemaDefinition>[] {
-        return Array.from(this.customSchemas.values());
     }
 
     getCustomSchema(name: string): Partial<FTMSchemaDefinition> | undefined {

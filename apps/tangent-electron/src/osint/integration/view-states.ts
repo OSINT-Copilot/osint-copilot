@@ -40,7 +40,7 @@ function constant<T>(value: T) {
  * A lens is what NodeViewSelector actually renders. Ours has a single one: the host
  * component that mounts the Obsidian ItemView's DOM.
  */
-export class OsintNodeViewState {
+class OsintNodeViewState {
     readonly node: MinimalNode;
     readonly viewType: string;
     readonly currentLens: ReturnType<typeof constant<unknown>>;
@@ -64,7 +64,7 @@ export class OsintNodeViewState {
      * Tangent disposes a view state when its node leaves every thread. The Obsidian view
      * is deliberately NOT torn down here: getLeavesOfType() has twelve call sites that
      * expect a background view to still be there, and refreshOpenInsightViews() drives
-     * views the user cannot currently see. The leaf is released on plugin teardown.
+     * views the user cannot currently see. The leaf lives as long as the window.
      */
     dispose(): void { /* see above */ }
 }
@@ -77,7 +77,7 @@ export class OsintNodeViewState {
  * number of them, so this state carries the node itself and a native Svelte lens reads and
  * writes it -- no Obsidian leaf, no ItemView, no DOM adoption.
  */
-export class CanvasNodeViewState {
+class CanvasNodeViewState {
     readonly node: MinimalNode;
     readonly currentLens: ReturnType<typeof constant<unknown>>;
 

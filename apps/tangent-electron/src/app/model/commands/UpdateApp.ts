@@ -24,11 +24,11 @@ export class UpdateAppCommand extends WorkspaceCommand {
 		// The label, tooltip and enabled state are all derived from the mode, so the
 		// button has to be re-evaluated whenever it moves. Same pattern as
 		// SetFocusLevelCommand subscribing to focusLevel.
-		workspace.updateState?.mode?.subscribe?.(() => this.alertDirty())
+		workspace.updateState.mode.subscribe(() => this.alertDirty())
 	}
 
 	private get mode() {
-		return this.workspace.updateState?.mode?.value ?? 'idle'
+		return this.workspace.updateState.mode.value
 	}
 
 	canExecute(_context?: CommandContext) {
@@ -40,7 +40,6 @@ export class UpdateAppCommand extends WorkspaceCommand {
 
 	execute(_context?: CommandContext) {
 		const state = this.workspace.updateState
-		if (!state) return
 		if (this.mode === 'ready') {
 			// Saves and closes workspaces on the main side before relaunching.
 			state.updateNow()
@@ -50,7 +49,7 @@ export class UpdateAppCommand extends WorkspaceCommand {
 	}
 
 	getLabel(_context?: CommandContext) {
-		const version = this.workspace.updateState?.nextUpdate?.value?.version
+		const version = this.workspace.updateState.nextUpdate.value?.version
 		switch (this.mode) {
 			case 'checking': return 'Checking for Updates…'
 			case 'available': return version ? `Downloading ${version}…` : 'Downloading Update…'

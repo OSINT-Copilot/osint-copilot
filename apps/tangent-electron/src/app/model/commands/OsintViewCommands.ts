@@ -238,10 +238,9 @@ export interface ObsidianCommand {
 	id: string
 	name: string
 	callback?: () => unknown
-	checkCallback?: (checking: boolean) => boolean | void
 }
 
-export class PluginCommand extends WorkspaceCommand {
+class PluginCommand extends WorkspaceCommand {
 	readonly command: ObsidianCommand
 
 	constructor(workspace: Workspace, command: ObsidianCommand) {
@@ -249,17 +248,7 @@ export class PluginCommand extends WorkspaceCommand {
 		this.command = command
 	}
 
-	canExecute(_context?: CommandContext) {
-		// checkCallback(true) is Obsidian's "is this available right now?" probe.
-		if (this.command.checkCallback) return this.command.checkCallback(true) !== false
-		return true
-	}
-
 	execute(_context?: CommandContext) {
-		if (this.command.checkCallback) {
-			this.command.checkCallback(false)
-			return
-		}
 		this.command.callback?.()
 	}
 
@@ -269,7 +258,7 @@ export class PluginCommand extends WorkspaceCommand {
 }
 
 /** Adds one Tangent command per plugin command. Returns the keys it registered. */
-export function registerPluginCommands(
+function registerPluginCommands(
 	workspace: Workspace,
 	commands: Iterable<ObsidianCommand>,
 ): string[] {

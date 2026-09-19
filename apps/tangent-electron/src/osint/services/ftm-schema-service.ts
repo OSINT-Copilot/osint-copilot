@@ -249,15 +249,6 @@ class FTMSchemaServiceClass {
 		return layers[layer] === true;
 	}
 
-	getSchemaNames(): string[] {
-		this.initialize();
-		return Array.from(this.resolvedSchemas.keys());
-	}
-
-	getEntitySchemaNames(): string[] {
-		return this.getEntitySchemas().map((s) => s.name);
-	}
-
 	hasSchema(schemaName: string): boolean {
 		this.initialize();
 		const canon = canonicalSchemaName(schemaName);
@@ -280,12 +271,6 @@ class FTMSchemaServiceClass {
 	getColor(schemaName: string): string {
 		const schema = this.getSchema(schemaName);
 		return schema?.color || '#607D8B';
-	}
-
-	getProperty(schemaName: string, propertyName: string): FTMPropertyDefinition | null {
-		const schema = this.getSchema(schemaName);
-		if (!schema) return null;
-		return schema.allProperties[propertyName] || null;
 	}
 
 	getEntityLabel(schemaName: string, properties: Record<string, unknown>): string {

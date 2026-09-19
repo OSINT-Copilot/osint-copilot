@@ -15,8 +15,7 @@
  *                 exactly when the entity it landed on has that id. Not "nothing had this
  *                 identifier before": after a crash, the user or the assistant may have
  *                 created an entity with the same identifier, and Remove would delete it.
- *                 An entity made before a planned id was recorded can never have it, so
- *                 without a readable plan the item is taken to have created nothing.
+ *                 An entity made before the plan was recorded can never have its id.
  *   entity        the upsert's outcome. The upsert itself is idempotent: the source
  *                 carries the id `ext_<bundleId>`, and appendOsintSources skips a source
  *                 whose content the entity already has.
@@ -55,7 +54,7 @@ import { ensureFolderExists } from '../utils/vault-bootstrap-fs';
 import { slugify } from '../utils/slug';
 import { OSINT_COPILOT_VAULT_ROOT } from '../constants/vault-layout';
 import { generateId, isGeneratedId, type Entity, type OsintSourceInput } from '../entities/types';
-import type { InboxAppliedBundle, InboxBundle, InboxHost, InboxPlacedFile, InboxPlacement } from '../host/types';
+import type { InboxAppliedBundle, InboxBundle, InboxHost, InboxPlacedFile } from '../host/types';
 import type { EntityPayload, HighlightAnnotation, ManifestPage } from '../../main/osint/extension/protocol';
 import {
     captureName, captureWarnings, evidenceSourcesFor, evidenceTargetFor, normalizePlacedFiles, normalizePlacement,
@@ -64,7 +63,7 @@ import {
 /** Folder of the per-page notes. Reserved: EntityManager never parses it as entities. */
 export const SOURCES_FOLDER = normalizePath(`${OSINT_COPILOT_VAULT_ROOT}/Sources`);
 
-export const EXTENSION_RATIONALE = 'Sent from the OSINT Copilot browser extension';
+const EXTENSION_RATIONALE = 'Sent from the OSINT Copilot browser extension';
 
 // ------------------------------------------------------------------ activity log
 
@@ -98,7 +97,6 @@ export interface ExtensionActivityItem {
     title: string;
     /** Main's clock, when the bundle arrived. */
     receivedAt: string;
-    appliedAt: string;
     outcome: ExtensionActivityOutcome;
     removed: boolean;
     removedAt?: string;
@@ -111,9 +109,9 @@ export interface ExtensionActivityItem {
 }
 
 /** The journal step that records what an applied item added. */
-export const APPLIED_STEP = 'applied';
+const APPLIED_STEP = 'applied';
 /** The step main writes when Remove moves a bundle to removed/. */
-export const REMOVED_STEP = 'removed';
+const REMOVED_STEP = 'removed';
 
 const isString = (v: unknown): v is string => typeof v === 'string';
 
@@ -139,16 +137,12 @@ function noteSummary(text: string): string {
  * One activity entry from an applied bundle and its journal, or null for a bundle this
  * code did not finish applying (no `applied` step).
  */
-export function activityItemFor(bundle: InboxAppliedBundle): ExtensionActivityItem | null {
+function activityItemFor(bundle: InboxAppliedBundle): ExtensionActivityItem | null {
     const { manifest, server, state, bundleId } = bundle;
     const steps = state?.steps ?? [];
     const applied = steps.find((s) => s.step === APPLIED_STEP);
     const outcome = normalizeActivityOutcome(applied?.data);
     if (!applied || !outcome) return null;
-    // What Remove acts on: "created" only when the plan proves it (see planProvesCreated).
-    if (outcome.created && !planProvesCreated(steps.find((s) => s.step === 'entity-plan')?.data, outcome.entityId)) {
-        outcome.created = false;
-    }
     let kind: ExtensionActivityItem['kind'];
     let summary: string;
     let entityKind: string | undefined;
@@ -179,9 +173,7 @@ export function activityItemFor(bundle: InboxAppliedBundle): ExtensionActivityIt
         // create that a newer change or a delete overrode, put nothing in, and have nothing
         // of their own to show or take back.
         const did = (steps.find((s) => s.step === 'highlight')?.data as { outcome?: unknown } | undefined)?.outcome;
-        // Before outcomes were recorded, the create was the item.
-        const listed = did === undefined ? manifest.kind === 'highlight' : PUTS_HIGHLIGHT_IN.includes(did);
-        if (!listed) return null;
+        if (!PUTS_HIGHLIGHT_IN.includes(did)) return null;
         kind = 'highlight';
         summary = oneLine(displayQuote(manifest.highlight.annotation.target.selector[0].exact)).slice(0, 140);
         annotationId = manifest.highlight.annotation.id;
@@ -200,7 +192,6 @@ export function activityItemFor(bundle: InboxAppliedBundle): ExtensionActivityIt
         url: manifest.page.url,
         title: manifest.page.title,
         receivedAt: server.receivedAt,
-        appliedAt: applied.at,
         outcome,
         removed,
         ...(removedAt ? { removedAt } : {}),
@@ -424,8 +415,8 @@ function placedFileLine(file: InboxPlacedFile): string {
     return `- ${PLACED_ROLE_LABELS[file.role]}: [[${file.path}|${name}]], sha256 \`${file.sha256}\`${reused}`;
 }
 
-export const sectionOpen = (bundleId: string) => `<!-- oc:bundle ${bundleId} -->`;
-export const sectionClose = (bundleId: string) => `<!-- /oc:bundle ${bundleId} -->`;
+const sectionOpen = (bundleId: string) => `<!-- oc:bundle ${bundleId} -->`;
+const sectionClose = (bundleId: string) => `<!-- /oc:bundle ${bundleId} -->`;
 
 /**
  * Where this bundle's section starts, or -1. Markers count only on a line of their own:
@@ -437,7 +428,7 @@ function sectionStart(text: string, bundleId: string): number {
     return at < 0 ? -1 : at + 1;
 }
 
-export function hasSection(text: string, bundleId: string): boolean {
+function hasSection(text: string, bundleId: string): boolean {
     return sectionStart(text, bundleId) >= 0;
 }
 
@@ -459,7 +450,7 @@ export function cutSection(text: string, bundleId: string): string | null {
  * The note text with this section's body replaced, or null when it has no such section.
  * A highlight keeps one section across its edits, so an edit rewrites it in place.
  */
-export function replaceSection(text: string, key: string, body: string): string | null {
+function replaceSection(text: string, key: string, body: string): string | null {
     const close = `\n${sectionClose(key)}`;
     const start = sectionStart(text, key);
     if (start < 0) return null;
@@ -475,7 +466,7 @@ export function replaceSection(text: string, key: string, body: string): string 
  * control characters and the bidi embeddings, overrides and isolates, which would show
  * the text reordered. The vault's JSON record keeps the quote exactly as the page had it.
  */
-export function displayQuote(exact: string): string {
+function displayQuote(exact: string): string {
     return cleanNoteText(exact).replace(/[‪-‮⁦-⁩]/g, '');
 }
 
@@ -544,7 +535,7 @@ export function parseSidecar(raw: string): HighlightSidecar | null {
 }
 
 /** Whether an edit stamped `incoming` should replace what the sidecar holds for it. */
-export function isNewer(incoming: string, held: SidecarHighlight | undefined): boolean {
+function isNewer(incoming: string, held: SidecarHighlight | undefined): boolean {
     if (!held) return true;
     const a = Date.parse(incoming);
     const b = Date.parse(held.modified);
@@ -568,7 +559,7 @@ function highlightSection(annotation: HighlightAnnotation, receivedAt: string, e
 
 type EntityPlan = { plannedEntityId: string };
 /** What a highlight bundle did, as its `highlight` journal step records it. */
-type HighlightStep = { path: string; outcome?: HighlightOutcome };
+type HighlightStep = { path: string; outcome: HighlightOutcome };
 /**
  * created: the first time this highlight is filed (by its create, or by an edit that got
  * here first). revived: an edit newer than a tombstone put it back. edited: it was there,
@@ -580,8 +571,8 @@ const PUTS_HIGHLIGHT_IN: readonly unknown[] = ['created', 'revived'];
 type EntityStep = { entityId: string; created: boolean; label: string; addedSourceIds: string[] };
 
 /**
- * A plan this code can rely on. One from before planned ids (`existingEntityId` only), or
- * one that does not read back, is not: the apply records a new plan instead.
+ * A plan this code can rely on. One that does not read back is not: the apply records a
+ * new plan instead.
  */
 function isEntityPlan(v: unknown): v is EntityPlan {
     return !!v && typeof v === 'object' && isGeneratedId((v as Record<string, unknown>).plannedEntityId);
@@ -589,16 +580,6 @@ function isEntityPlan(v: unknown): v is EntityPlan {
 function isEntityStep(v: unknown): v is EntityStep {
     const o = v as Record<string, unknown> | null;
     return !!o && typeof o === 'object' && isString(o.entityId) && Array.isArray(o.addedSourceIds);
-}
-
-/**
- * Whether a journal proves the item created `entityId`: its plan names that very id.
- * A recorded `created: true` alone does not. Code from before planned ids wrote it when
- * nothing had the identifier beforehand, which an entity the investigator or the
- * assistant made in the meantime also satisfies, and Remove would delete theirs.
- */
-function planProvesCreated(plan: unknown, entityId: string | null): boolean {
-    return entityId !== null && isEntityPlan(plan) && plan.plannedEntityId === entityId;
 }
 
 export interface InboxServiceDeps {
@@ -868,9 +849,7 @@ export class InboxService {
             // the investigation: filed it first -- a create, or an edit that got here before
             // its create -- or brought it back after a Remove. An edit of one already there,
             // or anything a newer change or a delete overrides, is applied quietly.
-            // A journal from before outcomes were recorded: a create counts as one.
-            const putIn = done.outcome === undefined ? manifest.kind === 'highlight' : PUTS_HIGHLIGHT_IN.includes(done.outcome);
-            return putIn ? 'done' : 'edited';
+            return PUTS_HIGHLIGHT_IN.includes(done.outcome) ? 'done' : 'edited';
         } else if (manifest.kind === 'highlight.delete') {
             let done = journal.get('highlight') as { path?: unknown } | undefined;
             if (!done || !isString(done.path)) {
@@ -914,10 +893,7 @@ export class InboxService {
     ): Promise<EntityStep> {
         const done = journal.get('entity');
         let plan = journal.get('entity-plan');
-        if (isEntityStep(done)) {
-            // A step this code wrote always agrees with its plan; an older one may not.
-            return done.created && !planProvesCreated(plan, done.entityId) ? { ...done, created: false } : done;
-        }
+        if (isEntityStep(done)) return done;
         if (!isEntityPlan(plan)) {
             // Recorded before anything can be created with it (see the header).
             plan = { plannedEntityId: generateId() };

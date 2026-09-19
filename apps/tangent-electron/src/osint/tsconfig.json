@@ -14,7 +14,7 @@
 		"strictFunctionTypes": true,
 		"strictBindCallApply": true,
 		"noImplicitThis": true,
-		"types": ["node", "svelte", "vitest/globals"]
+		"types": ["node", "svelte"]
 	},
 	"include": [
 		"../osint/**/*.ts",

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import VaultAIPlugin, { ChatView, CHAT_VIEW_TYPE } from '../main';
+import VaultAIPlugin from '../plugin/vault-ai-plugin';
+import { ChatView, CHAT_VIEW_TYPE } from '../views/chat-view';
 import { App, WorkspaceLeaf } from 'obsidian';
 import {
 	DEFAULT_CREDENTIALS_FOLDER,
@@ -193,7 +194,7 @@ describe('ChatView', () => {
         });
         (plugin as any).orchestrationService = {
             processRequest: vi.fn().mockImplementation(
-                (_query, _attachments, _graph, _memory, _conversation, onProgress) => {
+                (_query, _attachments, _graph, _memory, onProgress) => {
                     reportProgress = onProgress;
                     return request;
                 },

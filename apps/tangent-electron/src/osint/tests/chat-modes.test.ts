@@ -8,8 +8,8 @@ vi.mock('../services/agent-runtime/chat-runtime-availability', () => ({
   invalidateChatRuntimeAvailabilityCache: vi.fn(),
 }));
 
-import VaultAIPlugin from '../main';
-import { ChatView } from '../main';
+import VaultAIPlugin from '../plugin/vault-ai-plugin';
+import { ChatView } from '../views/chat-view';
 import { App } from 'obsidian';
 import { legacyFlagsForChatMode } from '../services/conversation-service';
 import {
@@ -106,7 +106,6 @@ describe('ChatView send routing', () => {
       getAllConnections: vi.fn().mockReturnValue([]),
       findEntityByLabel: vi.fn().mockReturnValue(null),
       getEntity: vi.fn().mockReturnValue(null),
-      getConnectionsForEntity: vi.fn().mockReturnValue([]),
       createEntity: vi.fn().mockResolvedValue({ id: 'ent-1', type: 'Person', label: 'Test' }),
     } as any;
 
@@ -126,13 +125,6 @@ describe('ChatView send routing', () => {
       }),
     } as any;
 
-    plugin.extractEntitiesFromQuery = vi
-      .fn()
-      .mockResolvedValue([{ type: 'unknown', name: null }]);
-    plugin.retrieveNotes = vi.fn().mockReturnValue([{ path: 'note1.md', content: 'content' }]);
-    plugin.askVaultStream = vi
-      .fn()
-      .mockResolvedValue({ fullAnswer: 'This is the answer.', notes: [] });
     plugin.refreshOrOpenGraphView = vi.fn().mockResolvedValue(undefined);
 
     plugin.vaultPromptLoader = {
@@ -219,7 +211,6 @@ describe('ChatView send routing', () => {
     await view.handleSend();
 
     expect(plugin.orchestrationService.processRequest).toHaveBeenCalled();
-    expect(plugin.askVaultStream).not.toHaveBeenCalled();
   });
 
   it('routes general mode to orchestration (processRequest)', async () => {
@@ -229,7 +220,6 @@ describe('ChatView send routing', () => {
     await view.handleSend();
 
     expect(plugin.orchestrationService.processRequest).toHaveBeenCalled();
-    expect(plugin.askVaultStream).not.toHaveBeenCalled();
   });
 
   it('passes extracted attachment text as context instead of query URLs', async () => {

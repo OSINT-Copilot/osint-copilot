@@ -21,7 +21,7 @@ function pathIsUnderPrefix(path: string, prefix: string): boolean {
 	return p === pre || p.startsWith(pre + '/');
 }
 
-export function assertPathUnderCustomRoot(resolvedPath: string, purpose: string): void {
+function assertPathUnderCustomRoot(resolvedPath: string, purpose: string): void {
 	const p = normalizePath(resolvedPath);
 	const root = normalizePath(OSINT_COPILOT_CUSTOM_ROOT);
 	if (!pathIsUnderPrefix(p, root)) {
@@ -46,7 +46,7 @@ function scriptsRoot(plugin: VaultAIPlugin): string {
 }
 
 /** Re-validate op paths against current settings (defense in depth). */
-export function resolveSkillMarkdownPath(plugin: VaultAIPlugin, skillId: string): string {
+function resolveSkillMarkdownPath(plugin: VaultAIPlugin, skillId: string): string {
 	const id = parseSkillIdForVault(skillId);
 	if (!id || id === 'readme') throw new Error('Invalid skill id');
 	const file = normalizePath(`${skillsRoot(plugin)}/${id}.md`);
@@ -54,7 +54,7 @@ export function resolveSkillMarkdownPath(plugin: VaultAIPlugin, skillId: string)
 	return file;
 }
 
-export function resolveCredentialFilePath(plugin: VaultAIPlugin, relativePath: string): string {
+function resolveCredentialFilePath(plugin: VaultAIPlugin, relativePath: string): string {
 	const rel = normalizeCredentialsRelativePath(relativePath);
 	if (!rel) throw new Error('Invalid credentials relative path');
 	const root = credentialsRoot(plugin);
@@ -67,7 +67,7 @@ export function resolveCredentialFilePath(plugin: VaultAIPlugin, relativePath: s
 }
 
 /** `{enrichersRoot}/{id}.json` — id already normalized slug. */
-export function resolveEnricherJsonPath(plugin: VaultAIPlugin, enricherId: string): string {
+function resolveEnricherJsonPath(plugin: VaultAIPlugin, enricherId: string): string {
 	const id = parseSkillIdForVault(enricherId);
 	if (!id) throw new Error('Invalid enricher id');
 	const root = enrichersRoot(plugin);
@@ -260,7 +260,7 @@ export async function ensureCredentialsFolder(plugin: VaultAIPlugin): Promise<vo
 }
 
 /** Ensure scripts root exists (under OSINTCopilot/custom/). */
-export async function ensureScriptsFolder(plugin: VaultAIPlugin): Promise<void> {
+async function ensureScriptsFolder(plugin: VaultAIPlugin): Promise<void> {
 	const root = scriptsRoot(plugin);
 	assertPathUnderCustomRoot(root, 'Scripts root');
 	await ensureFolderExists(plugin.app, root);

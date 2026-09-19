@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import VaultAIPlugin from '../main';
+import VaultAIPlugin from '../plugin/vault-ai-plugin';
 import { App } from 'obsidian';
 
 /** A plugin whose persisted data is whatever the test says, and which writes nowhere. */

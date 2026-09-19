@@ -190,7 +190,6 @@ export class VaultAISettingTab extends PluginSettingTab {
 						},
 						undefined,
 						true,
-						undefined,
 						"Unlock all",
 					).open();
 				}),
@@ -776,7 +775,7 @@ export class VaultAISettingTab extends PluginSettingTab {
 						btn.setButtonText("Checking...");
 						const adapter = this.plugin.app.vault.adapter as { getBasePath?: () => string };
 						const vaultRoot = typeof adapter.getBasePath === "function" ? String(adapter.getBasePath() || "") : "";
-						const status = await new CodexCliService("", {
+						const status = await new CodexCliService({
 							cliPath: this.plugin.settings.codexCliPath || "codex",
 							cliWorkingDirectory: vaultRoot || undefined,
 						}).getLoginStatus();
@@ -866,14 +865,14 @@ export class VaultAISettingTab extends PluginSettingTab {
 						const adapter = this.plugin.app.vault.adapter as { getBasePath?: () => string };
 						const vaultRoot = typeof adapter.getBasePath === "function" ? String(adapter.getBasePath() || "") : "";
 						const svc = this.plugin.settings.apiProvider === CODEX_RUNTIME_ID
-							? new CodexCliService("", {
+							? new CodexCliService({
 								cliPath: this.plugin.settings.codexCliPath || "codex",
 								model: this.plugin.settings.codexCliModel || "",
 								timeoutMs: 45_000,
 								cliWorkingDirectory: vaultRoot || undefined,
 								extraCliArgs: this.plugin.settings.codexCliExtraArgs ?? "",
 							})
-							: new ClaudeCodeService("", {
+							: new ClaudeCodeService({
 								cliPath: this.plugin.settings.claudeCodeCliPath || "claude",
 								model: this.plugin.settings.claudeCodeModel || "sonnet",
 								timeoutMs: 45_000,

@@ -1,53 +1,31 @@
 import {
-  App,
-  Editor,
   MarkdownView,
-  Modal,
   Notice,
   Plugin,
-  Setting,
   TFile,
-  TFolder,
-  ItemView,
   WorkspaceLeaf,
-  MarkdownRenderer,
   type CachedMetadata,
-  Component,
   normalizePath,
   setIcon,
 } from "obsidian";
 
 // Graph plugin imports
 import {
-  EntityType,
   type Entity,
-  type Connection,
-  ENTITY_CONFIGS,
-  type AIOperation,
-  type ProcessTextResponse,
-  validateEntityName,
-  getEntityLabel,
   getEntityIconForEntity,
   getEntityColor,
-  type GraphWriteContext,
 } from '../entities/types';
 import { EntityManager } from '../services/entity-manager';
 import { WaybackArchiveService } from '../services/wayback-archive-service';
-import { GraphApiService, isLikelyExpectedUrlFetchFailure } from '../services/api-service';
+import { GraphApiService } from '../services/api-service';
 import {
   ClaudeCodeService,
-  type ExtractionLogEvent,
   type LocalCliService,
 } from '../services/claude-code-service';
 import { CodexCliService } from '../services/codex-cli-service';
 import {
   ConversationService,
   type Conversation,
-  type ConversationMetadata,
-  type ConversationMessage,
-  type CopilotChatMode,
-  legacyFlagsForChatMode,
-  inferChatModeFromLegacyFields,
 } from '../services/conversation-service';
 import { GraphView, GRAPH_VIEW_TYPE } from '../views/graph-view';
 import { TimelineView, TIMELINE_VIEW_TYPE } from '../views/timeline-view';
@@ -56,53 +34,27 @@ import { ToolsSkillsRegistryView, TOOLS_SKILLS_REGISTRY_VIEW_TYPE } from '../vie
 import { DocsView, DOCS_VIEW_TYPE } from '../views/docs-view';
 import { ConfirmModal } from '../modals/confirm-modal';
 import { CustomTypesService } from '../services/custom-types-service';
-import {
-  OrchestrationService,
-  type OrchestrationPlan,
-  ORCHESTRATION_TOOL_DISPLAY_NAMES,
-  type OrchestrationProgressMeta,
-} from '../services/orchestration-service';
+import { OrchestrationService } from '../services/orchestration-service';
 import { VaultPromptLoader } from '../services/vault-prompt-loader';
 import { VaultPromptBootstrapService } from '../services/vault-prompt-bootstrap';
 import { TaskAgentRegistry } from '../task-agents/task-agent-registry';
 import { TaskAgentRunner } from '../task-agents/task-agent-runner';
 import { TaskAgentBootstrapService } from '../task-agents/task-agent-bootstrap';
-import { isTaskAgentRunnable } from '../task-agents/task-agent-settings';
 import { SkillRegistry } from '../skills/skill-registry';
 import { SkillBootstrapService } from '../skills/skill-bootstrap';
-import { createAgentProvider } from '../services/agent-runtime/create-agent-provider';
-import {
-  getChatRuntimeAvailability,
-  invalidateChatRuntimeAvailabilityCache,
-  type ChatRuntimeAvailability,
-} from '../services/agent-runtime/chat-runtime-availability';
+import { invalidateChatRuntimeAvailabilityCache } from '../services/agent-runtime/chat-runtime-availability';
 import {
   CLAUDE_RUNTIME_ID,
   CODEX_RUNTIME_ID,
   HERMES_RUNTIME_ID,
-  getConfiguredRuntimeOptions,
   normalizeCustomAgentRuntimes,
-  normalizeCustomRuntimeId,
   type CustomAgentRuntime,
 } from '../services/agent-runtime/runtime-registry';
 import {
-  DEFAULT_CONVERSATION_FOLDER,
-  DEFAULT_CREDENTIALS_FOLDER,
   DEFAULT_ENRICHERS_FOLDER,
-  DEFAULT_PROMPTS_FOLDER,
-  DEFAULT_SCRIPTS_FOLDER,
-  DEFAULT_SKILLS_FOLDER,
-  DEFAULT_TASK_AGENTS_FOLDER,
-  DEFAULT_TASK_AGENT_OUTPUT_ALLOWLIST,
   OSINT_COPILOT_VAULT_ROOT,
 } from '../constants/vault-layout';
-import type { CustomVaultOperation } from '../services/custom-vault-operations';
-import { normalizeCustomVaultOperations, summarizeCustomVaultOperation } from '../services/custom-vault-operations';
-import {
-  applyCustomVaultOperations,
-  ensureCredentialsFolder,
-  ensureScriptsDefaultsInstalled,
-} from '../services/custom-vault-writer';
+import { ensureCredentialsFolder } from '../services/custom-vault-writer';
 import { ensureFolderExists, ensureFolderChainForFile } from '../utils/vault-bootstrap-fs';
 import { VaultLockService } from '../services/vault-lock-service';
 import { VaultUnlockModal } from '../modals/vault-unlock-modal';
@@ -112,8 +64,6 @@ import type { EnabledSchemaFamilies } from '../services/schema-catalog-types';
 import { EnricherRegistry } from '../services/enrichers/enricher-registry';
 import { enrichToolId, normalizeEnricherSpec, type EnricherSpec } from '../services/enrichers/enricher-schema';
 import {
-  DEFAULT_ENABLED_SCHEMA_FAMILIES,
-  DEFAULT_OIDSF_MODAL_LAYERS,
   mergeOidsfModalLayers,
   type OIDSFModalLayers,
 } from '../services/schema-catalog-types';
@@ -125,21 +75,12 @@ import {
 import { publishOsintPluginState } from "../integration/osint-plugin-state";
 import { VaultAISettingTab } from '../settings/vault-ai-setting-tab';
 import type { IndexedNote } from '../chat/indexed-note';
-import type { ChatHistoryItem } from '../chat/chat-types';
 import { AskModal } from '../modals/ask-modal';
-import { RenameConversationModal } from '../modals/rename-conversation-modal';
-import { appendVaultOpPreviewBlock, entityHasMapCoordinates } from '../ui/vault-op-previews';
 import { CHAT_VIEW_TYPE, ChatView } from '../views/chat-view';
 import { OsintWorkspaceController } from './osint-workspace-controller';
 import { host as osintHost } from '../host';
 import { InboxService, readExtensionActivity } from '../services/inbox-service';
 import { ExtensionActivityModal } from '../modals/extension-activity-modal';
-
-// AI calls are routed through a user-selected local CLI integration.
-// These model constants are no longer used for remote routing but kept for reference.
-const CHAT_MODEL = "claude-code";
-const ENTITY_EXTRACTION_MODEL = "claude-code";
-const LOCAL_VAULT_MODEL = "claude-code";
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -226,17 +167,14 @@ export default class VaultAIPlugin extends Plugin {
   initLocalCliServices() {
     const adapter = this.app.vault.adapter as any;
     const basePath = typeof adapter.getBasePath === 'function' ? adapter.getBasePath() : '';
-    const pluginDir = basePath && this.manifest.dir
-        ? `${basePath}/${this.manifest.dir}`
-        : '';
-    const claude = new ClaudeCodeService(pluginDir, {
+    const claude = new ClaudeCodeService({
       cliPath: this.settings.claudeCodeCliPath || 'claude',
       model: this.settings.claudeCodeModel || 'sonnet',
       cliWorkingDirectory: basePath || undefined,
       extraCliArgs: this.settings.claudeCodeExtraArgs ?? '',
       timeoutMs: this.settings.claudeCodeTimeoutMs || 300_000,
     });
-    const codex = new CodexCliService(pluginDir, {
+    const codex = new CodexCliService({
       cliPath: this.settings.codexCliPath || 'codex',
       model: this.settings.codexCliModel || '',
       cliWorkingDirectory: basePath || undefined,
@@ -288,7 +226,7 @@ export default class VaultAIPlugin extends Plugin {
     );
     this.waybackArchiveService = new WaybackArchiveService(this.app);
     this.entityManager.setWaybackArchiveService(this.waybackArchiveService);
-    this.schemaCatalogService = new SchemaCatalogService(this.app, () => OSINT_COPILOT_VAULT_ROOT);
+    this.schemaCatalogService = new SchemaCatalogService(this.app);
     this.entityManager.setSchemaCatalogService(this.schemaCatalogService);
     try {
       await this.schemaCatalogService.rebuild();
@@ -299,8 +237,6 @@ export default class VaultAIPlugin extends Plugin {
     this.graphApiService = new GraphApiService();
     this.graphApiService.setSettings({
       apiProvider: this.settings.apiProvider,
-      claudeCodeCliPath: this.settings.claudeCodeCliPath,
-      claudeCodeModel: this.settings.claudeCodeModel,
     });
     this.vaultPromptLoader = new VaultPromptLoader(
       this.app,
@@ -382,7 +318,6 @@ export default class VaultAIPlugin extends Plugin {
       }
 
       // Check API health in background (non-blocking)
-      // This sets the online status for the API service
       this.graphApiService.checkHealth().then(health => {
         const service = this.getLocalCliService();
         if (health) {
@@ -715,7 +650,6 @@ export default class VaultAIPlugin extends Plugin {
           { role: "system", content: system },
           { role: "user", content: user },
         ],
-        false,
       );
       parsed = this.extractJsonObject(raw);
     } catch (e) {
@@ -811,7 +745,6 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
       },
       () => new Notice("Enricher draft cancelled."),
       false,
-      undefined,
       "Install",
       "Cancel",
     ).open();
@@ -857,13 +790,6 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
       },
       () => new Notice("State change cancelled."),
     ).open();
-  }
-
-  onunload() {
-    // Gives the inbox lease back, so another window on this investigation can take it.
-    const inbox = this.extensionInbox;
-    this.extensionInbox = null;
-    void inbox?.stop();
   }
 
   /**
@@ -918,7 +844,6 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
         () => resolve(true),
         () => resolve(false),
         true,
-        undefined,
         'Revoke',
       ).open();
     });
@@ -1172,8 +1097,6 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
     if (this.graphApiService) {
       this.graphApiService.setSettings({
         apiProvider: this.settings.apiProvider,
-        claudeCodeCliPath: this.settings.claudeCodeCliPath,
-        claudeCodeModel: this.settings.claudeCodeModel,
       });
       this.initLocalCliServices();
     }
@@ -1202,10 +1125,6 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
         }
       });
     }
-  }
-
-  isAuthenticated(): boolean {
-    return true;
   }
 
   getActiveGraphId(): string {
@@ -1346,16 +1265,8 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
 
   private readonly osintWorkspace = new OsintWorkspaceController(this);
 
-  async openGraphView(forceNew: boolean = false) {
-    return this.osintWorkspace.openGraphView(forceNew);
-  }
-
   async openGraphViewWithEntity(entityId: string) {
     return this.osintWorkspace.openGraphViewWithEntity(entityId);
-  }
-
-  async refreshGraphView(options?: { silent?: boolean }) {
-    return this.osintWorkspace.refreshGraphView(options);
   }
 
   async refreshOpenInsightViews(options?: { skipGraph?: boolean }): Promise<void> {
@@ -1366,24 +1277,8 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
     return this.osintWorkspace.refreshOrOpenGraphView();
   }
 
-  async openTimelineView(forceNew: boolean = false) {
-    return this.osintWorkspace.openTimelineView(forceNew);
-  }
-
-  async openMapView(forceNew: boolean = false) {
-    return this.osintWorkspace.openMapView(forceNew);
-  }
-
-  async openToolsSkillsRegistryView(forceNew: boolean = false) {
-    return this.osintWorkspace.openToolsSkillsRegistryView(forceNew);
-  }
-
   async showEntityOnMap(entityId: string) {
     return this.osintWorkspace.showEntityOnMap(entityId);
-  }
-
-  async openChatView(forceNew: boolean = false) {
-    return this.osintWorkspace.openChatView(forceNew);
   }
 
 
@@ -1597,47 +1492,8 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
   // REMOTE MODEL INTEGRATION
   // ============================================================================
 
-  async callRemoteModel(messages: ChatMessage[], stream: boolean = false, model?: string, signal?: AbortSignal, useLocal: boolean = false): Promise<string> {
-    return this.graphApiService.callRemoteModel(messages, false, model, signal);
-  }
-
-  // ============================================================================
-  // STREAMING MODEL INTEGRATION
-  // ============================================================================
-
-  /**
-   * Check if an error is a transient network error that should be retried
-   */
-  isTransientNetworkError(error: Error): boolean {
-    const msg = error.message.toLowerCase();
-    const transientPatterns = [
-      'network', 'fetch', 'failed to fetch', 'net::err_',
-      'err_network_changed', 'network_changed',
-      'connection', 'timeout', 'timed out', 'econnreset',
-      'econnrefused', 'enotfound', 'socket', 'dns',
-      'abort', 'aborted',
-      '502', '503', '504', 'service unavailable', 'temporarily unavailable'
-    ];
-    return transientPatterns.some(pattern => msg.includes(pattern));
-  }
-
-  /**
-   * Sleep for a specified number of milliseconds
-   */
-  sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  async callRemoteModelStream(
-    messages: ChatMessage[],
-    onDelta?: (text: string) => void,
-    onRetry?: (attempt: number, maxAttempts: number) => void,
-    signal?: AbortSignal,
-    useLocal: boolean = false
-  ): Promise<string> {
-    const full = await this.callRemoteModel(messages, false, undefined, signal, useLocal);
-    if (onDelta) onDelta(full);
-    return full;
+  async callRemoteModel(messages: ChatMessage[], signal?: AbortSignal): Promise<string> {
+    return this.graphApiService.callRemoteModel(messages, signal);
   }
 
   // ============================================================================
@@ -1681,145 +1537,6 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
     const answer = await this.callRemoteModel(messages);
 
     return { answer, notes: contextNotes };
-  }
-
-  /**
-   * Stream-based version of askVault that provides incremental updates.
-   * @param query The user's query
-   * @param onDelta Callback for each streamed text chunk
-   * @param preloadedNotes Optional pre-loaded notes to use instead of retrieving
-   * @param onRetry Optional callback for retry notifications
-   */
-  async askVaultStream(
-    query: string,
-    onDelta?: (text: string) => void,
-    preloadedNotes?: IndexedNote[],
-    onRetry?: (attempt: number, maxAttempts: number) => void,
-    additionalContext?: string,
-    signal?: AbortSignal,
-    useLocal: boolean = false
-  ): Promise<{ fullAnswer: string; notes: IndexedNote[] }> {
-    const contextNotes = preloadedNotes ?? this.retrieveNotes(query);
-
-    if (contextNotes.length === 0 && !additionalContext) {
-      const noNotesMsg = "No relevant notes found for your query.";
-      onDelta?.(noNotesMsg);
-      return {
-        fullAnswer: noNotesMsg,
-        notes: [],
-      };
-    }
-
-    // Build context
-    let contextText = `User query: "${query}"\n\nHere are relevant notes:\n\n`;
-    for (const note of contextNotes) {
-      contextText += `--- Note: ${note.path} ---\n`;
-      if (note.tags.length > 0) {
-        contextText += `Tags: ${note.tags.join(", ")}\n`;
-      }
-      if (note.frontmatter) {
-        contextText += `Frontmatter: ${JSON.stringify(note.frontmatter)}\n`;
-      }
-      // Limit content to 1500 chars
-      const excerpt =
-        note.content.length > 1500
-          ? note.content.substring(0, 1500) + "..."
-          : note.content;
-      contextText += `Content:\n${excerpt}\n\n`;
-    }
-
-    // Append additional context (e.g., Knowledge Graph connections)
-    if (additionalContext) {
-      contextText += `\n\n${additionalContext}\n\n`;
-    }
-
-    const messages: ChatMessage[] = [
-      { role: "system", content: this.settings.systemPrompt },
-      { role: "user", content: contextText },
-    ];
-
-    const fullAnswer = await this.callRemoteModelStream(messages, onDelta, onRetry, signal, useLocal);
-
-    return { fullAnswer, notes: contextNotes };
-  }
-
-  // ============================================================================
-  // CLASSIFICATION HELPERS
-  // ============================================================================
-
-  /**
-   * Extract entity name and type from a user query.
-   * This is the primary method used for entity extraction - it returns both
-   * the entity name and its classified type in a single LLM call.
-   */
-  async extractEntitiesFromQuery(query: string, useLocal: boolean = false): Promise<Array<{
-    name: string | null;
-    type: "person" | "company" | "asset" | "event" | "location" | "unknown";
-  }>> {
-    const system =
-      "Extract the main entities mentioned in the user's query and classify each as one of: person | company | asset | event | location | unknown. Respond ONLY in JSON with a list of objects: [{\"name\":\"<entity name>\",\"type\":\"person|company|asset|event|location|unknown\"}]. If no specific entities are found, return an empty list []. Use English only.";
-
-    const messages: ChatMessage[] = [
-      { role: "system", content: system },
-      { role: "user", content: query },
-    ];
-
-    try {
-      const model = useLocal ? LOCAL_VAULT_MODEL : ENTITY_EXTRACTION_MODEL;
-      const text = await this.callRemoteModel(messages, false, model, undefined, useLocal);
-
-      // Try strict JSON parse
-      const match = text.trim();
-      let list: any[] = [];
-      try {
-        list = JSON.parse(match);
-      } catch (parseError) {
-        // Best-effort: find JSON substring
-        const m = match.match(/\[[\s\S]*\]/);
-        if (m) {
-          try {
-            list = JSON.parse(m[0]);
-          } catch (e) {
-            console.error("[extractEntitiesFromQuery] Regex parse failed:", e);
-          }
-        }
-      }
-
-      if (!Array.isArray(list)) {
-        return [];
-      }
-
-      const allowed = ["person", "company", "asset", "event", "location", "unknown"];
-      return list.map(item => {
-        const t = (String(item?.type) || "unknown").toLowerCase();
-        const type = allowed.includes(t) ? (t as any) : "unknown";
-        const nameVal =
-          typeof item?.name === "string" && item.name.trim().length > 0
-            ? item.name.trim()
-            : null;
-        return { name: nameVal, type };
-      });
-    } catch (error) {
-      console.error("[extractEntitiesFromQuery] Error:", error);
-      return [];
-    }
-  }
-
-
-
-  getVaultContext(): string {
-    // Get a summary of vault content for context
-    const notes = Array.from(this.index.values());
-    let context = `Vault contains ${notes.length} notes.\n\n`;
-
-    // Add sample of note titles
-    const sampleNotes = notes.slice(0, 20);
-    context += "Sample notes:\n";
-    for (const note of sampleNotes) {
-      context += `- ${note.path}\n`;
-    }
-
-    return context;
   }
 
   // ============================================================================

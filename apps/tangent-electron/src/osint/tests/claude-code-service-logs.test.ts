@@ -11,7 +11,7 @@ describe('ClaudeCodeService extraction logging', () => {
   });
 
   it('emits parse_failed event when response is not JSON', async () => {
-    const svc = new ClaudeCodeService('', { cliPath: 'claude', model: 'sonnet' });
+    const svc = new ClaudeCodeService({ cliPath: 'claude', model: 'sonnet' });
     (svc as any).invokeCLI = vi.fn().mockResolvedValue('not-json');
     const logs: ExtractionLogEvent[] = [];
 
@@ -24,7 +24,7 @@ describe('ClaudeCodeService extraction logging', () => {
   });
 
   it('emits parse_success event for valid operations payload', async () => {
-    const svc = new ClaudeCodeService('', { cliPath: 'claude', model: 'sonnet' });
+    const svc = new ClaudeCodeService({ cliPath: 'claude', model: 'sonnet' });
     (svc as any).invokeCLI = vi.fn().mockResolvedValue('{"operations":[{"action":"create","entities":[],"connections":[]}]}');
     const logs: ExtractionLogEvent[] = [];
 
@@ -46,7 +46,7 @@ describe('ClaudeCodeService extraction logging', () => {
         return this.invokeCLI('x'.repeat(512 * 1024));
       }
     }
-    const svc = new EarlyExitService('', {
+    const svc = new EarlyExitService({
       cliPath: process.execPath,
       timeoutMs: 5_000,
     });
@@ -60,7 +60,7 @@ describe('ClaudeCodeService extraction logging', () => {
         return this.invokeCLI('hello');
       }
     }
-    const svc = new ExposedService('', {
+    const svc = new ExposedService({
       cliPath: 'definitely-nonexistent-cli-abc123-not-found',
       timeoutMs: 5_000,
     });

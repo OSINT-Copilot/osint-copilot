@@ -7,9 +7,7 @@ import {
 	TFile,
 	WorkspaceLeaf,
 	normalizePath,
-	setIcon,
 } from "obsidian";
-import { BUILT_IN_ORCHESTRATION_TOOLS, DYNAMIC_PLANNER_TOOLS_NOTE } from "../data/built-in-orchestration-tools";
 import type { EnricherRegistry } from "../services/enrichers/enricher-registry";
 import { isEnricherRunnable, type EnricherSpec } from "../services/enrichers/enricher-schema";
 import { parseSkillIdForVault } from "../services/custom-vault-operations";
@@ -259,25 +257,17 @@ export class ToolsSkillsRegistryView extends ItemView {
 		});
 
 		const grid = root.createDiv({ cls: "osint-copilot-registry-grid" });
-		this.toolsCol = grid.createDiv({ cls: "osint-copilot-registry-column" });
 		this.skillsCol = grid.createDiv({ cls: "osint-copilot-registry-column" });
 		this.enrichCol = grid.createDiv({ cls: "osint-copilot-registry-column" });
 
 		await this.reload();
 	}
 
-	private toolsCol!: HTMLElement;
 	private skillsCol!: HTMLElement;
 	private enrichCol!: HTMLElement;
 	private refreshBtn: HTMLButtonElement | null = null;
 	/** reload() is reachable from five places and every caller discards the promise. */
 	private reloadInFlight: Promise<void> | null = null;
-
-	/** Built-in tools list starts collapsed to give vault skills/enrichers more space. */
-	private builtInToolsCollapsed = true;
-
-	private readonly builtInToolsBodyDomId =
-		"osint-copilot-built-in-tools-" + Math.random().toString(36).slice(2, 11);
 
 	/**
 	 * Single-flight, and it never rejects. Every caller discards the promise, so a
@@ -298,7 +288,6 @@ export class ToolsSkillsRegistryView extends ItemView {
 		try {
 			this.host.skillRegistry.invalidate();
 			this.host.enricherRegistry.invalidate();
-			this.renderTools();
 			// Settled independently: one registry failing must not hide the other's list.
 			const [skills, enrichers] = await Promise.allSettled([
 				this.host.skillRegistry.listVaultSkills(),
@@ -330,62 +319,6 @@ export class ToolsSkillsRegistryView extends ItemView {
 		col.createEl("h3", { text: heading });
 		const message = reason instanceof Error ? reason.message : String(reason);
 		col.createDiv({ text: `${what}: ${message}`, cls: "osint-copilot-registry-error" });
-	}
-
-	private renderTools(): void {
-		this.toolsCol.empty();
-		const wrap = this.toolsCol.createDiv({ cls: "osint-copilot-registry-built-in" });
-		const header = wrap.createDiv({
-			cls: "osint-copilot-registry-built-in-header",
-			attr: {
-				role: "button",
-				tabindex: "0",
-				"aria-expanded": this.builtInToolsCollapsed ? "false" : "true",
-				"aria-controls": this.builtInToolsBodyDomId,
-			},
-		});
-		const chevron = header.createSpan({ cls: "osint-copilot-registry-built-in-chevron" });
-		setIcon(chevron, this.builtInToolsCollapsed ? "chevron-right" : "chevron-down");
-		header.createEl("h3", { text: "Built-in tools" });
-
-		const body = wrap.createDiv({
-			cls: "osint-copilot-registry-built-in-body",
-			attr: { id: this.builtInToolsBodyDomId },
-		});
-		body.createDiv({
-			text: "These run inside the plugin or local agent flows. They are not vault files.",
-			cls: "osint-copilot-registry-hint",
-		});
-		for (const t of BUILT_IN_ORCHESTRATION_TOOLS) {
-			const card = body.createDiv({ cls: "osint-copilot-registry-card" });
-			card.createEl("div", { text: t.title, cls: "osint-copilot-registry-card-title" });
-			card.createEl("code", { text: t.id, cls: "osint-copilot-registry-card-id" });
-			card.createDiv({ text: t.description, cls: "osint-copilot-registry-card-desc" });
-		}
-		body.createDiv({
-			text: DYNAMIC_PLANNER_TOOLS_NOTE,
-			cls: "osint-copilot-registry-dynamic-note",
-		});
-
-		const sync = (): void => {
-			body.toggleAttribute("hidden", this.builtInToolsCollapsed);
-			header.setAttribute("aria-expanded", this.builtInToolsCollapsed ? "false" : "true");
-			chevron.empty();
-			setIcon(chevron, this.builtInToolsCollapsed ? "chevron-right" : "chevron-down");
-		};
-		sync();
-
-		const toggle = (): void => {
-			this.builtInToolsCollapsed = !this.builtInToolsCollapsed;
-			sync();
-		};
-		header.addEventListener("click", toggle);
-		header.addEventListener("keydown", (ev: KeyboardEvent) => {
-			if (ev.key === "Enter" || ev.key === " ") {
-				ev.preventDefault();
-				toggle();
-			}
-		});
 	}
 
 	private renderSkills(skills: VaultSkillManifest[]): void {
@@ -461,7 +394,6 @@ export class ToolsSkillsRegistryView extends ItemView {
 			},
 			undefined,
 			true,
-			undefined,
 			"Move to trash",
 		).open();
 	}
@@ -476,7 +408,6 @@ export class ToolsSkillsRegistryView extends ItemView {
 			},
 			undefined,
 			true,
-			undefined,
 			"Move to trash",
 		).open();
 	}

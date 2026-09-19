@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { ToolsSkillsRegistryView, submitOnEnter } from '../views/tools-skills-registry-view';
 
-// The mock has no setIcon (the built-in tools header uses it); the real one is a pure DOM helper.
 vi.mock('obsidian', async (importOriginal) => {
     const mock = await importOriginal<Record<string, unknown>>();
-    const { setIcon } = await import('../obsidian-shim/ui/set-icon');
-    return { ...mock, setIcon, Notice: vi.fn() };
+    return { ...mock, Notice: vi.fn() };
 });
 
 function makeView() {
@@ -36,7 +34,7 @@ describe('ToolsSkillsRegistryView reload', () => {
         host.skillRegistry.listVaultSkills.mockRejectedValue(new Error('EACCES: skills folder'));
         await expect(view.onOpen()).resolves.toBeUndefined();
 
-        const [, skills, enrichers] = columns(root);
+        const [skills, enrichers] = columns(root);
         expect(skills.querySelector('.osint-copilot-registry-error')!.textContent).toContain('EACCES: skills folder');
         expect(skills.querySelector('h3')!.textContent).toBe('Vault skills');
         expect(enrichers.textContent).toContain('No enricher JSON files found.');

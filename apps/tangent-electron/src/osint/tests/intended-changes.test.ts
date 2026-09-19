@@ -1,21 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { EntityManager } from '../services/entity-manager';
 import { createTestApp, appReady } from '../obsidian-shim/testing/create-test-app';
-import { getContent, snapshotPaths } from './helpers/vault-inspect';
 import { generateId, sanitizeFilename } from '../entities/types';
 import { ftmSchemaService } from '../services/ftm-schema-service';
 
 /**
- * INTENDED BEHAVIOURAL CHANGES -- Phase 0 safety net, second half.
- *
- * The port fixes behaviour as well as swapping the host, which costs us the
- * "diff the vault, prove it is byte-identical" oracle. These pairs are the
- * replacement: for each intended change, one test pinning what the code does
- * TODAY, and one `.skip`ped test asserting what it must do AFTER the fix.
- *
- * Rule for the port: every difference between the golden fixtures and the new
- * app must correspond to one of the skipped tests below being un-skipped.
- * Anything else is a regression.
+ * Behaviour the port changed on purpose, pinned so that it does not quietly change back.
  */
 
 const note = (id: string, type: string, label: string, rels = '') => `---
@@ -107,53 +97,6 @@ describe('Change 4 - generateId uses crypto.randomUUID', () => {
         } finally {
             Math.random = original;
         }
-    });
-});
-
-describe('Change 2 - graph-workspace membership is explicit', () => {
-    /**
-     * Exercised through the persistence format rather than the view, because
-     * GraphView needs Cytoscape and a live leaf. The format IS the contract: v3 stores
-     * membersByGraph, and anything older derives it from position keys so an existing
-     * vault keeps the same workspace contents.
-     */
-    interface PositionsFileV3 {
-        version: number;
-        byGraph: Record<string, Record<string, { x: number; y: number }>>;
-        membersByGraph?: Record<string, string[]>;
-    }
-
-    function membersFor(raw: PositionsFileV3, graphId: string): string[] {
-        const stored = raw.version === 3 ? raw.membersByGraph : null;
-        return (stored?.[graphId] ?? Object.keys(raw.byGraph[graphId] ?? {})).sort();
-    }
-
-    it('migrates a v2 file by deriving membership from position keys', () => {
-        const v2: PositionsFileV3 = {
-            version: 2,
-            byGraph: { default: { a: { x: 0, y: 0 } }, 'case-1': { b: { x: 1, y: 1 }, c: { x: 2, y: 2 } } },
-        };
-        expect(membersFor(v2, 'case-1')).toEqual(['b', 'c']);
-    });
-
-    it('reads membership from v3 rather than inferring it', () => {
-        const v3: PositionsFileV3 = {
-            version: 3,
-            // 'd' is a member with no saved position: it has never been dragged.
-            byGraph: { 'case-1': { b: { x: 1, y: 1 } } },
-            membersByGraph: { 'case-1': ['b', 'd'] },
-        };
-        expect(membersFor(v3, 'case-1')).toEqual(['b', 'd']);
-    });
-
-    it('membership survives losing every saved position', () => {
-        // Under the old implicit rule, clearing a layout silently emptied the workspace.
-        const v3: PositionsFileV3 = {
-            version: 3,
-            byGraph: { 'case-1': {} },
-            membersByGraph: { 'case-1': ['b', 'c'] },
-        };
-        expect(membersFor(v3, 'case-1')).toEqual(['b', 'c']);
     });
 });
 

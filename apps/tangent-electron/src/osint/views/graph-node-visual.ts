@@ -125,7 +125,7 @@ export function nodeBackgroundColorFor(data: GraphNodeVisualData): string {
  * So a tile and a pin both caption themselves underneath. For the pin that is also simply
  * how a map marker reads, which is what the shape is imitating.
  */
-export function nodeCaptionPlacement(data: GraphNodeVisualData): 'inside' | 'below' {
+function nodeCaptionPlacement(data: GraphNodeVisualData): 'inside' | 'below' {
     if (data.thumbUrl) return 'below';
     return nodeShapeFor(data) === 'diamond' ? 'below' : 'inside';
 }

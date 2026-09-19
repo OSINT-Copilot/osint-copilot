@@ -3,8 +3,8 @@
  * Now supports both legacy EntityType and FTM schema format.
  */
 
-import { App, Modal, Notice, Setting } from 'obsidian';
-import { type Entity, type Connection, EntityType, ENTITY_CONFIGS, COMMON_PROPERTIES, getFTMEntityConfig, getAvailableFTMEntityTypes, getAvailableFTMIntervalTypes, type FTMEntityConfig, validateEntityName, getEntityIcon } from '../entities/types';
+import { App, Modal, Notice } from 'obsidian';
+import { type Entity, type Connection, EntityType, ENTITY_CONFIGS, COMMON_PROPERTIES, getFTMEntityConfig, getAvailableFTMEntityTypes, getAvailableFTMIntervalTypes, validateEntityName, getEntityIcon } from '../entities/types';
 import { createEntityPictureField } from './entity-picture-field';
 import { ENTITY_IMAGE_KEY } from '../services/entity-image-service';
 
@@ -26,7 +26,7 @@ function renderFilePathBlock(container: HTMLElement, heading: string, path: stri
 }
 import { EntityManager } from '../services/entity-manager';
 import { GeocodingService, GeocodingError, GeocodingErrorType, geocodingService } from '../services/geocoding-service';
-import { ftmSchemaService, type FTMPropertyDefinition } from '../services/ftm-schema-service';
+import { type FTMPropertyDefinition } from '../services/ftm-schema-service';
 import { CustomTypeCreationModal } from './custom-type-modal';
 import type { CatalogEntityType, CatalogRelationshipType, EnabledSchemaFamilies, SchemaFamily } from '../services/schema-catalog-types';
 
@@ -74,28 +74,6 @@ function familySectionTitle(family: SchemaFamily): string {
 			return family;
 	}
 }
-
-// Common relationship types for suggestions
-export const COMMON_RELATIONSHIPS = [
-    'WORKS_AT',
-    'ATTENDED',
-    'LOCATED_AT',
-    'KNOWS',
-    'OWNS',
-    'MEMBER_OF',
-    'RELATED_TO',
-    'CONTACTED',
-    'VISITED',
-    'EMPLOYED_BY',
-    'LIVES_AT',
-    'ASSOCIATED_WITH',
-    'PARENT_OF',
-    'CHILD_OF',
-    'SIBLING_OF',
-    'SPOUSE_OF',
-    'FRIEND_OF',
-    'COLLEAGUE_OF'
-];
 
 export class EntityCreationModal extends Modal {
     private entityManager: EntityManager;
@@ -724,69 +702,6 @@ export class EntityCreationModal extends Modal {
         }
     }
 
-    /**
-     * Automatically geocode if address info exists but coordinates are missing
-     */
-    private async autoGeocodeIfNeeded(): Promise<void> {
-        const hasCoordinates = this.properties.latitude && this.properties.longitude;
-        const hasAddressInfo = this.properties.address || this.properties.city || this.properties.country;
-
-        if (hasCoordinates || !hasAddressInfo) {
-            return; // Already has coordinates or no address to geocode
-        }
-
-        console.debug('[EntityCreationModal] Auto-geocoding location...');
-        this.setGeocodeStatus('loading', 'Auto-geocoding address...');
-
-        try {
-            const result = await this.geocodingService.geocodeAddressWithRetry(
-                this.properties.address as string,
-                this.properties.city as string,
-                this.properties.state as string,
-                this.properties.country as string,
-                (attempt, maxAttempts, delaySeconds) => {
-                    this.setGeocodeStatus('loading', `Network error, retrying in ${delaySeconds}s... (attempt ${attempt}/${maxAttempts})`);
-                }
-            );
-
-            // Update properties with geocoded coordinates
-            this.properties.latitude = result.latitude;
-            this.properties.longitude = result.longitude;
-
-            // Update input fields visually
-            const latInput = document.getElementById('entity-latitude') as HTMLInputElement;
-            const lngInput = document.getElementById('entity-longitude') as HTMLInputElement;
-            if (latInput) latInput.value = result.latitude.toString();
-            if (lngInput) lngInput.value = result.longitude.toString();
-
-            // Auto-fill missing address components
-            if (!this.properties.city && result.city) {
-                this.properties.city = result.city;
-                const cityInput = document.getElementById('entity-city') as HTMLInputElement;
-                if (cityInput) cityInput.value = result.city;
-            }
-            if (!this.properties.state && result.state) {
-                this.properties.state = result.state;
-                const stateInput = document.getElementById('entity-state') as HTMLInputElement;
-                if (stateInput) stateInput.value = result.state;
-            }
-            if (!this.properties.country && result.country) {
-                this.properties.country = result.country;
-                const countryInput = document.getElementById('entity-country') as HTMLInputElement;
-                if (countryInput) countryInput.value = result.country;
-            }
-
-            const coordsStr = GeocodingService.formatCoordinates(result.latitude, result.longitude);
-            this.setGeocodeStatus('success', `✓ Auto-geocoded: ${coordsStr}`);
-            console.debug('[EntityCreationModal] Auto-geocoded successfully:', coordsStr);
-
-        } catch (error) {
-            console.warn('[EntityCreationModal] Auto-geocoding failed:', error);
-            // Don't block entity creation - just log the warning
-            this.setGeocodeStatus('error', '⚠ Auto-geocoding failed - entity will be created without coordinates');
-        }
-    }
-
     onClose() {
         const { contentEl } = this;
         contentEl.empty();
@@ -797,7 +712,7 @@ export class EntityCreationModal extends Modal {
  * FTM Entity Creation Modal - creates entities using FTM schema format.
  * Shows required properties by default with collapsible optional properties.
  */
-export class FTMEntityCreationModal extends Modal {
+class FTMEntityCreationModal extends Modal {
     private entityManager: EntityManager;
     private schemaName: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3217,7 +3132,7 @@ color: var(--text - muted);
  * FTM Interval Creation Modal - allows users to create FTM interval/relationship entities.
  * This modal provides a form for creating connections using FTM interval schemas.
  */
-export class FTMIntervalCreationModal extends Modal {
+class FTMIntervalCreationModal extends Modal {
     private entityManager: EntityManager;
     private intervalType: string; // FTM schema name (e.g., 'Associate', 'Ownership')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

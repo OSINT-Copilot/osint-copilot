@@ -7,8 +7,8 @@
  * is in flight. What is left here is the part a command cannot express: the download
  * progress bar, and the accent that marks an update waiting to be applied.
  *
- * Built the same way as the gear beside it (System.svelte), down to the progress bar, so
- * the two read as one group rather than as a bolted-on extra.
+ * Built the same way as the gear beside it (System.svelte), so the two read as one group
+ * rather than as a bolted-on extra.
  */
 import { getContext } from 'svelte'
 import type Workspace from 'app/model/Workspace'
@@ -48,7 +48,7 @@ $: downloadPercent = $downloadProgress?.percent || 0
 /*
  * An update that is downloaded and waiting is the one state worth interrupting for, so it
  * is the only one that fills the glyph. --updateFill is the variable update.svg's path
- * already reads; System.svelte lights its gear from the same one.
+ * already reads.
  */
 .buttonContent.ready {
 	--updateFill: var(--accentTextColor);

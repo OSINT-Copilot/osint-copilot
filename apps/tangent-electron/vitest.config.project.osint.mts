@@ -10,7 +10,6 @@ export default mergeConfig(
 		test: {
 			name: 'osint',
 			environment: 'jsdom',
-			globals: true,
 			setupFiles: [path.join(osint, 'tests/setup.ts')],
 			include: [
 				'src/osint/tests/**/*.test.[jt]s'
@@ -20,7 +19,6 @@ export default mergeConfig(
 				'obsidian': path.join(osint, 'tests/obsidian-mock.ts'),
 				// Node-side host implementation: tests exercise the real fs/exec code.
 				'host-impl': path.join(__dirname, 'src/main/osint/impl.ts'),
-				'../main': path.join(osint, 'main.ts'),
 			},
 		},
 	})

@@ -82,8 +82,6 @@ const DEFAULT_CONFIG: ClaudeCodeConfig = {
 /** `--max-turns` for chat-style CLI calls; entity extraction uses a separate invoke with turns=1. */
 const DEFAULT_CHAT_MAX_TURNS = 16;
 
-const SKILL_FILE = '.claude/GRAPH_EXTRACTION.md';
-
 export function sanitizeCliOutput(text: string, maxLen = 500): string {
     const cleaned = (text || '')
         .replace(/\x1b\[[0-9;]*m/g, '')
@@ -104,13 +102,11 @@ export class ClaudeCodeService implements LocalCliService {
     /** Bare binary name to resolve when config.cliPath is empty/whitespace. */
     protected readonly defaultCliName: string = 'claude';
     protected config: ClaudeCodeConfig;
-    private pluginDir: string;
     /** When set, tried first for graph extraction skill (vault-editable). */
     private vaultSkillResolver: (() => Promise<string | null>) | null = null;
 
-    constructor(pluginDir: string, config?: Partial<ClaudeCodeConfig>) {
+    constructor(config?: Partial<ClaudeCodeConfig>) {
         this.config = { ...DEFAULT_CONFIG, ...config };
-        this.pluginDir = pluginDir;
     }
 
     setVaultSkillResolver(resolver: (() => Promise<string | null>) | null): void {
@@ -166,9 +162,8 @@ export class ClaudeCodeService implements LocalCliService {
                 console.warn(`[${this.displayName}] vault skill resolver failed:`, e);
             }
         }
-        // The former `<pluginDir>/SKILL.md` tier is gone: a standalone app has no plugin
-        // directory, and the vault copy at custom/prompts/skills/graph-extraction.md is
-        // bootstrapped on first run, so the resolver above is the real override point.
+        // The vault copy at custom/prompts/skills/graph-extraction.md is bootstrapped on
+        // first run, so the resolver above is the override point.
         return this.getFallbackSkill();
     }
 

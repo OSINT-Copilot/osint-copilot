@@ -1,17 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { GraphApiService } from '../services/api-service';
 
-// pdf.js's own "isNodeJS" environment check special-cases plain Node.js (auto-disabling its
-// worker and bypassing GlobalWorkerOptions.workerSrc entirely) but NOT Electron's renderer
-// process, which is what Obsidian actually runs in. Simulating that here before pdfjs-dist is
-// first loaded (the require() is lazy, inside extractPdfText) makes this test exercise the real
-// code path — without it, this suite would pass even against a build that's broken under Electron.
-Object.defineProperty(process, 'versions', {
-	value: { ...process.versions, electron: '33.0.0' },
-	configurable: true,
-});
-(process as unknown as { type: string }).type = 'renderer';
-
 /**
  * Hand-builds a minimal single-page PDF containing one Tj text-drawing operator, so extraction
  * can be tested without a committed binary fixture. The exact xref offsets aren't load-bearing —

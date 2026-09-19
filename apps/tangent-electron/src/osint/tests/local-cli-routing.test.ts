@@ -36,17 +36,12 @@ describe('GraphApiService local CLI routing', () => {
             api.callRemoteModel([
                 { role: 'system', content: 'system rules' },
                 { role: 'user', content: 'question' },
-            ], true),
+            ]),
         ).resolves.toBe('codex-answer');
 
         expect(codex.extractEntities).toHaveBeenCalledWith('source text', undefined, undefined, undefined);
         expect(codex.extractTextFromImage).toHaveBeenCalledWith('/tmp/evidence.png', undefined, undefined);
-        expect(codex.chat).toHaveBeenCalledWith(
-            expect.stringContaining('Respond ONLY with valid JSON'),
-            'question',
-            undefined,
-            undefined,
-        );
+        expect(codex.chat).toHaveBeenCalledWith('system rules', 'question', undefined, undefined);
         expect(claude.chat).not.toHaveBeenCalled();
     });
 
@@ -59,14 +54,19 @@ describe('GraphApiService local CLI routing', () => {
         configure(api, 'codex');
 
         await expect(
-            api.callLocalProviderModel('claude-code', [{ role: 'user', content: 'hello' }]),
+            api.callLocalProviderModel('claude-code', [{ role: 'user', content: 'hello' }], true),
         ).resolves.toBe('claude-code-answer');
 
-        expect(claude.chat).toHaveBeenCalled();
+        expect(claude.chat).toHaveBeenCalledWith(
+            expect.stringContaining('Respond ONLY with valid JSON'),
+            'hello',
+            undefined,
+            undefined,
+        );
         expect(codex.chat).not.toHaveBeenCalled();
     });
 
-    it('does not let a background probe for another runtime overwrite active-provider status', async () => {
+    it('probes the runtime it is asked about, not the selected one', async () => {
         const api = new GraphApiService();
         const claude = fakeService('claude-code');
         const codex = fakeService('codex');
@@ -76,9 +76,7 @@ describe('GraphApiService local CLI routing', () => {
         configure(api, 'codex');
 
         await expect(api.checkHealth('codex')).resolves.toMatchObject({ status: 'ok' });
-        expect(api.getOnlineStatus()).toBe(true);
         await expect(api.checkHealth('claude-code')).resolves.toBeNull();
-        expect(api.getOnlineStatus()).toBe(true);
     });
 
     it.each([false, true])('propagates final-chunk cancellation instead of returning partial success (prior ops: %s)', async (withPriorOps) => {
@@ -109,11 +107,7 @@ describe('GraphApiService local CLI routing', () => {
             'x'.repeat(1300),
             [],
             undefined,
-            undefined,
-            undefined,
             controller.signal,
-            false,
-            { chunkSize: 700, chunkThreshold: 1200 },
         )).rejects.toMatchObject({ name: 'AbortError' });
         expect(calls).toBe(2);
     });

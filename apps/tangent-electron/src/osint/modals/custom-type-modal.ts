@@ -51,6 +51,9 @@ export class CustomTypeCreationModal extends Modal {
         if (existingSchema) {
             this.schema = JSON.parse(JSON.stringify(existingSchema)); // Deep copy
             this.isEditing = true;
+            // handleSave rebuilds the properties from these rows alone, so an edit that
+            // started with none would save the type without the properties it had.
+            this.populateRowsFromSchema();
             // Infer base type if editing
             if (this.schema.extends && this.schema.extends.includes('Interval')) {
                 this.baseType = 'Interval';

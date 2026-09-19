@@ -43,7 +43,7 @@ function millis(value: Date | string | number | undefined): number {
     return Number.isFinite(time) ? time : 0;
 }
 
-export function toVaultPath(root: string, absolute: string): string {
+function toVaultPath(root: string, absolute: string): string {
     const prefix = root.endsWith('/') ? root : `${root}/`;
     const relative = absolute.startsWith(prefix) ? absolute.slice(prefix.length) : absolute;
     return normalizePath(relative);

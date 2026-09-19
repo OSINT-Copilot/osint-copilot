@@ -31,10 +31,7 @@ import {
   legacyFlagsForChatMode,
 } from '../services/conversation-service';
 import { ConfirmModal } from '../modals/confirm-modal';
-import {
-  ORCHESTRATION_TOOL_DISPLAY_NAMES,
-  type OrchestrationProgressMeta,
-} from '../services/orchestration-service';
+import type { OrchestrationProgressMeta } from '../services/orchestration-service';
 import {
   getChatRuntimeAvailability,
   type ChatRuntimeAvailability,
@@ -2590,7 +2587,6 @@ export class ChatView extends ItemView {
         attachmentsContext,
         currentGraphState, // Also pass the graph state
         conversationMemory, // Send the memory history
-        this.currentConversation,
         updateProgress,
         {
           abortSignal: controller.signal,
@@ -2631,14 +2627,6 @@ export class ChatView extends ItemView {
     }
   }
 
-
-  /**
-   * Phase 2: Continue after the user has reviewed tool results.
-   * Calls continueAfterToolReview on the OrchestrationService to synthesize + generate graph.
-   */
-
-
-
   private buildGraphWriteContextFromSavedQuery(savedQuery: string | undefined): GraphWriteContext {
     const q = (savedQuery ?? "").trim() || "Graph modification apply";
     const extracted_urls = q.match(/(https?:\/\/[^\s]+)/g) ?? undefined;
@@ -2660,7 +2648,6 @@ export class ChatView extends ItemView {
     const graphWriteContext = this.buildGraphWriteContextFromSavedQuery(item.savedQuery);
     await this.plugin.orchestrationService.executeGraphModifications(cmdsToExecute, {
       graphWriteContext,
-      skipConfirmation: true,
     });
     item.proposedModifications = undefined; // Clear after applying
     await this.renderMessages();
@@ -2711,21 +2698,6 @@ export class ChatView extends ItemView {
       const existingEntities = this.plugin.entityManager.getAllEntities();
       updateProgress("Checking existing entities...", 20);
 
-      const onRetry = (attempt: number, maxAttempts: number, reason: string, nextDelayMs: number) => {
-        const delaySeconds = Math.round(nextDelayMs / 1000);
-        let reasonText = 'Network interrupted';
-        if (reason === 'timeout') {
-          reasonText = 'Request takes longer than usual, please wait';
-        } else if (reason === 'network') {
-          reasonText = 'Network connection lost';
-        } else if (reason.startsWith('server-error')) {
-          reasonText = 'Server temporarily unavailable';
-        } else if (reason === 'rate-limited') {
-          reasonText = 'Rate limited';
-        }
-        updateProgress(`⚠️ ${reasonText}. Retrying in ${delaySeconds}s... (${attempt + 1}/${maxAttempts})`, 25);
-      };
-
       updateProgress("Sending text to AI for entity extraction...", 30);
 
       const onChunkProgress = (chunkIndex: number, totalChunks: number, message: string) => {
@@ -2741,9 +2713,7 @@ export class ChatView extends ItemView {
       const result: ProcessTextResponse = await this.plugin.graphApiService.processTextInChunks(
         inputText,
         existingEntities,
-        undefined,
         onChunkProgress,
-        onRetry,
         controller.signal
       );
 

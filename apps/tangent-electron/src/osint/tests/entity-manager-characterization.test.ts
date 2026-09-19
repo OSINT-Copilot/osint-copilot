@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EntityManager } from '../services/entity-manager';
-import { createTestApp, appReady, type TestApp } from '../obsidian-shim/testing/create-test-app';
+import { createTestApp, type TestApp } from '../obsidian-shim/testing/create-test-app';
 import { getContent, snapshotPaths } from './helpers/vault-inspect';
 import { parse as parseYaml } from 'yaml';
 import { sanitizeFilename } from '../entities/types';

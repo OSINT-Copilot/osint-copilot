@@ -13,7 +13,7 @@ import * as lucide from 'lucide-static';
 const icons = lucide as unknown as Record<string, string>;
 
 /** lucide-static exports PascalCase keys; the codebase uses kebab-case names. */
-export function lucideExportName(name: string): string {
+function lucideExportName(name: string): string {
     return name.split(/[-_]/).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join('');
 }
 

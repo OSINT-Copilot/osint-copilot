@@ -11,33 +11,15 @@
 import { requestUrl } from 'obsidian';
 import { type AIOperation, type Entity, type ProcessTextResponse, getEntityLabel } from '../entities/types';
 import {
-    ClaudeCodeService,
     type ExtractionLogOptions,
     type LocalCliService,
 } from './claude-code-service';
 import { host } from '../host';
 
-/** Optional tuning for vault ingest: smaller chunks + per-chunk callback for live UI. */
-export interface VaultProcessTextChunkOptions {
-    chunkSize?: number;
-    chunkThreshold?: number;
-    onChunkOperations?: (info: {
-        chunkIndex: number;
-        totalChunks: number;
-        operations: AIOperation[];
-    }) => void | Promise<void>;
-}
-
 export interface ApiHealthResponse {
     status: string;
-    openai_configured: boolean;
     version?: string;
 }
-
-/**
- * Callback for retry notifications (reserved for future local retry UX).
- */
-export type RetryCallback = (attempt: number, maxAttempts: number, reason: string, nextDelayMs: number) => void;
 
 /** True when failure is normal user/environment (quiet console in ChatView URL flows). */
 export function isLikelyExpectedUrlFetchFailure(message: string): boolean {
@@ -55,8 +37,6 @@ export type UrlExtractResult = UrlExtractSuccess | UrlExtractFailure;
 
 export interface ApiSettings {
     apiProvider: 'claude-code' | 'codex';
-    claudeCodeCliPath?: string;
-    claudeCodeModel?: string;
 }
 
 /**
@@ -73,15 +53,10 @@ export interface ApiSettings {
  * - Geocoding (via GeocodingService - uses Nominatim, not this API)
  */
 export class GraphApiService {
-    private isOnline: boolean = false;
     private settings: ApiSettings | null = null;
     private localCliServices = new Map<string, LocalCliService>();
 
     constructor() {}
-
-    setClaudeCodeService(service: ClaudeCodeService): void {
-        this.setLocalCliService(service);
-    }
 
     setLocalCliService(service: LocalCliService): void {
         this.localCliServices.set(service.providerId, service);
@@ -106,20 +81,11 @@ export class GraphApiService {
         const service = this.getLocalCliService(selectedProvider);
         if (service) {
             const available = await service.isAvailable();
-            if (selectedProvider === activeProvider) this.isOnline = available;
             return available
-                ? { status: 'ok', openai_configured: true, version: `${service.providerId}-local` }
+                ? { status: 'ok', version: `${service.providerId}-local` }
                 : null;
         }
-        if (selectedProvider === activeProvider) this.isOnline = false;
         return null;
-    }
-
-    /**
-     * Get the current online status (selected local CLI probe).
-     */
-    getOnlineStatus(): boolean {
-        return this.isOnline;
     }
 
     /** One-line status for logs and throw messages (orchestration uses tryExtract; UI may show more). */
@@ -337,16 +303,13 @@ export class GraphApiService {
      */
     async callRemoteModel(
         messages: { role: string, content: string }[],
-        jsonResponse: boolean = false,
-        customModel?: string,
         signal?: AbortSignal,
-        orchestrationOptions?: { provider: 'osint-copilot' | 'local' | 'remote', url: string, apiKey: string },
         logOptions?: ExtractionLogOptions
     ): Promise<string> {
         return this.callLocalProviderModel(
             this.settings?.apiProvider || 'claude-code',
             messages,
-            jsonResponse,
+            false,
             signal,
             logOptions,
         );
@@ -422,27 +385,15 @@ export class GraphApiService {
     async processTextInChunks(
         text: string,
         existingEntities?: Entity[],
-        referenceTime?: string,
         onChunkProgress?: (chunkIndex: number, totalChunks: number, message: string) => void,
-        onRetry?: RetryCallback,
         signal?: AbortSignal,
-        useLocal: boolean = false,
-        vaultChunkOptions?: VaultProcessTextChunkOptions
     ): Promise<ProcessTextResponse> {
-        const CHUNK_SIZE = vaultChunkOptions?.chunkSize ?? 700; // Default: keep requests under CDN/proxy time limits
-        const CHUNK_THRESHOLD = vaultChunkOptions?.chunkThreshold ?? 1200; // Chunk before a single call gets too heavy
+        const CHUNK_SIZE = 700; // Keep requests under CDN/proxy time limits
+        const CHUNK_THRESHOLD = 1200; // Chunk before a single call gets too heavy
 
         // For small texts, process directly
         if (text.length <= CHUNK_THRESHOLD) {
-            const result = await this.processText(text, existingEntities, referenceTime, onRetry, signal, useLocal);
-            if (vaultChunkOptions?.onChunkOperations && result.success && result.operations?.length) {
-                await vaultChunkOptions.onChunkOperations({
-                    chunkIndex: 1,
-                    totalChunks: 1,
-                    operations: result.operations,
-                });
-            }
-            return result;
+            return this.processText(text, existingEntities, signal);
         }
 
         console.debug(`[GraphApiService] Large text detected (${text.length} chars), processing in chunks`);
@@ -469,7 +420,7 @@ export class GraphApiService {
             console.debug(`[GraphApiService] Processing chunk ${chunkNum}/${chunks.length} (${chunk.length} chars)`);
 
             try {
-                const result = await this.processText(chunk, accumulatedEntities, referenceTime, onRetry, signal, useLocal);
+                const result = await this.processText(chunk, accumulatedEntities, signal);
 
                 if (!result.success) {
                     console.warn(`[GraphApiService] Chunk ${chunkNum} failed:`, result.error);
@@ -478,7 +429,6 @@ export class GraphApiService {
                 }
 
                 if (result.operations) {
-                    const chunkAddedOps: AIOperation[] = [];
                     // Deduplicate entities
                     for (const op of result.operations) {
                         if (op.action === 'create' && op.entities) {
@@ -500,7 +450,6 @@ export class GraphApiService {
                                     entities: dedupedEntities
                                 };
                                 allOperations.push(mergedOp);
-                                chunkAddedOps.push(mergedOp);
 
                                 // Add to accumulated entities for context in next chunk
                                 accumulatedEntities = [
@@ -516,15 +465,7 @@ export class GraphApiService {
                         } else if (op.connections) {
                             // Include connection operations
                             allOperations.push(op);
-                            chunkAddedOps.push(op);
                         }
-                    }
-                    if (vaultChunkOptions?.onChunkOperations && chunkAddedOps.length > 0) {
-                        await vaultChunkOptions.onChunkOperations({
-                            chunkIndex: chunkNum,
-                            totalChunks: chunks.length,
-                            operations: chunkAddedOps,
-                        });
                     }
                 }
             } catch (error) {
@@ -556,13 +497,6 @@ export class GraphApiService {
      *
      * THIS IS THE ONLY API-DEPENDENT FEATURE.
      *
-     * Features:
-     * - Automatic retry with exponential backoff and jitter for transient failures
-     * - Adaptive timeout that increases after timeout errors
-     * - Request timeout to prevent hanging on slow connections
-     * - Distinguishes between retryable and permanent errors
-     * - Optional callback for retry notifications (user feedback)
-     *
      * When the API is unavailable:
      * - This method returns an error
      * - Users can still create entities manually via the Graph View
@@ -570,17 +504,12 @@ export class GraphApiService {
      *
      * @param text - Natural language text to process
      * @param existingEntities - Optional list of existing entities for context
-     * @param referenceTime - Optional reference time for relative date parsing
-     * @param onRetry - Optional callback for retry notifications
      * @returns ProcessTextResponse with extracted entities and relationships
      */
     async processText(
         text: string,
         existingEntities?: Entity[],
-        referenceTime?: string,
-        onRetry?: RetryCallback,
         signal?: AbortSignal,
-        useLocal: boolean = false
     ): Promise<ProcessTextResponse> {
         const service = this.getLocalCliService();
         if (!service) {
@@ -594,5 +523,3 @@ export class GraphApiService {
     }
 }
 
-// Alias for backward compatibility with ai-panel.ts
-export { GraphApiService as ApiService };

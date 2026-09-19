@@ -36,7 +36,7 @@ import {
 } from '../canvas/canvas-link-preview';
 import { isSafeAssetName } from '../canvas/canvas-runtime';
 import { ensureFolderExists } from '../utils/vault-bootstrap-fs';
-import { entityImagePath, isGraphImageExtension, isRemoteUrl } from '../views/graph-node-visual';
+import { isGraphImageExtension, isRemoteUrl } from '../views/graph-node-visual';
 
 /** The property holding a picture of the entity, as a vault-relative path. */
 export const ENTITY_IMAGE_KEY = 'image';
@@ -47,7 +47,7 @@ export const ENTITY_IMAGE_KEY = 'image';
  * Kept as a separate key rather than overloading `image` so that a download which fails
  * leaves something to retry, and so `image` only ever holds a path that resolves.
  */
-export const ENTITY_IMAGE_URL_KEY = 'image_url';
+const ENTITY_IMAGE_URL_KEY = 'image_url';
 
 /**
  * A slow host must not look like a hung app.
@@ -55,7 +55,7 @@ export const ENTITY_IMAGE_URL_KEY = 'image_url';
  * requestUrl has no timeout of its own, and one unreachable server in a batch of thirty
  * entities would otherwise stall the whole confirm-and-apply.
  */
-export const IMAGE_FETCH_TIMEOUT_MS = 15_000;
+const IMAGE_FETCH_TIMEOUT_MS = 15_000;
 
 export interface EntityImageHost {
     app: App;
@@ -174,9 +174,4 @@ function withTimeout<T>(promise: Promise<T>): Promise<T | null> {
         promise,
         new Promise<null>((resolve) => setTimeout(() => resolve(null), IMAGE_FETCH_TIMEOUT_MS)),
     ]);
-}
-
-/** True when this entity already has a picture the graph can draw. */
-export function hasEntityImage(properties: Record<string, unknown>): boolean {
-    return entityImagePath({ properties }) !== undefined;
 }

@@ -93,7 +93,6 @@ the check to a friendlier server would be a licence bypass needing no tools at a
 - `main/license-subscription.ts` — the only code that talks to the dashboard, and the only
   place its JSON is read.
 - `main/license-policy.ts` — the offline decisions, pure and dependency-free.
-- `app/model/license.ts` — the renderer store. Presentation only; see the note in that file.
 
 **Dashboard** (`ready-saas/`)
 
@@ -135,6 +134,6 @@ application bundle can remove it, which is true of every licence check in every 
 app. What it buys is that a key cannot be *forged* — invented as plausible-looking text or
 shared as a screenshot.
 
-Renderer-side entitlements are presentation: they grey out and explain what a plan does not
-include, rather than offering something that then fails. Anything that costs money is
-enforced by the dashboard, which counts credits against the key on every request.
+The renderer does not gate features by plan: the licence screen lists what a key includes,
+and nothing else reads its entitlements. Anything that costs money is enforced by the
+dashboard, which counts credits against the key on every request.

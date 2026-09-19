@@ -1,5 +1,4 @@
 import type { CustomVaultOperation } from "../services/custom-vault-operations";
-import type { OrchestrationPlan } from "../services/orchestration-plan";
 import type { ExtractionLogEvent } from "../services/claude-code-service";
 import type { IndexedNote } from "./indexed-note";
 

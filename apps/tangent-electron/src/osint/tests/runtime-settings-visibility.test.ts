@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runtimeSettingsVisibility } from "../main";
+import { runtimeSettingsVisibility } from "../chat/runtime-settings-visibility";
 
 describe("runtimeSettingsVisibility", () => {
   it("shows Claude hint only for Claude runtime", () => {

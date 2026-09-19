@@ -47,10 +47,6 @@ export function setTangentWorkspace(value: TangentWorkspaceLike): void {
     workspace = value;
 }
 
-export function tangentWorkspace(): TangentWorkspaceLike | null {
-    return workspace;
-}
-
 function absolutePathOf(relativePath: string): string {
     return `${workspace!.directoryStore.files.path}/${relativePath}`;
 }
@@ -223,7 +219,7 @@ export function openVaultNote(relativePath: string): boolean {
 }
 
 /** The name of our page in Tangent's preferences; must match System.svelte. */
-export const OSINT_SETTINGS_SECTION = 'OSINT Copilot';
+const OSINT_SETTINGS_SECTION = 'OSINT Copilot';
 
 /** Opens Tangent's preferences on the OSINT Copilot page. */
 export function openOsintSettings(): boolean {

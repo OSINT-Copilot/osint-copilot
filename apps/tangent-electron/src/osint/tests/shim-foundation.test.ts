@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Modal } from '../obsidian-shim/ui/modal';
 import { Menu } from '../obsidian-shim/ui/menu';
 import { Notice, inferNoticeVariant } from '../obsidian-shim/ui/notice';

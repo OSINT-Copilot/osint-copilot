@@ -27,7 +27,6 @@ export interface OsintRuntime {
     app: App;
     plugin: VaultAIPlugin;
     vaultRoot: string;
-    dispose(): Promise<void>;
 }
 
 /** The manifest the plugin reads for its About row. */
@@ -45,7 +44,7 @@ let current: OsintRuntime | null = null;
 let starting: Promise<OsintRuntime> | null = null;
 
 /**
- * The live runtime, or null before startup / after teardown.
+ * The live runtime, or null before startup.
  *
  * Falls back to the global. This module is reached two ways — App.svelte imports it
  * dynamically, and Tangent.ts pulls it in statically through the view-state creator — so
@@ -180,20 +179,7 @@ async function startOsintCopilotUncached(tangentWorkspace: Parameters<typeof sta
         getPlugin: (id: string) => (id === 'osint-copilot' ? plugin : null),
     };
 
-    current = {
-        app,
-        plugin,
-        vaultRoot,
-        async dispose() {
-            publishOsintPluginState({ ready: false, settings: null });
-            try { plugin.unload(); } catch (e) { console.error('[osint] plugin teardown failed', e); }
-            // The storage watcher subscription lives in the vault; nothing else closes it.
-            try { app.vault.close(); } catch (e) { console.error('[osint] vault close failed', e); }
-            current = null;
-            // Otherwise osintRuntime() kept resolving to the disposed runtime via the global.
-            delete (globalThis as any).osint;
-        },
-    };
+    current = { app, plugin, vaultRoot };
 
     // Exposed for debugging and for the smoke checks; also how the view layer reaches
     // the plugin without threading it through Tangent's own object graph.

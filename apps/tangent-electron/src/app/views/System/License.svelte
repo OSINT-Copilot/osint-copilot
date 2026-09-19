@@ -18,7 +18,6 @@ import {
 	type Entitlements,
 	type LicenseStatus,
 } from 'common/license'
-import { setLicenseStatus } from 'app/model/license'
 
 const workspace = getContext('workspace') as Workspace
 const api = workspace.api
@@ -58,10 +57,8 @@ async function refreshFromServer() {
 	}
 }
 
-/** Settings and the rest of the app read the same store, so both are set together. */
 function apply(next: LicenseStatus) {
 	status = next
-	setLicenseStatus(next)
 }
 
 $: subscription = status?.subscription

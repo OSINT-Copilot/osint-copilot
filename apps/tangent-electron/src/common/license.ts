@@ -63,16 +63,8 @@ export type AppTier = 'trial' | 'basic' | 'premium'
 
 const APP_TIERS: readonly AppTier[] = ['trial', 'basic', 'premium'] as const
 
-/** Ordering, for "premium or better" style checks. */
-const TIER_RANK: Record<AppTier, number> = { trial: 0, basic: 1, premium: 2 }
-
 export function isAppTier(value: unknown): value is AppTier {
 	return typeof value === 'string' && (APP_TIERS as readonly string[]).includes(value)
-}
-
-export function tierAtLeast(tier: AppTier | undefined, minimum: AppTier): boolean {
-	if (!tier) return false
-	return TIER_RANK[tier] >= TIER_RANK[minimum]
 }
 
 export function tierDisplayName(tier: AppTier): string {
@@ -112,15 +104,6 @@ export const FULL_ENTITLEMENTS: Entitlements = {
 	graphAutomation: true,
 	customModels: true,
 	localAgent: true,
-}
-
-/** Everything off. The safe answer when there is no licence to read. */
-export const NO_ENTITLEMENTS: Entitlements = {
-	osint: false,
-	chat: false,
-	graphAutomation: false,
-	customModels: false,
-	localAgent: false,
 }
 
 /**

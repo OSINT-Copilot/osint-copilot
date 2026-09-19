@@ -60,10 +60,6 @@ export class VaultLockService {
 		return this.locked.size;
 	}
 
-	getLockedPaths(): string[] {
-		return Array.from(this.locked).sort();
-	}
-
 	/** Migrate lock entry when a file is renamed (same as Note Locker). */
 	onVaultRename(_file: TAbstractFile, oldPath: string): void {
 		const op = normalizePath(oldPath);

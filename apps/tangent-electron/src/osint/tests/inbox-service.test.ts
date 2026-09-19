@@ -513,14 +513,13 @@ describe('whether an item created its entity, across a crash', () => {
     });
 
     for (const [name, plan] of [
-        ['from before planned ids', { existingEntityId: null }],
         ['that does not read back', 'garbage'],
         ['whose planned id is not an id', { plannedEntityId: '../x' }],
     ] as const) {
         it(`a journal ${name} counts the entity found as not created`, async () => {
             const id = inbox.add(entityBundle({ kind: 'email', value: 'legacy@example.com' }));
-            // The first attempt, by older code, created this entity and crashed before
-            // journalling "entity"; nothing now can prove it was the extension's.
+            // The first attempt created this entity and crashed before journalling
+            // "entity"; nothing now can prove it was the extension's.
             const earlier = await manager.createFTMEntity('Email', { address: 'legacy@example.com' }, { skipAutoGeocode: true });
             inbox.bundles.get(id)!.bundle.state = { v: 1, steps: [{ step: 'entity-plan', at: '2026-09-18T10:00:01.000Z', data: plan }] };
 
@@ -536,42 +535,7 @@ describe('whether an item created its entity, across a crash', () => {
     }
 });
 
-describe('an "entity" step written by older code', () => {
-    /** An entity the investigator made, which an old journal claims the item created. */
-    async function usersEntity(address: string): Promise<Entity> {
-        return manager.createFTMEntity('Email', { address, notes: 'mine' }, { skipAutoGeocode: true });
-    }
-
-    for (const [name, plan] of [
-        ['before planned ids', () => ({ existingEntityId: null })],
-        ['naming another planned id', () => ({ plannedEntityId: generateId() })],
-        ['with no plan at all', () => undefined],
-    ] as const) {
-        it(`claiming "created" ${name} is not trusted when applying, and Remove keeps the entity`, async () => {
-            const id = inbox.add(entityBundle({ kind: 'email', value: 'old@example.com' }));
-            const users = await usersEntity('old@example.com');
-            const data = plan();
-            inbox.bundles.get(id)!.bundle.state = {
-                v: 1,
-                steps: [
-                    ...(data === undefined ? [] : [{ step: 'entity-plan', at: '2026-09-18T10:00:01.000Z', data }]),
-                    { step: 'entity', at: '2026-09-18T10:00:01.000Z', data: { entityId: users.id, created: true, label: users.label, addedSourceIds: [] } },
-                ],
-            };
-
-            await newService().start();
-            expect(inbox.where(id)).toBe('done');
-            const [item] = await refreshActivity();
-            expect(item.outcome).toMatchObject({ entityId: users.id, created: false });
-            // The Sources note says what the journal can prove.
-            expect(getContent(app, item.outcome.sourcesNotePath!)).toContain('Merged into existing entity');
-
-            await newService().remove(id);
-            expect(manager.getEntity(users.id)).toBeDefined();
-            expect(manager.getEntity(users.id)!.properties).toEqual({ address: 'old@example.com', notes: 'mine' });
-        });
-    }
-
+describe('an "entity" step already in the journal', () => {
     it('claiming "created" with the plan that names that entity is trusted, and Remove deletes it', async () => {
         const id = inbox.add(entityBundle({ kind: 'email', value: 'planned@example.com' }));
         const planned = generateId();
@@ -589,27 +553,6 @@ describe('an "entity" step written by older code', () => {
         expect(item.outcome).toMatchObject({ entityId: planned, created: true });
         await newService().remove(id);
         expect(manager.getEntity(planned)).toBeUndefined();
-    });
-
-    it('an applied item whose journal plan is from before planned ids is not "created" in the log, and Remove keeps the entity', async () => {
-        const id = inbox.add(entityBundle({ kind: 'email', value: 'logged@example.com' }));
-        await newService().start();
-        const [entity] = manager.getAllEntities();
-        expect((await refreshActivity())[0].outcome.created).toBe(true);
-
-        // The same journal as older code wrote it: an "applied" step saying created, over
-        // a plan that only recorded whether something had the identifier beforehand.
-        const plan = inbox.bundles.get(id)!.bundle.state!.steps.find((s) => s.step === 'entity-plan')!;
-        plan.data = { existingEntityId: null };
-
-        const [item] = await refreshActivity();
-        expect(item.outcome).toMatchObject({ entityId: entity.id, created: false });
-        await newService().remove(id);
-        const after = manager.getEntity(entity.id);
-        expect(after).toBeDefined();
-        // Only its own source is taken back.
-        expect(after!.osint_sources ?? []).toEqual([]);
-        expect(inbox.where(id)).toBe('removed');
     });
 });
 

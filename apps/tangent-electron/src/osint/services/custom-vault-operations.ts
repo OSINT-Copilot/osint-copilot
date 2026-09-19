@@ -6,14 +6,14 @@
 import type { EnricherSpec } from './enrichers/enricher-schema';
 import { normalizeEnricherSpec } from './enrichers/enricher-schema';
 
-export const MAX_CREDENTIAL_FILE_CHARS = 256_000;
+const MAX_CREDENTIAL_FILE_CHARS = 256_000;
 /** Max script body for upsert_script (same order of magnitude as credentials cap). */
 export const MAX_SCRIPT_FILE_CHARS = 256_000;
 /** Max serialized size for raw enricher spec payload before normalize (bytes of JSON string). */
 export const MAX_ENRICHER_SPEC_JSON_CHARS = 200_000;
 
 /** Allowed file extensions for script vault ops (last path segment must end with .ext). */
-export const SCRIPT_FILE_EXTENSIONS = new Set([
+const SCRIPT_FILE_EXTENSIONS = new Set([
 	'py',
 	'pyi',
 	'js',

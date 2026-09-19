@@ -16,7 +16,7 @@ import { identifierKey } from '../services/entity-identifiers';
 import type { InboxCaptureDerived, InboxPlacedFile, InboxPlacement } from '../host/types';
 import type { ManifestPage } from '../../main/osint/extension/protocol';
 
-export const CAPTURE_RATIONALE = 'Captured by the OSINT Copilot browser extension';
+const CAPTURE_RATIONALE = 'Captured by the OSINT Copilot browser extension';
 
 /** The only paths a placement may name: main's own folder and name scheme. */
 const PLACED_PATH = /^OSINTCopilot\/Evidence\/[a-z0-9-]+(?:\.viewport)?\.(?:mhtml|png|pdf|md)$/;
@@ -47,7 +47,7 @@ export function normalizePlacement(raw: unknown, bundleId: string): InboxPlaceme
     return files.some((f) => f.role === 'archive') ? { bundleId, files } : null;
 }
 
-export function placedFile(placement: InboxPlacement, role: InboxPlacedFile['role']): InboxPlacedFile | undefined {
+function placedFile(placement: InboxPlacement, role: InboxPlacedFile['role']): InboxPlacedFile | undefined {
     return placement.files.find((f) => f.role === role);
 }
 
@@ -57,7 +57,7 @@ export function placedFile(placement: InboxPlacement, role: InboxPlacedFile['rol
  * a line of text makes Tangent embed, and so fetch, a remote address; a zero-width space
  * after the `!` leaves the text as it reads and the parser with nothing to embed.
  */
-export function defuseEmbeds(text: string): string {
+function defuseEmbeds(text: string): string {
     return text.replace(/!(?=\[|[a-z][a-z0-9+.-]*:)/gi, '!\u200b');
 }
 

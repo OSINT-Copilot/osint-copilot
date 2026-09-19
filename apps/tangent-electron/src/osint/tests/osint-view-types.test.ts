@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { OSINT_VIEWS, OSINT_FILE_TYPES } from '../integration/osint-view-types';
+import { OSINT_VIEWS } from '../integration/osint-view-types';
 import { knownExtensions, visibleFileTypeMatch } from '../../common/fileExtensions';
 import { CHAT_VIEW_TYPE } from '../views/chat-view';
 import { GRAPH_VIEW_TYPE } from '../views/graph-view';
@@ -29,7 +29,7 @@ describe('OSINT view descriptors', () => {
     });
 
     it('are all registered as visible file types in Tangent', () => {
-        for (const fileType of OSINT_FILE_TYPES) {
+        for (const fileType of OSINT_VIEWS.map(v => v.fileType)) {
             expect(fileType, `${fileType} is missing from visibleFileTypeMatch`)
                 .toMatch(visibleFileTypeMatch);
         }

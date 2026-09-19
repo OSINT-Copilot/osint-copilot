@@ -38,12 +38,6 @@ export const DEFAULT_CANVAS_FOLDER = `${OSINT_COPILOT_VAULT_ROOT}/boards`;
  */
 export const GRAPH_YAML_FOLDER_NAME = 'graph-yaml';
 
-/** Vault-visible schema definitions (YAML): STIX2, MITRE, user extensions. */
-export const SCHEMAS_VAULT_ROOT = `${OSINT_COPILOT_VAULT_ROOT}/schemas`;
-export const SCHEMAS_STIX2_DIR = `${SCHEMAS_VAULT_ROOT}/stix2`;
-export const SCHEMAS_MITRE_DIR = `${SCHEMAS_VAULT_ROOT}/mitre`;
-export const SCHEMAS_USER_DIR = `${SCHEMAS_VAULT_ROOT}/user`;
-
 /** Folder for `custom-types.json` (FTM extensions). */
 export const CUSTOM_TYPES_CONFIG_DIR = OSINT_COPILOT_CUSTOM_ROOT;
 export const CUSTOM_TYPES_FILE_NAME = "custom-types.json";

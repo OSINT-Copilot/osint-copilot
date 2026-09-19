@@ -7,8 +7,6 @@ import type { WorkspaceLeaf } from '../obsidian-shim/workspace/layout';
 import { osintRuntime } from './bootstrap';
 import { osintPluginState } from './osint-plugin-state';
 
-export * from './osint-view-types';
-
 /**
  * The Obsidian leaf holding this view, constructing it if needed.
  *
