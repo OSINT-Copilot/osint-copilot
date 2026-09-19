@@ -11,11 +11,12 @@
  */
 import { classify } from '../shared/classify';
 import { describeError } from '../shared/errors';
-import { CAPTURE_PERMISSIONS, CHANGED, PENDING_SELECTION, type CaptureStatus, type PanelState, type PendingSelection, type QueueEntry, type Reply } from '../shared/messages';
+import { CAPTURE_PERMISSIONS, CHANGED, HIGHLIGHT_CLICKED, PENDING_SELECTION, type CaptureStatus, type PanelState, type PendingSelection, type QueueEntry, type Reply } from '../shared/messages';
 import type { EntityKind, EntityPayload, WalletChain } from '../shared/protocol';
 import { platformFromUrl } from '../shared/url';
 import { validateEntity } from '../shared/validate';
 import { ask } from './api';
+import { initHighlights } from './highlights';
 import { currentPage, selectedText, type PageInfo } from './page';
 
 function $<T extends HTMLElement>(id: string): T {
@@ -247,10 +248,20 @@ async function act(request: Parameters<typeof ask>[0]): Promise<boolean> {
 	return apply(await ask(request));
 }
 
+const highlightCard = initHighlights({
+	ask,
+	flash,
+	// Only a tab whose page the panel can see: the same rule as items attaching to it.
+	tabId: () => (page.url ? page.tabId : null),
+	workspaceId: () => ui.workspace.value || undefined,
+	pageProblem: () => page.problem,
+});
+
 // --- the page ------------------------------------------------------------------------
 
 async function refreshPage(): Promise<void> {
 	page = await currentPage(pending);
+	void highlightCard.refresh();
 	if (page.url) {
 		ui.page.replaceChildren(
 			h('div', { className: 'page-title', textContent: page.title || '(untitled page)' }),
@@ -443,7 +454,15 @@ ui.unpair.addEventListener('click', () => {
 chrome.runtime.onMessage.addListener((message: unknown, sender) => {
 	// Only the service worker's broadcast: it has no tab and no page URL.
 	if (sender.id !== chrome.runtime.id || sender.tab) return;
-	if ((message as { type?: unknown })?.type === CHANGED) void ask({ type: 'state' }).then(r => r.state && render(r.state));
+	const m = message as { type?: unknown; error?: unknown; tabId?: unknown; id?: unknown };
+	if (m?.type === CHANGED) {
+		void ask({ type: 'state' }).then(r => r.state && render(r.state));
+		void highlightCard.refresh();
+		// A highlight asked for from the page's menu, which could not be made.
+		if (typeof m.error === 'string') flash(describeError(m.error), true);
+	} else if (m?.type === HIGHLIGHT_CLICKED && typeof m.tabId === 'number' && typeof m.id === 'string') {
+		highlightCard.focus(m.tabId, m.id);
+	}
 });
 
 chrome.storage.session.onChanged.addListener(changes => {

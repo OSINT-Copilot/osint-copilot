@@ -42,6 +42,17 @@
 			</section>
 
 			<section class="card">
+				<h2>Highlights</h2>
+				<p class="hint">Select text on the page, then press <strong>Highlight selection</strong>, or right-click it and choose <strong>Highlight in OSINT Copilot</strong>. Each highlight and its note are filed in the investigation, on the page's Sources note.</p>
+				<button type="button" id="highlight-create">Highlight selection</button>
+				<p id="highlight-revisit" class="notice" hidden>Highlights show again when you come back to a page only if the extension may read the pages you visit. It looks only for your own highlights, and sends nothing when it does. <button type="button" id="highlight-grant" class="secondary">Allow</button></p>
+				<ul id="highlights" class="highlights" aria-label="Highlights on this page"></ul>
+				<h3 id="orphans-title" hidden>Not found on this page</h3>
+				<p id="orphans-hint" class="hint" hidden>The page's text has changed since these were made, or the part of the page holding them has not loaded. They are kept, and still in the investigation.</p>
+				<ul id="orphans" class="highlights" aria-label="Highlights not found on this page"></ul>
+			</section>
+
+			<section class="card">
 				<h2>Capture page</h2>
 				<p class="hint">Saves this tab as it is now (an MHTML archive, a screenshot of what is on screen and, for a PDF, the document itself) and files it in the investigation as evidence. Also on the page's right-click menu, and <span id="capture-shortcut">with the keyboard shortcut</span>.</p>
 				<p id="capture-permission" class="notice" hidden>The first capture asks Chrome for two permissions: to read and change your data on all websites, and to save pages. Chrome words it broadly because a capture can be of any site. The extension uses them only to capture the page you ask it to, when you ask; it never reads pages on its own. If you decline, nothing is captured.</p>

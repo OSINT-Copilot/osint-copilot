@@ -46,6 +46,9 @@ The panel then shows the app as connected and lists your investigations. To stop
 - **Quick note.** Type and send.
 - **Entity.** Select text on a page, right-click it and choose **Send to OSINT Copilot as entity**. You can also press **Use selected text** in the panel. The panel suggests a kind (email, phone, username, domain, URL, IP or wallet), which you can change. For wallets you choose the chain; for usernames the platform defaults to the page's site. Nothing is sent until you press **Send entity**.
 - **Capture page.** Press **Capture page** in the panel, choose **Capture this page to OSINT Copilot** from the page's right-click menu, or press **Ctrl+Shift+Y** (**Command+Shift+Y** on a Mac; change it at `chrome://extensions/shortcuts`). The extension saves the tab as an MHTML archive and, if the same tab is still in front at the same address, a screenshot of what is on screen. For a PDF tab it also fetches the PDF itself, with your browser's cookies (you may be logged in to see it) but only from the exact address the tab shows, with redirects refused. The capture goes into the investigation as Evidence. The first capture asks Chrome for two permissions (see below); the panel explains this before you are asked, and if you decline, nothing is captured. Chrome's own pages, the Chrome Web Store, `file://` pages and sites your organisation's policy blocks cannot be captured, and the panel says which applies. The panel shows the capture's progress (preparing, uploading N of M MB, delivered, queued or failed).
+- **Highlights.** Select text on a page and press **Highlight selection** in the panel, or right-click it and choose **Highlight in OSINT Copilot**. The text is marked on the page, and the highlight is filed in the investigation, in the page's Sources note, with its full description (the quote, the text around it, where it was) kept beside the note in `<note>.annotations.json`. The panel lists the page's highlights with a note field for each: **Save note** files the note as an edit. **Delete** removes it here and in the investigation. When you come back to the page, the extension finds its highlights again, even after the page has shifted around them; where the text itself changed a little, it is marked with a wavy underline instead. Highlights it cannot find are listed under **Not found on this page**, with **Find again**, and are never deleted for not being found. They come back on a revisit only once the extension may read the pages you visit (the panel offers **Allow**); without that, they show where you invoked the extension. Only the chosen investigation's highlights are shown.
+  - The marks are drawn with the CSS Custom Highlight API: nothing is inserted into the page. They are not hidden from the page, though: a page's own scripts can list and even clear them, and the extension simply puts them back. What counts is the record in the investigation, not the page's display.
+  - Looking for highlights on a revisit is local: the extension keeps them in its own storage, and asks the app nothing, so the app does not learn which pages you visit.
 - **Queue.** Every item is queued before it is sent. If the app is closed, items wait and are sent when it is back. The extension retries when it starts, when you open the panel and when you act. While the panel is open it also retries on a timer, backing off to at most every ten minutes. If the app refuses an item (for example, the investigation no longer exists), the item stays in the queue marked as not sent. You can then retry it, send it to another investigation or delete it. The queue holds at most 100 items or 300 MB, a capture's files included. When it is full, new items are refused; old ones are never dropped. A capture's files are kept in the extension's IndexedDB until the app confirms it has the capture; an upload cut off by a closed app or a browser restart resumes with the files the app still lacks, under the same id. A capture the app refuses stays in the queue, files and all, marked as not sent, for you to retry or delete.
 
 ## Permissions
@@ -54,13 +57,12 @@ The panel then shows the app as connected and lists your investigations. To stop
 |---|---|
 | `storage` | The pairing key, the investigation list and your choice of investigation (`chrome.storage.local`), plus the context-menu selection on its way to the panel (`chrome.storage.session`). |
 | `sidePanel` | The side panel. |
-| `contextMenus` | "Send to OSINT Copilot as entity" on selected text, and "Capture this page to OSINT Copilot" on a page. |
+| `contextMenus` | "Highlight in OSINT Copilot" and "Send to OSINT Copilot as entity" on selected text, and "Capture this page to OSINT Copilot" on a page. |
 | `activeTab` | Seeing the current tab's URL and title, and reading its selection, after you click the toolbar button or the menu item there. This gives no access to other tabs or later visits. |
-| `scripting` | Reading the selected text for **Use selected text**, only in a tab where you have granted `activeTab`. |
+| `scripting` | Reading the selected text for **Use selected text**; running the highlight script, which marks and finds highlights, in a tab you have granted (or, with `<all_urls>`, on every page as it loads); and adding the highlights' styles to a page. |
 | `http://127.0.0.1/*` | Talking to the OSINT Copilot app on this computer. |
 | `pageCapture` (optional) | Saving a tab as MHTML. Asked for, together with `<all_urls>`, the first time you capture a page, from that click or key press. |
-| `<all_urls>` (optional) | Page capture: reading the tab's address and title, the screenshot of the visible part (`captureVisibleTab`), and fetching a PDF tab's own bytes. Chrome words this as reading and changing your data on all websites; the extension uses it only for a capture you ask for. You can withdraw it in `chrome://extensions`, and capture then asks again. |
-| `webNavigation` (optional) | Not requested. Reserved for a later version. |
+| `<all_urls>` (optional) | Page capture: reading the tab's address and title, the screenshot of the visible part (`captureVisibleTab`), and fetching a PDF tab's own bytes. Highlights: running the highlight script as each page loads, so your highlights come back on a revisit. Chrome words this as reading and changing your data on all websites; the extension uses it only for these. You can withdraw it in `chrome://extensions`, and capture then asks again. |
 
 The keyboard shortcut is a manifest `commands` entry, which needs no permission. The extension does not request `tabs`, `nativeMessaging`, `unlimitedStorage`, `externally_connectable` or `onMessageExternal`.
 
@@ -72,7 +74,7 @@ The keyboard shortcut is a manifest `commands` entry, which needs no permission.
 - **What a page can do.** Page text (a selection, a title) is treated as data. It fills a form field, and nothing is sent until you press Send. The panel never renders it as HTML.
 - **Captures are of the page you meant.** The tab is read before and after the archive is made. If it navigated meanwhile, the capture is dropped. The screenshot shows whatever is on screen, so it is taken only while the same tab, at the same address, is still the one in front of its window, and checked again after; otherwise it is left out and the queue item says why. The files are hashed (SHA-256) in the extension and declared before they are sent, and each upload is signed over its bytes, so the app stores exactly what was captured.
 
-## What this version does and does not do (Phases 1 and 2)
+## What this version does and does not do (Phases 1 to 3)
 
 Does:
 
@@ -81,10 +83,11 @@ Does:
 - Quick notes, and single entities from a selection or typed.
 - Page capture (MHTML, a screenshot of the visible part, a PDF tab's original), from the panel, the page menu or a keyboard shortcut.
 - A durable queue with retries, resuming a capture's upload where it stopped.
+- Highlights with notes: filed in the investigation, found again on a revisit (also after the page shifted, and approximately when its text changed a little), listed when not found, editable and deletable.
 
 Does not yet:
 
-- Highlight and annotate text on pages: Phase 3.
+- Highlight inside frames (an embedded post, a comment widget): the highlight script runs in the page's top frame only. Text selected in a frame is also attributed, for entities, to the page around it.
 - A Web Store build or a privacy policy: Phase 4.
 - Retry on a schedule while the panel is closed. That would need the `alarms` permission, so for now queued items go when the extension next wakes: at browser start, when you open the panel, or when you send something.
 - Run in Firefox (no `chrome.pageCapture`). Edge and Brave are untested.
@@ -96,6 +99,7 @@ Does not yet:
 | `static/` | `manifest.json`, the side panel's HTML and CSS, icons. Copied into `dist/`. |
 | `src/shared/` | Protocol constants and types, base64url, signing strings (WebCrypto), the app's acceptance checks, `classify()`, URL helpers, manifest building. |
 | `src/sw/` | The service worker: channel (pair, hello, signed requests and uploads), storage, IndexedDB queue (items and a capture's files), page capture, message router, context menus and the capture command, entry point. |
+| `src/content/` | The highlight script, which runs in pages: the text model, describing a selection, finding it again, painting it. |
 | `src/sidepanel/` | The side panel (plain TypeScript and DOM). |
-| `test/` | Vitest, in Node. The signing and entity tests read the app's shared vectors in `apps/tangent-electron/src/main/osint/extension/vectors/` directly. |
+| `test/` | Vitest, in Node (the highlight script's tests in jsdom). The signing and entity tests read the app's shared vectors in `apps/tangent-electron/src/main/osint/extension/vectors/` directly. |
 | `scripts/make-icons.py` | Regenerates the icons from the app's icon. |

@@ -36,6 +36,11 @@ const MESSAGES: Record<string, string> = {
 	capture_permission: 'Chrome did not let the extension read this page, so it cannot be captured.',
 	capture_failed: 'Chrome could not capture this page.',
 	capture_busy: 'A page is already being captured. Wait for it to finish.',
+	highlight_no_page: 'Highlights work on web pages (http or https). This tab is not one, or the extension cannot see it yet: click the toolbar button on the page first.',
+	highlight_no_access: 'The extension cannot reach this page. Click the toolbar button on the page, or use the Highlight menu item on your selection, then try again.',
+	highlight_no_selection: 'Select some text on the page first.',
+	highlight_too_long: 'That selection is too long to highlight (over 4000 characters). Select less.',
+	highlight_gone: 'That highlight is no longer stored in this browser.',
 	blob_missing: 'The captured files are no longer stored in the browser (site data may have been cleared). Delete this item and capture the page again.',
 	// Protocol codes (PROTOCOL.md §9).
 	pair_expired: 'That pairing string has expired or was already used. Start a new pairing in the app and paste the new string.',

@@ -15,12 +15,18 @@ import { PENDING_SELECTION, type PendingSelection } from '../shared/messages';
 
 export const MENU_SEND_ENTITY = 'oc-send-entity';
 export const MENU_CAPTURE_PAGE = 'oc-capture-page';
+export const MENU_HIGHLIGHT = 'oc-highlight';
 /** The manifest's commands key for capture. */
 export const COMMAND_CAPTURE = 'capture-page';
 
 export function createMenus(): void {
 	// removeAll first: onInstalled also fires on update, and create() refuses a duplicate id.
 	chrome.contextMenus.removeAll(() => {
+		chrome.contextMenus.create({
+			id: MENU_HIGHLIGHT,
+			title: 'Highlight in OSINT Copilot',
+			contexts: ['selection'],
+		});
 		chrome.contextMenus.create({
 			id: MENU_SEND_ENTITY,
 			title: 'Send to OSINT Copilot as entity',

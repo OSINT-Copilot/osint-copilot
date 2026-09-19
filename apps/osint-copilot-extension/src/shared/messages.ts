@@ -8,6 +8,7 @@
  * panel asks it for things. Nothing in a reply is secret: no key, no clientId, no port.
  */
 import type { EntityPayload, ManifestPage, WorkspaceInfo } from './protocol';
+import type { HighlightList } from '../sw/highlights';
 
 export type ItemRequest =
 	| { kind: 'note'; page: ManifestPage; note: { text: string } }
@@ -28,10 +29,19 @@ export type PanelRequest =
 	 * Capture the tab. The panel asks for the permissions itself, from the button's click;
 	 * the worker only checks they are there.
 	 */
-	| { type: 'capture'; tabId: number; workspaceId?: string };
+	| { type: 'capture'; tabId: number; workspaceId?: string }
+	/** The highlights on the tab's page, in the chosen investigation. */
+	| { type: 'highlights'; tabId: number }
+	/** Highlights the selection in the tab. */
+	| { type: 'highlight.create'; tabId: number; workspaceId?: string }
+	| { type: 'highlight.note'; tabId: number; id: string; note: string }
+	| { type: 'highlight.delete'; tabId: number; id: string }
+	| { type: 'highlight.findAgain'; tabId: number; id: string }
+	| { type: 'highlight.show'; tabId: number; id: string };
 
 export const PANEL_REQUEST_TYPES: readonly PanelRequest['type'][] = [
 	'state', 'panelOpened', 'refresh', 'pair', 'unpair', 'selectWorkspace', 'send', 'queue.retry', 'queue.delete', 'capture',
+	'highlights', 'highlight.create', 'highlight.note', 'highlight.delete', 'highlight.findAgain', 'highlight.show',
 ];
 
 export interface QueueEntry {
@@ -80,11 +90,17 @@ export interface CaptureStatus {
 }
 
 export type Reply =
-	| { ok: true; state: PanelState; note?: string }
+	| { ok: true; state: PanelState; note?: string; highlights?: HighlightList }
 	| { ok: false; error: string; message: string; state?: PanelState };
 
 /** Broadcast by the service worker when anything in PanelState may have changed. */
 export const CHANGED = 'oc.changed';
+
+/** Broadcast when the investigator clicks a highlight on a page: {type, tabId, id}. */
+export const HIGHLIGHT_CLICKED = 'oc.highlightClicked';
+
+/** Reading pages (for highlights on revisit), asked for on its own from the panel. */
+export const HIGHLIGHT_PERMISSIONS: chrome.permissions.Permissions = { origins: ['<all_urls>'] };
 
 /** The context-menu click, as the panel reads it from storage.session. */
 export const PENDING_SELECTION = 'pendingSelection';

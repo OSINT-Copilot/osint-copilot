@@ -220,7 +220,7 @@ function startWebsite(html: string): Promise<Website> {
 
 type ActivityItem = {
 	bundleId: string
-	kind: 'entity' | 'note' | 'capture'
+	kind: 'entity' | 'note' | 'capture' | 'highlight' | 'highlight.update' | 'highlight.delete'
 	removed: boolean
 	manifest: any
 	outcome: any
@@ -528,6 +528,50 @@ test('the real extension sends an entity, a note and a page capture into the rea
 		// The entity and the evidence are untouched.
 		for (const f of placed) expect(fs.existsSync(path.join(workspace, f.path))).toBe(true)
 		expect(fs.existsSync(path.join(workspace, entity!.filePath))).toBe(true)
+
+		// ---- 4. A highlight: the selection, filed in the page's Sources note, with its
+		// selectors kept beside it in <note>.annotations.json; Remove takes it back out.
+		const phrase = 'before Friday'
+		await site.bringToFront()
+		await site.evaluate((text: string) => {
+			const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+			for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+				const at = (node as Text).data.indexOf(text)
+				if (at < 0) continue
+				const range = document.createRange()
+				range.setStart(node, at)
+				range.setEnd(node, at + text.length)
+				document.getSelection()!.removeAllRanges()
+				document.getSelection()!.addRange(range)
+				return
+			}
+			throw new Error(`"${text}" is not on the page`)
+		}, phrase)
+		await panel.click('#highlight-create')
+		await expect.poll(async () => (await activity(app)).filter(i => i.kind === 'highlight').length, { timeout: 30_000 }).toBe(1)
+		const highlightItem = (await activity(app)).find(i => i.kind === 'highlight')!
+		const annotation = highlightItem.manifest.highlight.annotation
+		expect(annotation.target.selector[0].exact).toBe(phrase)
+		expect(highlightItem.outcome.sourcesNotePath).toBe([...sourcesPaths][0])
+
+		const withHighlight = fs.readFileSync(sourcesPath, 'utf8')
+		const hlSection = withHighlight.slice(withHighlight.indexOf(`<!-- oc:bundle ${highlightItem.bundleId} -->`))
+		expect(hlSection).toMatch(/^<!-- oc:bundle [^\n]+ -->\n### Highlight\n/)
+		expect(hlSection).toContain('```\nbefore Friday\n```')
+		const sidecarPath = sourcesPath.replace(/\.md$/, '.annotations.json')
+		const sidecar = JSON.parse(fs.readFileSync(sidecarPath, 'utf8'))
+		const record = sidecar.highlights[annotation.id]
+		expect(record).toMatchObject({ deleted: false, section: highlightItem.bundleId, annotation: { id: annotation.id } })
+		// The record keeps every selector the extension sent, the quote first.
+		expect(record.annotation.target.selector).toEqual(annotation.target.selector)
+		expect(record.annotation.target.selector[0]).toMatchObject({ type: 'TextQuoteSelector', exact: phrase })
+
+		expect(await app.evaluate((bundleId: string) =>
+			(globalThis as any).osint.plugin.extensionInbox.remove(bundleId), highlightItem.bundleId)).toBe(true)
+		await expect.poll(() => fs.readFileSync(sourcesPath, 'utf8'), { timeout: 15_000 })
+			.not.toContain(`<!-- oc:bundle ${highlightItem.bundleId} -->`)
+		expect(JSON.parse(fs.readFileSync(sidecarPath, 'utf8')).highlights[annotation.id]).toMatchObject({ deleted: true })
+		expect(fs.readFileSync(sourcesPath, 'utf8')).toContain(`<!-- oc:bundle ${captureItem.bundleId} -->`)
 
 		// And still nothing reached the canary.
 		expect(canary.connections.slice(reset).map(describe)).toEqual([])

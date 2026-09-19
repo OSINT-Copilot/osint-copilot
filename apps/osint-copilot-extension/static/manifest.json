@@ -27,7 +27,7 @@
 		"128": "icons/icon-128.png"
 	},
 	"permissions": ["storage", "sidePanel", "contextMenus", "activeTab", "scripting"],
-	"optional_permissions": ["pageCapture", "webNavigation"],
+	"optional_permissions": ["pageCapture"],
 	"host_permissions": ["http://127.0.0.1/*"],
 	"optional_host_permissions": ["<all_urls>"],
 	"commands": {

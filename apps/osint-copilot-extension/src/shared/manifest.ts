@@ -8,13 +8,15 @@
  * and every retry of the item reuses it so the app can answer "duplicate" instead of
  * filing the same note twice.
  */
-import type { CaptureFiles, EntityPayload, Manifest, ManifestPage } from './protocol';
+import type { CaptureFiles, EntityPayload, HighlightAnnotation, Manifest, ManifestPage } from './protocol';
 import { validateManifest, type ValidationResult } from './validate';
 
 export type ItemInput =
 	| { kind: 'note'; workspaceId: string; page: ManifestPage; note: { text: string } }
 	| { kind: 'entity'; workspaceId: string; page: ManifestPage; entity: EntityPayload }
-	| { kind: 'capture'; workspaceId: string; page: ManifestPage; capture: { files: CaptureFiles } };
+	| { kind: 'capture'; workspaceId: string; page: ManifestPage; capture: { files: CaptureFiles } }
+	| { kind: 'highlight' | 'highlight.update'; workspaceId: string; page: ManifestPage; highlight: { annotation: HighlightAnnotation } }
+	| { kind: 'highlight.delete'; workspaceId: string; page: ManifestPage; highlight: { annotationId: string; modified: string } };
 
 export interface ManifestDeps {
 	uuid?: () => string;
@@ -36,7 +38,9 @@ export function buildManifest(input: ItemInput, deps: ManifestDeps = {}): Valida
 		? { ...base, note: { text: input.note.text } }
 		: input.kind === 'capture'
 			? { ...base, capture: { files: input.capture.files } }
-			: { ...base, entity: withoutBlanks(input.entity) };
+			: input.kind === 'entity'
+				? { ...base, entity: withoutBlanks(input.entity) }
+				: { ...base, highlight: input.highlight };
 	// The cleaned manifest is what gets queued, so what the app stores is what we checked.
 	return validateManifest(raw);
 }

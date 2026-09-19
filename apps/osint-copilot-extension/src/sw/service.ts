@@ -12,6 +12,7 @@ import type { CaptureStatus, PanelRequest, PanelState, QueueEntry, Reply } from 
 import { WORKSPACE_ID, type Manifest, type WorkspaceInfo } from '../shared/protocol';
 import { CaptureError, type CapturedPage } from './capture';
 import type { Channel } from './channel';
+import type { HighlightResult, Highlights } from './highlights';
 import { ItemTooLargeError, QueueFullError, type Queue, type QueueItem } from './queue';
 import { KEYS, type KV, type WorkspaceCache } from './storage';
 
@@ -29,6 +30,12 @@ export interface ServiceDeps {
 	hasCapturePermission?: () => Promise<boolean>;
 	/** The active tab of the focused window, for a command that came without one. */
 	activeTabId?: () => Promise<number | undefined>;
+	/** Highlights (highlights.ts). Without it, highlight requests are refused. */
+	highlights?: Highlights;
+}
+
+function validTab(tabId: unknown): tabId is number {
+	return typeof tabId === 'number' && Number.isInteger(tabId) && tabId >= 0;
 }
 
 function mb(bytes: number): string {
@@ -319,6 +326,43 @@ export class Service {
 				// Gone from the queue by the user's hand, not delivered: the status must not say it was.
 				if (this.captureStatus?.bundleId === request.bundleId) this.captureStatus = null;
 				return { ok: true, state: await this.state() };
+
+			case 'highlights':
+			case 'highlight.create':
+			case 'highlight.note':
+			case 'highlight.delete':
+			case 'highlight.findAgain':
+			case 'highlight.show':
+				return this.highlight(request);
+		}
+	}
+
+	private async highlight(request: Extract<PanelRequest, { tabId: number }>): Promise<Reply> {
+		const h = this.deps.highlights;
+		if (!h) return this.fail('highlight_no_access');
+		if (!validTab(request.tabId)) return this.fail('highlight_no_page');
+		const settle = async (result: HighlightResult): Promise<Reply> => result.ok
+			? { ok: true, state: await this.state(), highlights: result.list, ...(result.note ? { note: result.note } : {}) }
+			: this.fail(result.error, result.detail);
+		switch (request.type) {
+			case 'highlights':
+				return { ok: true, state: await this.state(), highlights: await h.list(request.tabId) };
+			case 'highlight.create':
+				return settle(await h.create(request.tabId, request.workspaceId));
+			case 'highlight.note':
+				if (typeof request.id !== 'string' || typeof request.note !== 'string') return this.fail('highlight_gone');
+				return settle(await h.setNote(request.id, request.note, request.tabId));
+			case 'highlight.delete':
+				if (typeof request.id !== 'string') return this.fail('highlight_gone');
+				return settle(await h.remove(request.id, request.tabId));
+			case 'highlight.findAgain':
+				if (typeof request.id !== 'string') return this.fail('highlight_gone');
+				return settle(await h.findAgain(request.tabId, request.id));
+			case 'highlight.show':
+				if (typeof request.id === 'string') await h.scrollTo(request.tabId, request.id);
+				return { ok: true, state: await this.state(), highlights: await h.list(request.tabId) };
+			default:
+				return this.fail('highlight_no_access');
 		}
 	}
 

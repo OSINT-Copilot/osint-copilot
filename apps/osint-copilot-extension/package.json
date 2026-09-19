@@ -12,9 +12,13 @@
 		"test": "vitest run",
 		"e2e": "node build.mjs && playwright test -c playwright.config.ts"
 	},
+	"dependencies": {
+		"approx-string-match": "2.0.0"
+	},
 	"devDependencies": {
 		"@types/chrome": "^0.3.0",
 		"esbuild": "0.27.2",
-		"fake-indexeddb": "^6.2.5"
+		"fake-indexeddb": "^6.2.5",
+		"jsdom": "^24.1.3"
 	}
 }

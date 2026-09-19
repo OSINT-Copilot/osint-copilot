@@ -133,3 +133,14 @@ button:disabled { opacity: 0.5; cursor: default; }
 #capture-status.done { color: var(--ok); }
 progress { width: 100%; margin-top: 6px; }
 .queue .notes { color: var(--muted); font-size: 12px; margin: 2px 0 0; padding-left: 16px; }
+
+/* Highlights */
+.highlights { list-style: none; padding: 0; margin: 0.5em 0 0; display: grid; gap: 0.6em; }
+.highlights li { border-left: 3px solid rgba(255, 214, 10, 0.9); padding: 0.3em 0 0.3em 0.6em; }
+.highlights li.fuzzy { border-left-color: rgba(255, 149, 0, 0.8); }
+.highlights li.orphan { border-left-color: #999; }
+.highlights li.focused { outline: 2px solid rgba(255, 214, 10, 0.9); outline-offset: 2px; }
+.highlights .quote { white-space: pre-wrap; overflow-wrap: anywhere; font-style: italic; max-height: 8em; overflow: auto; }
+.highlights .status { font-size: 0.85em; opacity: 0.75; margin: 0.2em 0; }
+.highlights textarea { width: 100%; box-sizing: border-box; margin-top: 0.3em; }
+#orphans-title { font-size: 0.95em; margin: 0.9em 0 0.2em; }

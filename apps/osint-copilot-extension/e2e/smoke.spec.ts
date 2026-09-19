@@ -61,9 +61,17 @@ function chromiumPath(): string | undefined {
 /** An ordinary web page on another 127.0.0.1 port, standing in for any site the user visits. */
 const ARTICLE = '<!doctype html><title>Leak report</title><h1>Leak report</h1><p>Wallet 0x52908400098527886E0F7030069857D2E4169EE7 was seen on the forum.</p>';
 
+/** A page whose text the highlight test changes between visits. */
+const STORY_TEXT = 'Transfers were routed through Brightwater Holdings before reaching the second account.';
+let story = STORY_TEXT;
+
 function startWebsite(): Promise<{ url: string; origin: string; close(): Promise<void> }> {
 	const server = http.createServer((req, res) => {
 		res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+		if (req.url === '/story') {
+			res.end(`<!doctype html><title>Story</title><h1>Story</h1><p>Intro paragraph.</p><p>${story}</p>`);
+			return;
+		}
 		res.end(req.url === '/article' ? ARTICLE : '<!doctype html><title>Profile of alice</title><p>Contact: alice@example.com</p>');
 	});
 	return new Promise(resolve => {
@@ -264,6 +272,121 @@ test('captures a page into the investigation: create, upload, commit', async () 
 	} finally {
 		await ctx.close();
 		fs.rmSync(captureProfile, { recursive: true, force: true });
+		fs.rmSync(granted, { recursive: true, force: true });
+	}
+});
+
+/** Selects `phrase` in the page, as a user dragging across it would. */
+async function selectText(page: Page, phrase: string): Promise<void> {
+	await page.evaluate((text) => {
+		const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+			const at = (node as Text).data.indexOf(text);
+			if (at < 0) continue;
+			const range = document.createRange();
+			range.setStart(node, at);
+			range.setEnd(node, at + text.length);
+			const sel = window.getSelection()!;
+			sel.removeAllRanges();
+			sel.addRange(range);
+			return;
+		}
+		throw new Error(`"${text}" is not on the page`);
+	}, phrase);
+}
+
+/** What the page's highlight registry holds: the page's own scripts can see it too. */
+function painted(page: Page): Promise<string[]> {
+	return page.evaluate(() => {
+		const out: string[] = [];
+		for (const [, highlight] of CSS.highlights) for (const range of highlight as Highlight) out.push((range as Range).toString());
+		return out;
+	});
+}
+
+test('highlights a selection, files it, paints it again on a revisit, and lists it when the text is gone', async () => {
+	story = STORY_TEXT;
+	// With permission to read pages, as in the capture test: that is what brings highlights back.
+	const granted = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-e2e-granted-'));
+	fs.cpSync(dist, granted, { recursive: true });
+	const manifestPath = path.join(granted, 'manifest.json');
+	const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	manifest.host_permissions.push('<all_urls>');
+	fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+	const hlProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-e2e-profile-'));
+	const ctx = await launch(hlProfile, granted);
+	try {
+		const id = await extensionId(ctx);
+		const site = await ctx.newPage();
+		const storyUrl = `${website.origin}/story`;
+		await site.goto(storyUrl);
+		const panel = await ctx.newPage();
+		panel.on('dialog', (d) => void d.accept());
+		await panel.goto(`chrome-extension://${id}/sidepanel.html`);
+		await panel.fill('#pair-input', await harness.pairingString());
+		await panel.click('#pair-form button[type=submit]');
+		await expect(panel.locator('#connection')).toHaveText('Connected');
+		await expect(panel.locator('#workspace-current')).toHaveText('To: Case Alpha');
+		await expect(panel.locator('#highlight-revisit')).toBeHidden();
+
+		await site.bringToFront();
+		await expect(panel.locator('#page .page-url')).toHaveText(storyUrl);
+		const phrase = 'Brightwater Holdings';
+		await selectText(site, phrase);
+		const before = new Set((await harness.pending()).map(b => b.bundleId));
+		await panel.click('#highlight-create');
+
+		// Filed: a highlight bundle, its MAC good, its quote exactly the selection.
+		let bundle: Awaited<ReturnType<ExtensionHarness['pending']>>[number] | undefined;
+		await expect.poll(async () => {
+			bundle = (await harness.pending()).find(b => !before.has(b.bundleId));
+			return bundle?.stored.kind;
+		}, { timeout: 15_000 }).toBe('highlight');
+		expect(bundle!.macOk).toBe(true);
+		const annotation = (bundle!.stored as Record<string, any>).highlight.annotation;
+		expect(annotation.target.selector[0]).toMatchObject({ type: 'TextQuoteSelector', exact: phrase });
+		expect(annotation.target.source).toBe(storyUrl);
+
+		// Painted, with the Custom Highlight API: nothing was added to the page's DOM.
+		await expect.poll(() => painted(site), { timeout: 10_000 }).toEqual([phrase]);
+		expect(await site.evaluate(() => document.querySelectorAll('[class*=highlight], mark').length)).toBe(0);
+		await expect(panel.locator('#highlights li .quote')).toHaveText([phrase]);
+
+		// The page's own scripts share the registry and can wipe it: the next change to the
+		// page makes the painter notice and put its marks back.
+		await site.evaluate(() => CSS.highlights.clear());
+		expect(await painted(site)).toEqual([]);
+		await site.evaluate(() => document.body.append(document.createElement('span')));
+		await expect.poll(() => painted(site), { timeout: 5_000 }).toEqual([phrase]);
+
+		// A note: an update with the whole annotation and a later modified time.
+		await panel.locator('#highlights li textarea').fill('Check the registry for this company.');
+		const beforeNote = new Set((await harness.pending()).map(b => b.bundleId));
+		await panel.locator('#highlights li button', { hasText: 'Save note' }).click();
+		await expect.poll(async () => (await harness.pending()).find(b => !beforeNote.has(b.bundleId))?.stored.kind, { timeout: 15_000 }).toBe('highlight.update');
+		const update = (await harness.pending()).find(b => !beforeNote.has(b.bundleId))!.stored as Record<string, any>;
+		expect(update.highlight.annotation.body.value).toBe('Check the registry for this company.');
+
+		// A revisit: the registered content script finds it again on its own.
+		await site.reload();
+		await expect.poll(() => painted(site), { timeout: 10_000 }).toEqual([phrase]);
+
+		// The page's text changes: not found, listed apart, not deleted.
+		story = 'This paragraph was rewritten and no longer names the company.';
+		await site.reload();
+		await expect.poll(() => painted(site), { timeout: 10_000 }).toEqual([]);
+		await expect(panel.locator('#orphans li .quote')).toHaveText([phrase], { timeout: 10_000 });
+		await expect(panel.locator('#orphans-title')).toBeVisible();
+
+		// Deleted: a delete bundle, and gone from the panel.
+		const beforeDelete = new Set((await harness.pending()).map(b => b.bundleId));
+		await panel.locator('#orphans li button', { hasText: 'Delete' }).click();
+		await expect.poll(async () => (await harness.pending()).find(b => !beforeDelete.has(b.bundleId))?.stored.kind, { timeout: 15_000 }).toBe('highlight.delete');
+		await expect(panel.locator('#orphans li')).toHaveCount(0);
+	} finally {
+		story = STORY_TEXT;
+		await ctx.close();
+		fs.rmSync(hlProfile, { recursive: true, force: true });
 		fs.rmSync(granted, { recursive: true, force: true });
 	}
 });
