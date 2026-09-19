@@ -1,0 +1,21 @@
+{
+  "v": 1,
+  "bundleId": "fb8504dd-215c-4c90-9e3f-2e7b42a6626e",
+  "workspaceId": "00WlkSIWAtI9LX-qaRxRi4",
+  "page": {
+    "url": "http://northgate-freight.example/contact",
+    "title": "Contact · Northgate Freight BV"
+  },
+  "clientTime": "2026-09-19T20:06:20.779Z",
+  "kind": "note",
+  "note": {
+    "text": "Wrong page: this belongs to the shop, not to Northgate."
+  },
+  "server": {
+    "receivedAt": "2026-09-19T20:06:20.782Z",
+    "clientId": "4BoIM8Mp_kM-n6xver6c8A",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0"
+  },
+  "mac": "KMQ7MRMtNus5Ynqu6cd1nTEFe9qcK8K_khce5-Spo2g"
+}

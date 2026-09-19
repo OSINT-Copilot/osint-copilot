@@ -1,0 +1,63 @@
+{
+  "v": 1,
+  "bundleId": "7ca5bc42-d948-4ede-9dab-0d51a4e25d64",
+  "workspaceId": "00WlkSIWAtI9LX-qaRxRi4",
+  "page": {
+    "url": "http://harbourmarket.example/thread/4471",
+    "title": "[WTS] Oncology generics, EU shipping · Harbour Market"
+  },
+  "clientTime": "2026-09-19T20:05:22.507Z",
+  "kind": "highlight",
+  "highlight": {
+    "annotation": {
+      "id": "urn:uuid:63fdc4b0-ff25-46c0-b26c-d6a4e001676d",
+      "textModel": "v1",
+      "created": "2026-09-19T20:05:22.506Z",
+      "modified": "2026-09-19T20:05:22.506Z",
+      "target": {
+        "source": "http://harbourmarket.example/thread/4471",
+        "selector": [
+          {
+            "type": "TextQuoteSelector",
+            "exact": "Shipping from our Rotterdam partner within 48 hours, tracked to your door.",
+            "prefix": "sters, no prescription needed.\n\t",
+            "suffix": "\n\tPayment in crypto only. BTC: b"
+          },
+          {
+            "type": "TextPositionSelector",
+            "start": 234,
+            "end": 308
+          },
+          {
+            "type": "RangeSelector",
+            "startSelector": {
+              "type": "XPathSelector",
+              "value": "/html[1]/body[1]/main[1]/div[1]/p[2]",
+              "refinedBy": {
+                "type": "TextPositionSelector",
+                "start": 0,
+                "end": 0
+              }
+            },
+            "endSelector": {
+              "type": "XPathSelector",
+              "value": "/html[1]/body[1]/main[1]/div[1]/p[2]",
+              "refinedBy": {
+                "type": "TextPositionSelector",
+                "start": 74,
+                "end": 74
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "server": {
+    "receivedAt": "2026-09-19T20:05:22.513Z",
+    "clientId": "4BoIM8Mp_kM-n6xver6c8A",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0"
+  },
+  "mac": "cMeW4RciB4Vfke7zN10ZLLX-OnuoP79BLLFO3MLIHtw"
+}

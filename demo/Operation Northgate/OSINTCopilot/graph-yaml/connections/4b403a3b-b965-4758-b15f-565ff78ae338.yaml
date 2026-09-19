@@ -1,0 +1,14 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: 4b403a3b-b965-4758-b15f-565ff78ae338
+fromEntityId: d3e0a000-0000-4000-8000-000000000005
+toEntityId: d3e0a000-0000-4000-8000-000000000024
+fromLabel: Northgate Freight BV
+toLabel: Rotterdam customs seize 38 parcels
+relationship: PARTICIPATED_IN
+label: Northgate Freight BV → PARTICIPATED_IN → Rotterdam customs seize 38 parcels
+properties: {}
+ftmSchema: PARTICIPATED_IN
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/Northgate Freight BV - PARTICIPATED_IN - Rotterdam customs seize 38 parcels.md
+

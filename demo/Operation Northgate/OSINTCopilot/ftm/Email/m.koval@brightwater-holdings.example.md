@@ -1,5 +1,5 @@
 ---
-id: "390696dc-f16d-4bf5-9818-f71d403f4185"
+id: "b95bff03-8b74-4df0-aa03-7cd0f5660429"
 type: Email
 schemaFamily: ftm
 ftmSchema: Email
@@ -7,24 +7,24 @@ label: "m.koval@brightwater-holdings.example"
 address: "m.koval@brightwater-holdings.example"
 osint_confidence: medium
 osint_sources:
-  - id: ext_e75a45ae-e02f-4ac9-852f-bd3045a15060
+  - id: ext_f249594a-ad37-434d-9d1d-9dbd5d3ad507
     source_url: http://registry.cy.example/company/HE412345
     archive_status: skipped
     inferred: false
     rationale: 'Sent from the OSINT Copilot browser extension: "Contact e-mail on file"'
-    captured_at: 2026-09-19T14:16:15.937Z
+    captured_at: 2026-09-19T20:05:52.483Z
     via: extension
-    client_id: ZKns-7oISN8aot10CJqY8A
-    received_at: 2026-09-19T14:16:15.937Z
-  - id: ext_2e85cc29-8a0d-457e-936f-6c87e1535a44
+    client_id: 4BoIM8Mp_kM-n6xver6c8A
+    received_at: 2026-09-19T20:05:52.483Z
+  - id: ext_d4b65a17-1a0d-48fa-b267-38e2f68f76e3
     source_url: http://northgate-freight.example/contact
     archive_status: skipped
     inferred: false
     rationale: 'Sent from the OSINT Copilot browser extension: "Board contact"'
-    captured_at: 2026-09-19T14:16:41.883Z
+    captured_at: 2026-09-19T20:06:17.733Z
     via: extension
-    client_id: ZKns-7oISN8aot10CJqY8A
-    received_at: 2026-09-19T14:16:41.883Z
+    client_id: 4BoIM8Mp_kM-n6xver6c8A
+    received_at: 2026-09-19T20:06:17.733Z
 ---
 
 # m.koval@brightwater-holdings.example

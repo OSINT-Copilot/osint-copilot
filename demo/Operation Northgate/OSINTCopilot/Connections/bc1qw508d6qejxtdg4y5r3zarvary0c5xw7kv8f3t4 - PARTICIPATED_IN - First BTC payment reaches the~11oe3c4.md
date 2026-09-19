@@ -1,8 +1,8 @@
 ---
-id: "bede8e63-a44c-4d30-a40d-ccea8210d6f4"
+id: "438324f9-de96-4c84-9d6f-700f2e808cdb"
 type: connection
 relationship: "PARTICIPATED_IN"
-fromEntityId: "a8ff08ac-973f-406f-b587-db8a9e750f20"
+fromEntityId: "4275bd87-10ce-41df-b70c-aca2ff27d414"
 toEntityId: "d3e0a000-0000-4000-8000-000000000022"
 fromEntity: "[[bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4]]"
 toEntity: "[[First BTC payment reaches the seller wallet]]"

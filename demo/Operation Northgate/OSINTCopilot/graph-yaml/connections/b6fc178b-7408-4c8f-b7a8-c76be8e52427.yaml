@@ -1,0 +1,15 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: b6fc178b-7408-4c8f-b7a8-c76be8e52427
+fromEntityId: d3e0a000-0000-4000-8000-000000000006
+toEntityId: d3e0a000-0000-4000-8000-000000000017
+fromLabel: Aurelia Trade LP
+toLabel: Aurelia registered agent, Victoria
+relationship: UnknownLink
+label: Aurelia Trade LP → UnknownLink → Aurelia registered agent, Victoria
+properties:
+  role: Registered agent
+ftmSchema: UnknownLink
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/Aurelia Trade LP - UnknownLink - Aurelia registered agent, Victoria.md
+

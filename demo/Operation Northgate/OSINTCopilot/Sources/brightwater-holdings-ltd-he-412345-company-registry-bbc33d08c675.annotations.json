@@ -2,12 +2,12 @@
 	"version": 1,
 	"normalised_url": "http://registry.cy.example/company/HE412345",
 	"highlights": {
-		"urn:uuid:7d435c3d-3c71-404f-8927-8733385c1b62": {
+		"urn:uuid:4c9c89c5-a130-403e-a9f0-301c69f71420": {
 			"annotation": {
-				"id": "urn:uuid:7d435c3d-3c71-404f-8927-8733385c1b62",
+				"id": "urn:uuid:4c9c89c5-a130-403e-a9f0-301c69f71420",
 				"textModel": "v1",
-				"created": "2026-09-19T14:16:21.936Z",
-				"modified": "2026-09-19T14:16:24.003Z",
+				"created": "2026-09-19T20:05:56.439Z",
+				"modified": "2026-09-19T20:05:59.479Z",
 				"target": {
 					"source": "http://registry.cy.example/company/HE412345",
 					"selector": [
@@ -51,14 +51,14 @@
 					"value": "Six weeks before the first BTC payment reached the seller. Check the director."
 				}
 			},
-			"section": "1756d022-a8c4-4200-beec-8262cff13279",
-			"modified": "2026-09-19T14:16:24.003Z",
-			"receivedAt": "2026-09-19T14:16:21.940Z",
+			"section": "6a21ef21-30cf-4ad3-b2d3-8d439cba41b6",
+			"modified": "2026-09-19T20:05:59.479Z",
+			"receivedAt": "2026-09-19T20:05:56.443Z",
 			"deleted": false
 		},
-		"urn:uuid:ace78e76-4b4b-44b8-b2d5-8665f17bd93a": {
-			"section": "848d0fcf-69fe-4aca-97f9-a7c2c194787c",
-			"modified": "2026-09-19T14:16:30.718Z",
+		"urn:uuid:d6190e9b-3c55-48f7-beca-8d1a9781e338": {
+			"section": "dfd2e0d3-f6b3-4200-b455-108c1bb2c024",
+			"modified": "2026-09-19T20:06:06.970Z",
 			"deleted": true
 		}
 	}

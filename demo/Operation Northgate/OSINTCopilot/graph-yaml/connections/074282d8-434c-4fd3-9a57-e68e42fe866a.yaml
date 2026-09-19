@@ -1,0 +1,15 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: 074282d8-434c-4fd3-9a57-e68e42fe866a
+fromEntityId: d3e0a000-0000-4000-8000-000000000005
+toEntityId: d3e0a000-0000-4000-8000-000000000015
+fromLabel: Northgate Freight BV
+toLabel: Northgate warehouse, Waalhaven
+relationship: UnknownLink
+label: Northgate Freight BV → UnknownLink → Northgate warehouse, Waalhaven
+properties:
+  role: Warehouse
+ftmSchema: UnknownLink
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/Northgate Freight BV - UnknownLink - Northgate warehouse, Waalhaven.md
+

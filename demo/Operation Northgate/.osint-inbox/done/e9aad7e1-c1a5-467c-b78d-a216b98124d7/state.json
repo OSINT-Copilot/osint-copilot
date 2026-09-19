@@ -1,0 +1,45 @@
+{
+  "v": 1,
+  "steps": [
+    {
+      "step": "entity-plan",
+      "at": "2026-09-19T20:05:38.472Z",
+      "data": {
+        "plannedEntityId": "a069efd7-7020-44d6-8dbd-91da47d3fcdf"
+      }
+    },
+    {
+      "step": "entity",
+      "at": "2026-09-19T20:05:38.487Z",
+      "data": {
+        "entityId": "a069efd7-7020-44d6-8dbd-91da47d3fcdf",
+        "created": true,
+        "label": "http://medsupply-direct.example/checkout",
+        "addedSourceIds": [
+          "ext_e9aad7e1-c1a5-467c-b78d-a216b98124d7"
+        ]
+      }
+    },
+    {
+      "step": "sources-note",
+      "at": "2026-09-19T20:05:38.498Z",
+      "data": {
+        "path": "OSINTCopilot/Sources/medsupply-direct-oncology-generics-without-prescription-fc111c2615f5.md"
+      }
+    },
+    {
+      "step": "applied",
+      "at": "2026-09-19T20:05:38.508Z",
+      "data": {
+        "entityId": "a069efd7-7020-44d6-8dbd-91da47d3fcdf",
+        "entityLabel": "http://medsupply-direct.example/checkout",
+        "created": true,
+        "addedSourceIds": [
+          "ext_e9aad7e1-c1a5-467c-b78d-a216b98124d7"
+        ],
+        "sourcesNotePath": "OSINTCopilot/Sources/medsupply-direct-oncology-generics-without-prescription-fc111c2615f5.md",
+        "placedFiles": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: e07a8e2d-e8e8-47ac-b132-3d9b629ead2e
+fromEntityId: d3e0a000-0000-4000-8000-000000000003
+toEntityId: d3e0a000-0000-4000-8000-000000000006
+fromLabel: Jonah Ferris
+toLabel: Aurelia Trade LP
+relationship: Directorship
+label: Jonah Ferris → Directorship → Aurelia Trade LP
+properties:
+  role: Nominee director
+ftmSchema: Directorship
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/Jonah Ferris - Directorship - Aurelia Trade LP.md
+

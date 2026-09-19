@@ -1,5 +1,5 @@
 ---
-id: "99faba57-176f-4028-a093-3d6698a9302b"
+id: "68a63fb4-34b0-4843-b437-04e9c47b9710"
 type: attack-pattern
 schemaFamily: mitre
 label: "Acquire Infrastructure: Domains"

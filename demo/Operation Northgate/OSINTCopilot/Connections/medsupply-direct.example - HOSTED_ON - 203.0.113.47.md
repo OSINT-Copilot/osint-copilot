@@ -1,9 +1,9 @@
 ---
-id: "cccd11c1-7c95-4af8-9783-35046980e3b6"
+id: "53dbdcd8-717e-4e83-a0fd-6ea2894c4181"
 type: connection
 relationship: "HOSTED_ON"
-fromEntityId: "c0a67191-bcd3-4cf6-ae66-32606cf2cd3d"
-toEntityId: "691f18eb-57f0-4365-bda1-583f3ea7ce70"
+fromEntityId: "4aeb5243-f1d5-4dbe-8448-0318dd9e99ba"
+toEntityId: "3451dde9-ec90-4873-93c6-4521174aa284"
 fromEntity: "[[medsupply-direct.example]]"
 toEntity: "[[203.0.113.47]]"
 schemaFamily: ftm

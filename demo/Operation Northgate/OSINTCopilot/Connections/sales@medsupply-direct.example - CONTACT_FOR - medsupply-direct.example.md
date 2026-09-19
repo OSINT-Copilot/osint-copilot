@@ -1,9 +1,9 @@
 ---
-id: "68c3d277-cde2-4254-8d18-d4305024881e"
+id: "857a5c92-f0ac-45b3-9d8c-76beacdc6835"
 type: connection
 relationship: "CONTACT_FOR"
-fromEntityId: "4ec42b21-b0d9-40d0-824e-1c5d88f82b56"
-toEntityId: "c0a67191-bcd3-4cf6-ae66-32606cf2cd3d"
+fromEntityId: "e617ce48-8d70-446d-8282-fdc9e7f35a6b"
+toEntityId: "4aeb5243-f1d5-4dbe-8448-0318dd9e99ba"
 fromEntity: "[[sales@medsupply-direct.example]]"
 toEntity: "[[medsupply-direct.example]]"
 schemaFamily: ftm

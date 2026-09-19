@@ -1,0 +1,45 @@
+{
+  "v": 1,
+  "steps": [
+    {
+      "step": "entity-plan",
+      "at": "2026-09-19T20:06:17.773Z",
+      "data": {
+        "plannedEntityId": "116c8795-7c46-4878-ae87-861bf7bbcb35"
+      }
+    },
+    {
+      "step": "entity",
+      "at": "2026-09-19T20:06:17.785Z",
+      "data": {
+        "entityId": "b95bff03-8b74-4df0-aa03-7cd0f5660429",
+        "created": false,
+        "label": "m.koval@brightwater-holdings.example",
+        "addedSourceIds": [
+          "ext_d4b65a17-1a0d-48fa-b267-38e2f68f76e3"
+        ]
+      }
+    },
+    {
+      "step": "sources-note",
+      "at": "2026-09-19T20:06:17.796Z",
+      "data": {
+        "path": "OSINTCopilot/Sources/contact-northgate-freight-bv-8ca4c9feb624.md"
+      }
+    },
+    {
+      "step": "applied",
+      "at": "2026-09-19T20:06:17.805Z",
+      "data": {
+        "entityId": "b95bff03-8b74-4df0-aa03-7cd0f5660429",
+        "entityLabel": "m.koval@brightwater-holdings.example",
+        "created": false,
+        "addedSourceIds": [
+          "ext_d4b65a17-1a0d-48fa-b267-38e2f68f76e3"
+        ],
+        "sourcesNotePath": "OSINTCopilot/Sources/contact-northgate-freight-bv-8ca4c9feb624.md",
+        "placedFiles": []
+      }
+    }
+  ]
+}

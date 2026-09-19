@@ -1,5 +1,5 @@
 ---
-id: "afe12855-6e5f-4c40-88f4-00d8d52b7e22"
+id: "a069efd7-7020-44d6-8dbd-91da47d3fcdf"
 type: Url
 schemaFamily: ftm
 ftmSchema: Url
@@ -7,15 +7,15 @@ label: "http://medsupply-direct.example/checkout"
 value: "http://medsupply-direct.example/checkout"
 osint_confidence: low
 osint_sources:
-  - id: ext_89b60a43-4beb-4c7f-b93f-0cc06c7f3a0a
+  - id: ext_e9aad7e1-c1a5-467c-b78d-a216b98124d7
     source_url: http://medsupply-direct.example/
     archive_status: skipped
     inferred: false
     rationale: 'Sent from the OSINT Copilot browser extension: "Checkout page"'
-    captured_at: 2026-09-19T14:16:01.537Z
+    captured_at: 2026-09-19T20:05:38.435Z
     via: extension
-    client_id: ZKns-7oISN8aot10CJqY8A
-    received_at: 2026-09-19T14:16:01.537Z
+    client_id: 4BoIM8Mp_kM-n6xver6c8A
+    received_at: 2026-09-19T20:05:38.435Z
 ---
 
 # http://medsupply-direct.example/checkout

@@ -1,0 +1,25 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: 26384d9b-0e61-4d7f-9d9c-092b338b53c3
+type: CryptoWallet
+label: "0x52908400098527886E0F7030069857D2E4169EE7"
+properties:
+  publicKey: "0x52908400098527886E0F7030069857D2E4169EE7"
+  currencySymbol: ETH
+  Address: 4.713600493505407e+47
+  Currency short code: ETH
+ftmSchema: CryptoWallet
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/CryptoWallet/0x52908400098527886E0F7030069857D2E4169EE7.md
+osint_sources:
+  - id: ext_231c05d0-aadd-4c6b-8c9e-001f28bb4c71
+    source_url: http://harbourmarket.example/thread/4471
+    archive_status: skipped
+    inferred: false
+    rationale: 'Sent from the OSINT Copilot browser extension: "ETH payment address in post #1"'
+    captured_at: 2026-09-19T20:05:13.054Z
+    via: extension
+    client_id: 4BoIM8Mp_kM-n6xver6c8A
+    received_at: 2026-09-19T20:05:13.054Z
+osint_confidence: low
+

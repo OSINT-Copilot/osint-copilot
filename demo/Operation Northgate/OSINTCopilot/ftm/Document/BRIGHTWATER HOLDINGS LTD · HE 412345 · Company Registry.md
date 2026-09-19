@@ -1,41 +1,41 @@
 ---
-id: "eef3f65f-069f-462c-b368-f89228ad92bb"
+id: "a1e65d25-4ae9-4950-9331-8b16e689df71"
 type: Evidence
 schemaFamily: ftm
 ftmSchema: Document
 label: "BRIGHTWATER HOLDINGS LTD · HE 412345 · Company Registry"
 name: "BRIGHTWATER HOLDINGS LTD · HE 412345 · Company Registry"
 url: "http://registry.cy.example/company/HE412345"
-sha256: "5bf9875d74aa775bcb1d6979c57bb017c0f909be2d55de2112e08d93f203b408"
-description: "Web page captured by the OSINT Copilot browser extension from http://registry.cy.example/company/HE412345, received 2026-09-19T14:16:33.843Z. The archive is the page's DOM after JavaScript ran, with scripts removed: not the bytes the server sent."
+sha256: "7197c070610787d528eee1a28e05a2bb9c5223b8f2de2cbdfb3a0590a3e5b120"
+description: "Web page captured by the OSINT Copilot browser extension from http://registry.cy.example/company/HE412345, received 2026-09-19T20:06:10.097Z. The archive is the page's DOM after JavaScript ran, with scripts removed: not the bytes the server sent."
 props:
-  filePath: OSINTCopilot/Evidence/brightwater-holdings-ltd-he-412345-company-registry-5bf9875d.md
+  filePath: OSINTCopilot/Evidence/brightwater-holdings-ltd-he-412345-company-registry-7197c070.md
 osint_confidence: medium
 osint_sources:
-  - id: ext_cf13b64f-e183-42e6-8d94-fd218d3e80d8
+  - id: ext_696dfd03-524b-46f6-9718-804c8b8cf960
     source_url: http://registry.cy.example/company/HE412345
     archive_status: skipped
     inferred: false
     rationale: Captured by the OSINT Copilot browser extension; received
-      2026-09-19T14:16:33.843Z.
-    captured_at: 2026-09-19T14:16:33.843Z
+      2026-09-19T20:06:10.097Z.
+    captured_at: 2026-09-19T20:06:10.097Z
     via: extension
-    client_id: ZKns-7oISN8aot10CJqY8A
-    received_at: 2026-09-19T14:16:33.843Z
-  - id: ext_cf13b64f-e183-42e6-8d94-fd218d3e80d8_archive
-    source_url: vault://OSINTCopilot/Evidence/brightwater-holdings-ltd-he-412345-company-registry-5bf9875d.mhtml
+    client_id: 4BoIM8Mp_kM-n6xver6c8A
+    received_at: 2026-09-19T20:06:10.097Z
+  - id: ext_696dfd03-524b-46f6-9718-804c8b8cf960_archive
+    source_url: vault://OSINTCopilot/Evidence/brightwater-holdings-ltd-he-412345-company-registry-7197c070.mhtml
     archive_status: skipped
     inferred: false
     rationale: "Captured by the OSINT Copilot browser extension: local MHTML archive
       of the page as it rendered, sha256
-      5bf9875d74aa775bcb1d6979c57bb017c0f909be2d55de2112e08d93f203b408. Attests
+      7197c070610787d528eee1a28e05a2bb9c5223b8f2de2cbdfb3a0590a3e5b120. Attests
       that the archive has not changed since it was received; it is not a record
       of what the server sent."
-    captured_at: 2026-09-19T14:16:33.843Z
+    captured_at: 2026-09-19T20:06:10.097Z
     via: extension
-    client_id: ZKns-7oISN8aot10CJqY8A
-    sha256: 5bf9875d74aa775bcb1d6979c57bb017c0f909be2d55de2112e08d93f203b408
-    received_at: 2026-09-19T14:16:33.843Z
+    client_id: 4BoIM8Mp_kM-n6xver6c8A
+    sha256: 7197c070610787d528eee1a28e05a2bb9c5223b8f2de2cbdfb3a0590a3e5b120
+    received_at: 2026-09-19T20:06:10.097Z
 ---
 
 # BRIGHTWATER HOLDINGS LTD · HE 412345 · Company Registry
@@ -44,9 +44,9 @@ osint_sources:
 
 - **Name**: BRIGHTWATER HOLDINGS LTD · HE 412345 · Company Registry
 - **url**: http://registry.cy.example/company/HE412345
-- **sha256**: 5bf9875d74aa775bcb1d6979c57bb017c0f909be2d55de2112e08d93f203b408
-- **filePath**: OSINTCopilot/Evidence/brightwater-holdings-ltd-he-412345-company-registry-5bf9875d.md
-- **Description**: Web page captured by the OSINT Copilot browser extension from http://registry.cy.example/company/HE412345, received 2026-09-19T14:16:33.843Z. The archive is the page's DOM after JavaScript ran, with scripts removed: not the bytes the server sent.
+- **sha256**: 7197c070610787d528eee1a28e05a2bb9c5223b8f2de2cbdfb3a0590a3e5b120
+- **filePath**: OSINTCopilot/Evidence/brightwater-holdings-ltd-he-412345-company-registry-7197c070.md
+- **Description**: Web page captured by the OSINT Copilot browser extension from http://registry.cy.example/company/HE412345, received 2026-09-19T20:06:10.097Z. The archive is the page's DOM after JavaScript ran, with scripts removed: not the bytes the server sent.
 
 ## Relationships
 

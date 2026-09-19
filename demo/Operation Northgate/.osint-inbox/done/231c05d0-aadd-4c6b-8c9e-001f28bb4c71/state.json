@@ -1,0 +1,45 @@
+{
+  "v": 1,
+  "steps": [
+    {
+      "step": "entity-plan",
+      "at": "2026-09-19T20:05:13.086Z",
+      "data": {
+        "plannedEntityId": "26384d9b-0e61-4d7f-9d9c-092b338b53c3"
+      }
+    },
+    {
+      "step": "entity",
+      "at": "2026-09-19T20:05:13.098Z",
+      "data": {
+        "entityId": "26384d9b-0e61-4d7f-9d9c-092b338b53c3",
+        "created": true,
+        "label": "0x52908400098527886E0F7030069857D2E4169EE7",
+        "addedSourceIds": [
+          "ext_231c05d0-aadd-4c6b-8c9e-001f28bb4c71"
+        ]
+      }
+    },
+    {
+      "step": "sources-note",
+      "at": "2026-09-19T20:05:13.109Z",
+      "data": {
+        "path": "OSINTCopilot/Sources/wts-oncology-generics-eu-shipping-harbour-market-5f6a529d2fd6.md"
+      }
+    },
+    {
+      "step": "applied",
+      "at": "2026-09-19T20:05:13.119Z",
+      "data": {
+        "entityId": "26384d9b-0e61-4d7f-9d9c-092b338b53c3",
+        "entityLabel": "0x52908400098527886E0F7030069857D2E4169EE7",
+        "created": true,
+        "addedSourceIds": [
+          "ext_231c05d0-aadd-4c6b-8c9e-001f28bb4c71"
+        ],
+        "sourcesNotePath": "OSINTCopilot/Sources/wts-oncology-generics-eu-shipping-harbour-market-5f6a529d2fd6.md",
+        "placedFiles": []
+      }
+    }
+  ]
+}

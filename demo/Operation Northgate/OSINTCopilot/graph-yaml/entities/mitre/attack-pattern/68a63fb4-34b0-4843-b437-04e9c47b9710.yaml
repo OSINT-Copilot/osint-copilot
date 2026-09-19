@@ -1,0 +1,23 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: 68a63fb4-34b0-4843-b437-04e9c47b9710
+type: attack-pattern
+label: "Acquire Infrastructure: Domains"
+properties:
+  name: "Acquire Infrastructure: Domains"
+  external_id: T1583.001
+  description: Registering a lookalike shop domain.
+  Name: "Acquire Infrastructure: Domains"
+  External ID: T1583.001
+  Description: Registering a lookalike shop domain.
+schemaFamily: mitre
+notePath: OSINTCopilot/mitre/attack-pattern/Acquire Infrastructure- Domains.md
+osint_sources:
+  - id: src_de1753de85ce2c5d
+    source_url: http://medsupply-direct.example/
+    archive_status: skipped
+    inferred: false
+    rationale: Case analysis
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

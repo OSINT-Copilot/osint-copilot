@@ -2,12 +2,12 @@
 	"version": 1,
 	"normalised_url": "http://medsupply-direct.example/",
 	"highlights": {
-		"urn:uuid:e81c01cb-d428-47ca-bc0d-e9115e31d014": {
+		"urn:uuid:51358fff-3b2a-4309-a39f-e528c8e17945": {
 			"annotation": {
-				"id": "urn:uuid:e81c01cb-d428-47ca-bc0d-e9115e31d014",
+				"id": "urn:uuid:51358fff-3b2a-4309-a39f-e528c8e17945",
 				"textModel": "v1",
-				"created": "2026-09-19T14:16:10.753Z",
-				"modified": "2026-09-19T14:16:10.753Z",
+				"created": "2026-09-19T20:05:47.723Z",
+				"modified": "2026-09-19T20:05:47.723Z",
 				"target": {
 					"source": "http://medsupply-direct.example/",
 					"selector": [
@@ -46,9 +46,9 @@
 					]
 				}
 			},
-			"section": "37f56952-f57e-4673-b2ce-5e318f850321",
-			"modified": "2026-09-19T14:16:10.753Z",
-			"receivedAt": "2026-09-19T14:16:10.760Z",
+			"section": "bbec4085-c597-4c12-92f0-3c9fc0a02eca",
+			"modified": "2026-09-19T20:05:47.723Z",
+			"receivedAt": "2026-09-19T20:05:47.729Z",
 			"deleted": false
 		}
 	}

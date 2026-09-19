@@ -1,0 +1,20 @@
+{
+  "v": 1,
+  "bundleId": "7373fd84-552c-42a2-90b3-f21727059775",
+  "status": "done",
+  "archiveSha256": "cb5b3925a93de97fe0c0fc3e035321072b629771bdbbf7abbc54214bf380033c",
+  "contentLocation": "http://medsupply-direct.example/",
+  "urlMismatch": false,
+  "title": "MedSupply Direct · Oncology generics without prescription",
+  "errors": [],
+  "derivedAt": "2026-09-19T20:05:50.138Z",
+  "markdown": {
+    "file": "page.markdown",
+    "sha256": "85fef86adc99ff96a74c8e71088fb7dd3c13e64abcf61f2357238e9dceaed709"
+  },
+  "fullpage": {
+    "file": "fullpage.png",
+    "sha256": "3f3b02726edcd8420d1f654a88ab69dda80bbea8c1ae9f9b011b711691a48a47"
+  },
+  "mac": "pVYWZOoMzBE7ezMaH1KWiyeK_we8rbtHWAGpuHm2SmA"
+}

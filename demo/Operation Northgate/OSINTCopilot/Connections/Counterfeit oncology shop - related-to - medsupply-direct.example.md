@@ -1,9 +1,9 @@
 ---
-id: "c0b047af-c155-439e-ab36-4aa660d3a017"
+id: "c10d3adc-2870-4466-bd58-2de322a1c434"
 type: connection
 relationship: "related-to"
-fromEntityId: "dbed1b19-bdc3-421b-9fa4-40aefd62945a"
-toEntityId: "c0a67191-bcd3-4cf6-ae66-32606cf2cd3d"
+fromEntityId: "7f267867-e0de-48f5-bfae-98f2cf4fdfac"
+toEntityId: "4aeb5243-f1d5-4dbe-8448-0318dd9e99ba"
 fromEntity: "[[Counterfeit oncology shop]]"
 toEntity: "[[medsupply-direct.example]]"
 schemaFamily: stix2

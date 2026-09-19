@@ -1,5 +1,5 @@
 ---
-id: "20e720e7-21fe-4268-a8d7-32aaab472a5d"
+id: "2d8ae4a3-7d7f-499d-ac0f-230604542993"
 type: indicator
 schemaFamily: stix2
 label: "Checkout error page leaks its upstream"

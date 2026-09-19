@@ -1,41 +1,41 @@
 ---
-id: "57550e17-fe29-492b-b60d-687da411667c"
+id: "d00eb450-0159-4231-91c0-50696fc41db2"
 type: Evidence
 schemaFamily: ftm
 ftmSchema: Document
 label: "Contact · Northgate Freight BV"
 name: "Contact · Northgate Freight BV"
 url: "http://northgate-freight.example/contact"
-sha256: "4dee2553b49977a627369a987c6ff259adee0dcf561f85bc852746cefb3df97e"
-description: "Web page captured by the OSINT Copilot browser extension from http://northgate-freight.example/contact, received 2026-09-19T14:16:49.038Z. The archive is the page's DOM after JavaScript ran, with scripts removed: not the bytes the server sent."
+sha256: "ecfed43886ccdb69dd7fe9a4fb491168a31526a35c29e221439dad80f27f10e2"
+description: "Web page captured by the OSINT Copilot browser extension from http://northgate-freight.example/contact, received 2026-09-19T20:06:24.892Z. The archive is the page's DOM after JavaScript ran, with scripts removed: not the bytes the server sent."
 props:
-  filePath: OSINTCopilot/Evidence/contact-northgate-freight-bv-4dee2553.md
+  filePath: OSINTCopilot/Evidence/contact-northgate-freight-bv-ecfed438.md
 osint_confidence: medium
 osint_sources:
-  - id: ext_22172942-42cc-4387-9399-c91888092e81
+  - id: ext_0acd5e88-effa-4091-a22e-b3fd086669fe
     source_url: http://northgate-freight.example/contact
     archive_status: skipped
     inferred: false
     rationale: Captured by the OSINT Copilot browser extension; received
-      2026-09-19T14:16:49.038Z.
-    captured_at: 2026-09-19T14:16:49.038Z
+      2026-09-19T20:06:24.892Z.
+    captured_at: 2026-09-19T20:06:24.892Z
     via: extension
-    client_id: ZKns-7oISN8aot10CJqY8A
-    received_at: 2026-09-19T14:16:49.038Z
-  - id: ext_22172942-42cc-4387-9399-c91888092e81_archive
-    source_url: vault://OSINTCopilot/Evidence/contact-northgate-freight-bv-4dee2553.mhtml
+    client_id: 4BoIM8Mp_kM-n6xver6c8A
+    received_at: 2026-09-19T20:06:24.892Z
+  - id: ext_0acd5e88-effa-4091-a22e-b3fd086669fe_archive
+    source_url: vault://OSINTCopilot/Evidence/contact-northgate-freight-bv-ecfed438.mhtml
     archive_status: skipped
     inferred: false
     rationale: "Captured by the OSINT Copilot browser extension: local MHTML archive
       of the page as it rendered, sha256
-      4dee2553b49977a627369a987c6ff259adee0dcf561f85bc852746cefb3df97e. Attests
+      ecfed43886ccdb69dd7fe9a4fb491168a31526a35c29e221439dad80f27f10e2. Attests
       that the archive has not changed since it was received; it is not a record
       of what the server sent."
-    captured_at: 2026-09-19T14:16:49.038Z
+    captured_at: 2026-09-19T20:06:24.892Z
     via: extension
-    client_id: ZKns-7oISN8aot10CJqY8A
-    sha256: 4dee2553b49977a627369a987c6ff259adee0dcf561f85bc852746cefb3df97e
-    received_at: 2026-09-19T14:16:49.038Z
+    client_id: 4BoIM8Mp_kM-n6xver6c8A
+    sha256: ecfed43886ccdb69dd7fe9a4fb491168a31526a35c29e221439dad80f27f10e2
+    received_at: 2026-09-19T20:06:24.892Z
 ---
 
 # Contact · Northgate Freight BV
@@ -44,9 +44,9 @@ osint_sources:
 
 - **Name**: Contact · Northgate Freight BV
 - **url**: http://northgate-freight.example/contact
-- **sha256**: 4dee2553b49977a627369a987c6ff259adee0dcf561f85bc852746cefb3df97e
-- **filePath**: OSINTCopilot/Evidence/contact-northgate-freight-bv-4dee2553.md
-- **Description**: Web page captured by the OSINT Copilot browser extension from http://northgate-freight.example/contact, received 2026-09-19T14:16:49.038Z. The archive is the page's DOM after JavaScript ran, with scripts removed: not the bytes the server sent.
+- **sha256**: ecfed43886ccdb69dd7fe9a4fb491168a31526a35c29e221439dad80f27f10e2
+- **filePath**: OSINTCopilot/Evidence/contact-northgate-freight-bv-ecfed438.md
+- **Description**: Web page captured by the OSINT Copilot browser extension from http://northgate-freight.example/contact, received 2026-09-19T20:06:24.892Z. The archive is the page's DOM after JavaScript ran, with scripts removed: not the bytes the server sent.
 
 ## Relationships
 

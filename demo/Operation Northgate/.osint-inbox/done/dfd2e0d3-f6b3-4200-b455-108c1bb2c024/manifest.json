@@ -1,0 +1,63 @@
+{
+  "v": 1,
+  "bundleId": "dfd2e0d3-f6b3-4200-b455-108c1bb2c024",
+  "workspaceId": "00WlkSIWAtI9LX-qaRxRi4",
+  "page": {
+    "url": "http://registry.cy.example/company/HE412345",
+    "title": "BRIGHTWATER HOLDINGS LTD · HE 412345 · Company Registry"
+  },
+  "clientTime": "2026-09-19T20:06:02.897Z",
+  "kind": "highlight",
+  "highlight": {
+    "annotation": {
+      "id": "urn:uuid:d6190e9b-3c55-48f7-beca-8d1a9781e338",
+      "textModel": "v1",
+      "created": "2026-09-19T20:06:02.897Z",
+      "modified": "2026-09-19T20:06:02.897Z",
+      "target": {
+        "source": "http://registry.cy.example/company/HE412345",
+        "selector": [
+          {
+            "type": "TextQuoteSelector",
+            "exact": "Company secretary: Corpserve Secretarial Ltd",
+            "prefix": "brightwater-holdings.example\n\t\n\t",
+            "suffix": "\nA fictional page made for the O"
+          },
+          {
+            "type": "TextPositionSelector",
+            "start": 403,
+            "end": 447
+          },
+          {
+            "type": "RangeSelector",
+            "startSelector": {
+              "type": "XPathSelector",
+              "value": "/html[1]/body[1]/main[1]/p[2]",
+              "refinedBy": {
+                "type": "TextPositionSelector",
+                "start": 0,
+                "end": 0
+              }
+            },
+            "endSelector": {
+              "type": "XPathSelector",
+              "value": "/html[1]/body[1]/main[1]/p[2]",
+              "refinedBy": {
+                "type": "TextPositionSelector",
+                "start": 44,
+                "end": 44
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "server": {
+    "receivedAt": "2026-09-19T20:06:02.902Z",
+    "clientId": "4BoIM8Mp_kM-n6xver6c8A",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0"
+  },
+  "mac": "QpwCPexazfusebzE25AGJyg_KrY19EakHqPvrlf8_Gc"
+}

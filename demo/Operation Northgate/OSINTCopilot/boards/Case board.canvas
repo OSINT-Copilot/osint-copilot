@@ -90,7 +90,7 @@
     {
       "id": "forum-capture",
       "type": "file",
-      "file": "OSINTCopilot/Evidence/wts-oncology-generics-eu-shipping-harbour-market-6443dc4c.viewport.png",
+      "file": "OSINTCopilot/Evidence/wts-oncology-generics-eu-shipping-harbour-market-d7dc97c2.viewport.png",
       "x": 1360,
       "y": 0,
       "width": 380,
@@ -126,7 +126,7 @@
       "id": "manifest",
       "type": "file",
       "file": "OSINTCopilot/ftm/Document/q2-2024-consolidation.pdf.md",
-      "osintEntityId": "d9c0893b-c462-452b-962d-6cb27ec5cabe",
+      "osintEntityId": "8dfa3f52-f8b9-43ac-8632-de84c97d40b7",
       "x": 1360,
       "y": 400,
       "width": 380,

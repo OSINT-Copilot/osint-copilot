@@ -1,0 +1,15 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: 93ffc077-7dca-4598-8a67-101ae071e5c5
+fromEntityId: d3e0a000-0000-4000-8000-000000000004
+toEntityId: d3e0a000-0000-4000-8000-000000000014
+fromLabel: Brightwater Holdings Ltd
+toLabel: Brightwater registered office
+relationship: UnknownLink
+label: Brightwater Holdings Ltd → UnknownLink → Brightwater registered office
+properties:
+  role: Registered office
+ftmSchema: UnknownLink
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/Brightwater Holdings Ltd - UnknownLink - Brightwater registered office.md
+

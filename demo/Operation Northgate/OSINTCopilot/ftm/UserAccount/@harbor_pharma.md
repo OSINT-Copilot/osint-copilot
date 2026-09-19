@@ -1,5 +1,5 @@
 ---
-id: "c1115c11-5e81-43b6-97a2-9a7a25bafe47"
+id: "0b313e90-4533-44e3-99ca-32998b34a33d"
 type: Username
 schemaFamily: ftm
 ftmSchema: UserAccount
@@ -8,16 +8,16 @@ username: "@harbor_pharma"
 platform: "harbourmarket.example"
 osint_confidence: low
 osint_sources:
-  - id: ext_7dc4486b-c346-4144-a5c1-46ea4eb97050
+  - id: ext_dd5885c6-bc4a-412f-a338-5c04dd9a6d6e
     source_url: http://harbourmarket.example/thread/4471
     archive_status: skipped
     inferred: false
     rationale: 'Sent from the OSINT Copilot browser extension: "Vendor account of
       the thread"'
-    captured_at: 2026-09-19T14:15:27.888Z
+    captured_at: 2026-09-19T20:05:04.920Z
     via: extension
-    client_id: ZKns-7oISN8aot10CJqY8A
-    received_at: 2026-09-19T14:15:27.888Z
+    client_id: 4BoIM8Mp_kM-n6xver6c8A
+    received_at: 2026-09-19T20:05:04.920Z
 ---
 
 # @harbor_pharma

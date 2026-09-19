@@ -1,0 +1,14 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: ad694bc8-4a84-4aec-b0c9-641299fe15bf
+fromEntityId: 4aeb5243-f1d5-4dbe-8448-0318dd9e99ba
+toEntityId: d3e0a000-0000-4000-8000-000000000005
+fromLabel: medsupply-direct.example
+toLabel: Northgate Freight BV
+relationship: NAMES_AS_SHIPPER
+label: medsupply-direct.example → NAMES_AS_SHIPPER → Northgate Freight BV
+properties: {}
+ftmSchema: NAMES_AS_SHIPPER
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/medsupply-direct.example - NAMES_AS_SHIPPER - Northgate Freight BV.md
+

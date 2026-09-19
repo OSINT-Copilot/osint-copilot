@@ -1,0 +1,14 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: 15a2d1b7-3a8e-4bbf-83c8-3472a7370c6d
+fromEntityId: d3e0a000-0000-4000-8000-000000000002
+toEntityId: d3e0a000-0000-4000-8000-000000000023
+fromLabel: Daniel Arendt
+toLabel: Koval and Arendt meet at the Waalhaven warehouse
+relationship: PARTICIPATED_IN
+label: Daniel Arendt → PARTICIPATED_IN → Koval and Arendt meet at the Waalhaven warehouse
+properties: {}
+ftmSchema: PARTICIPATED_IN
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/Daniel Arendt - PARTICIPATED_IN - Koval and Arendt meet at the Waalhaven warehouse.md
+
