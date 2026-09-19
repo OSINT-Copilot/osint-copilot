@@ -17,6 +17,7 @@ import { DEFAULT_ENRICHERS_FOLDER, DEFAULT_SKILLS_FOLDER } from "../constants/va
 import { ConfirmModal } from "../modals/confirm-modal";
 import { enricherJsonPathFromId, skillMarkdownPathFromId } from "../utils/registry-paths";
 import { ensureFolderChain } from "../utils/vault-bootstrap-fs";
+import { submitOnEnter } from "../utils/submit-on-enter";
 
 export const TOOLS_SKILLS_REGISTRY_VIEW_TYPE = "osint-copilot-tools-skills-registry";
 
@@ -53,22 +54,6 @@ function buildDraftEnricherJson(id: string, name: string): string {
 function yamlDoubleQuoted(s: string): string {
 	const oneLine = s.replace(/\r?\n/g, " ").trim();
 	return `"${oneLine.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
-
-/**
- * Submit a dialog from one of its text fields on Enter.
- *
- * Enter in a bare <input> does nothing outside a <form>, and these dialogs are not in
- * one, so the only way to confirm was to reach for the mouse. Key repeat is ignored --
- * holding the key must not create the file three times -- and so is a composition
- * commit, which an IME delivers as Enter too.
- */
-export function submitOnEnter(input: HTMLInputElement, submit: () => void): void {
-	input.addEventListener("keydown", (event: KeyboardEvent) => {
-		if (event.key !== "Enter" || event.repeat || event.isComposing) return;
-		event.preventDefault();
-		submit();
-	});
 }
 
 class AddSkillModal extends Modal {
@@ -109,7 +94,7 @@ class AddSkillModal extends Modal {
 			submitOnEnter(t.inputEl, () => this.submit());
 		});
 		new Setting(contentEl).setName("Description").addTextArea((t) => {
-			t.setPlaceholder("Short line for the planner tool list");
+			t.setPlaceholder("Which requests this skill is for");
 			t.inputEl.rows = 3;
 			t.onChange((v) => {
 				this.descInput = v;
@@ -252,7 +237,44 @@ export class ToolsSkillsRegistryView extends ItemView {
 		this.skillsCol = grid.createDiv({ cls: "osint-copilot-registry-column" });
 		this.enrichCol = grid.createDiv({ cls: "osint-copilot-registry-column" });
 
+		// The registries drop their caches on these events, but nothing told the open view,
+		// so a skill added by a chat Apply, a palette command or another editor stayed
+		// missing until Refresh. Debounced: one Apply can write several files.
+		const scheduleReloadFromPath = (path: string): void => {
+			if (!this.isRegistryPath(path)) return;
+			if (this.vaultReloadTimer !== null) {
+				window.clearTimeout(this.vaultReloadTimer);
+			}
+			this.vaultReloadTimer = window.setTimeout(() => {
+				this.vaultReloadTimer = null;
+				void this.reload();
+			}, 400);
+		};
+		this.registerEvent(this.app.vault.on("create", (f) => scheduleReloadFromPath(f.path)));
+		this.registerEvent(this.app.vault.on("modify", (f) => scheduleReloadFromPath(f.path)));
+		this.registerEvent(this.app.vault.on("delete", (f) => scheduleReloadFromPath(f.path)));
+		this.registerEvent(
+			this.app.vault.on("rename", (f, oldPath) => {
+				scheduleReloadFromPath(f.path);
+				if (typeof oldPath === "string") scheduleReloadFromPath(oldPath);
+			}),
+		);
+
 		await this.reload();
+	}
+
+	/**
+	 * A skill note, an enricher spec, or either folder itself, under the folders set now.
+	 * The enrichers audit log is none of these, so the set-state command's own log line
+	 * does not trigger a second reload.
+	 */
+	private isRegistryPath(path: string): boolean {
+		const p = normalizePath(path);
+		const skillsRoot = normalizePath(this.host.settings.skillsFolder.trim() || DEFAULT_SKILLS_FOLDER);
+		const enrichersRoot = normalizePath(this.host.settings.enrichersFolder.trim() || DEFAULT_ENRICHERS_FOLDER);
+		if (p === skillsRoot || p === enrichersRoot) return true;
+		if (p.startsWith(`${skillsRoot}/`) && p.endsWith(".md")) return true;
+		return p.startsWith(`${enrichersRoot}/`) && p.endsWith(".json");
 	}
 
 	private skillsCol!: HTMLElement;
@@ -260,17 +282,30 @@ export class ToolsSkillsRegistryView extends ItemView {
 	private refreshBtn: HTMLButtonElement | null = null;
 	/** reload() is reachable from five places and every caller discards the promise. */
 	private reloadInFlight: Promise<void> | null = null;
+	/** A reload was asked for while one ran; that one may have read the folders too early. */
+	private reloadAgain = false;
+	private vaultReloadTimer: number | null = null;
 
 	/**
 	 * Single-flight, and it never rejects. Every caller discards the promise, so a
 	 * registry that threw -- an unreadable skills folder, an enricher JSON that does not
 	 * parse -- used to surface as an unhandled rejection and a view frozen on whatever it
 	 * showed last, under a Refresh button that looked as if it had not been pressed.
+	 *
+	 * A call that arrives mid-reload is not dropped: one more run follows, since the change
+	 * that prompted it can have landed after the running one read the folders.
 	 */
 	private reload(): Promise<void> {
-		if (this.reloadInFlight) return this.reloadInFlight;
+		if (this.reloadInFlight) {
+			this.reloadAgain = true;
+			return this.reloadInFlight;
+		}
 		this.reloadInFlight = this.doReload().finally(() => {
 			this.reloadInFlight = null;
+			if (this.reloadAgain) {
+				this.reloadAgain = false;
+				void this.reload();
+			}
 		});
 		return this.reloadInFlight;
 	}
@@ -444,7 +479,7 @@ name: ${yamlDoubleQuoted(name)}
 description: ${yamlDoubleQuoted(description)}
 ---
 
-Edit the body with instructions used when this skill runs (local agent).
+Replace this text with the steps the assistant should follow when a request matches the description.
 `;
 		try {
 			await this.app.vault.create(rel, body);
@@ -485,6 +520,10 @@ Edit the body with instructions used when this skill runs (local agent).
 	}
 
 	async onClose(): Promise<void> {
+		if (this.vaultReloadTimer !== null) {
+			window.clearTimeout(this.vaultReloadTimer);
+			this.vaultReloadTimer = null;
+		}
 		this.containerEl.children[1].empty();
 	}
 }

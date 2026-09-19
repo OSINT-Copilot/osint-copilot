@@ -1,7 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { App } from 'obsidian';
 import { parseTaskAgentMarkdown } from '../task-agents/parse-manifest';
-import { isPathAllowedForWrite } from '../task-agents/path-allowlist';
+import { effectiveOutputRoots, isPathAllowedForWrite, normalizeRootList } from '../task-agents/path-allowlist';
+import { applyVaultFilesV1 } from '../task-agents/write-applier';
+import { TASK_AGENT_DEFAULT_FILES } from '../data/task-agent-defaults';
+import { DEFAULT_TASK_AGENT_OUTPUT_ALLOWLIST } from '../constants/vault-layout';
+import { createTestAppAsync } from '../obsidian-shim/testing/create-test-app';
 import { parseVaultFilesJson } from '../task-agents/json-response';
 import { isTaskAgentRunnable } from '../task-agents/task-agent-settings';
 import type { TaskAgentManifest } from '../task-agents/types';
@@ -197,5 +201,110 @@ describe('TaskAgentRunner cancellation', () => {
     await expect(runner.run(manifest, 'Do work', controller.signal)).rejects.toMatchObject({
       name: 'AbortError',
     });
+  });
+});
+
+const GLOBAL_ROOTS = normalizeRootList(DEFAULT_TASK_AGENT_OUTPUT_ALLOWLIST);
+const MEMO_ROOTS = ['OSINTCopilot/custom/outputs/memos'];
+
+function manifestWith(outputRoots: string[]): TaskAgentManifest {
+  return {
+    agentKind: 'task',
+    id: 'memo-writer',
+    name: 'Memo writer',
+    description: '',
+    outputSchema: 'vault_files_v1',
+    outputRoots,
+    contextRoots: [],
+    maxNotes: 1,
+    maxContextChars: 100,
+    enabledDefault: true,
+    model: '',
+    body: 'Write a memo.',
+    sourcePath: 'OSINTCopilot/custom/task-agents/memo-writer.md',
+  };
+}
+
+function cliReturning(raw: string) {
+  return {
+    providerId: 'codex',
+    displayName: 'Codex CLI',
+    setVaultSkillResolver: vi.fn(),
+    updateConfig: vi.fn(),
+    extractEntities: vi.fn(),
+    chat: vi.fn().mockResolvedValue(raw),
+    extractTextFromImage: vi.fn(),
+    isAvailable: vi.fn(),
+  } satisfies LocalCliService;
+}
+
+describe('task agent output paths', () => {
+  it('writes a bare filename into the agent output folder, and still refuses a path outside it', async () => {
+    const app = await createTestAppAsync();
+    const res = await applyVaultFilesV1(
+      app as unknown as App,
+      {
+        version: 'vault_files_v1',
+        files: [
+          { path: 'memo.md', body: '# Memo' },
+          // A path with folders is not prefixed, so this stays where it was aimed.
+          { path: 'Elsewhere/x.md', body: 'x' },
+        ],
+      },
+      MEMO_ROOTS,
+      GLOBAL_ROOTS,
+    );
+    expect(res.created).toEqual(['OSINTCopilot/custom/outputs/memos/memo.md']);
+    expect(app.storage.peek('OSINTCopilot/custom/outputs/memos/memo.md')).toBe('# Memo');
+    expect(res.errors).toEqual(['Not allowed: Elsewhere/x.md']);
+  });
+
+  it('tells the model the folders it may write to', async () => {
+    const cli = cliReturning('{"version":"vault_files_v1","files":[]}');
+    const runner = new TaskAgentRunner(
+      {} as App,
+      () => cli,
+      { getGlobalRules: vi.fn().mockResolvedValue('') } as any,
+      () => new Map(),
+      () => '',
+      { globalOutputAllowlist: DEFAULT_TASK_AGENT_OUTPUT_ALLOWLIST },
+    );
+    await runner.run(manifestWith(MEMO_ROOTS), 'Write a memo');
+    const systemPrompt = cli.chat.mock.calls[0][0] as string;
+    expect(systemPrompt).toContain('ALLOWED OUTPUT FOLDERS');
+    expect(systemPrompt).toContain('OSINTCopilot/custom/outputs/memos/');
+  });
+
+  it('explains, without calling the CLI, when no output folder is inside the global allowlist', async () => {
+    const cli = cliReturning('');
+    const runner = new TaskAgentRunner(
+      {} as App,
+      () => cli,
+      { getGlobalRules: vi.fn().mockResolvedValue('') } as any,
+      () => new Map(),
+      () => '',
+      { globalOutputAllowlist: 'Research/' },
+    );
+    const out = await runner.run(manifestWith(MEMO_ROOTS), 'Write a memo');
+    expect(cli.chat).not.toHaveBeenCalled();
+    expect(out.assistantText).toContain('has nowhere to write');
+    expect(out.assistantText).toContain('OSINTCopilot/custom/outputs/memos');
+  });
+
+  it('takes the deeper of an output root and a global root that overlap', () => {
+    expect(effectiveOutputRoots(['OSINTCopilot/custom/outputs/memos/'], GLOBAL_ROOTS))
+      .toEqual(['OSINTCopilot/custom/outputs/memos']);
+    expect(effectiveOutputRoots(['OSINTCopilot'], ['OSINTCopilot/custom/outputs/', 'Research/']))
+      .toEqual(['OSINTCopilot/custom/outputs']);
+    expect(effectiveOutputRoots(['Elsewhere'], GLOBAL_ROOTS)).toEqual([]);
+  });
+
+  it.each(['memo-writer.md', 'report-drafter.md'])('the stock %s example path is one the agent may write', (file) => {
+    const def = TASK_AGENT_DEFAULT_FILES.find((f) => f.path === file)!;
+    const m = parseTaskAgentMarkdown(def.content, file)!;
+    const example = /"path":\s*"([^"]+)"/.exec(m.body)![1]
+      .replace('YYYY-MM-DD', '2026-09-19')
+      .replace('<short-slug>', 'northgate');
+    expect(isPathAllowedForWrite(example, m.outputRoots, GLOBAL_ROOTS)).toBe(true);
   });
 });

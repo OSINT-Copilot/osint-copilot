@@ -59,7 +59,7 @@ import { SchemaBootstrapService } from '../services/schema-bootstrap-service';
 import { SchemaCatalogService, mergeEnabledFamilies } from '../services/schema-catalog-service';
 import type { EnabledSchemaFamilies } from '../services/schema-catalog-types';
 import { EnricherRegistry } from '../services/enrichers/enricher-registry';
-import { enrichToolId, normalizeEnricherSpec, type EnricherSpec } from '../services/enrichers/enricher-schema';
+import { normalizeEnricherSpec, type EnricherSpec } from '../services/enrichers/enricher-schema';
 import {
   mergeOidsfModalLayers,
   type OIDSFModalLayers,
@@ -78,6 +78,8 @@ import { OsintWorkspaceController } from './osint-workspace-controller';
 import { host as osintHost } from '../host';
 import { InboxService, readExtensionActivity } from '../services/inbox-service';
 import { ExtensionActivityModal } from '../modals/extension-activity-modal';
+import { EnricherDraftRequestModal, EnricherStateModal, type EnricherState } from '../modals/enricher-command-modals';
+import { enricherJsonPathFromId } from '../utils/registry-paths';
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -583,14 +585,16 @@ export default class VaultAIPlugin extends Plugin {
       id: "draft-http-enricher-from-api-docs",
       name: "Draft HTTP enricher skill from API documentation",
       callback: () => {
-        void this.draftHttpEnricherFromUserDetails();
+        new EnricherDraftRequestModal(this.app, (docUrl, details) => {
+          void this.draftHttpEnricherFromUserDetails(docUrl, details);
+        }).open();
       },
     });
     this.addCommand({
       id: "set-http-enricher-enabled-state",
       name: "Set HTTP enricher enabled state (approval required)",
       callback: () => {
-        void this.setHttpEnricherEnabledState();
+        void this.openEnricherStateModal();
       },
     });
 
@@ -633,17 +637,8 @@ export default class VaultAIPlugin extends Plugin {
     await this.app.vault.create(path, "# Enricher audit log\n\n" + stamped);
   }
 
-  private async draftHttpEnricherFromUserDetails(): Promise<void> {
-    const docUrl = (window.prompt("API documentation URL for this enricher:") || "").trim();
-    if (!docUrl) {
-      new Notice("Cancelled: API documentation URL is required.");
-      return;
-    }
-    const details = (window.prompt("What should this enricher search and return? Include required params.") || "").trim();
-    if (!details) {
-      new Notice("Cancelled: integration details are required.");
-      return;
-    }
+  private async draftHttpEnricherFromUserDetails(docUrl: string, details: string): Promise<void> {
+    new Notice("Drafting the enricher from its documentation…");
     const system = [
       "You draft JSON for an OSINT HTTP enricher tool that will run inside Obsidian (plugin HTTP, not a browser tab).",
       "Return ONLY one JSON object with keys:",
@@ -676,8 +671,10 @@ export default class VaultAIPlugin extends Plugin {
       name: parsed?.["name"] || "Custom Enricher",
       description: parsed?.["description"] || details,
       documentationUrl: docUrl,
-      status: "active",
-      enabled: true,
+      // A draft, as the command says: its URL and allowed domains come from a model
+      // reading documentation, and the user checks them before it can run.
+      status: "draft",
+      enabled: false,
       allowedDomains: parsed?.["allowedDomains"] || (docHost ? [docHost] : []),
       auth: {
         type: parsed?.["authType"] || "none",
@@ -716,9 +713,8 @@ description: ${draft.description}
 ---
 ${draft.skillInstructions}
 
-Tool id: ${enrichToolId(draft.id)}
-This skill executes the configured HTTP enricher spec in ${enricherPath}.
-Do not tell the user to run raw curl from Obsidian for this API; unified chat should call this tool via enricher_invocations with enricher_id \`${draft.id}\`.
+This skill goes with the HTTP enricher spec in ${enricherPath}, enricher_id \`${draft.id}\`.
+While that id is listed under REGISTERED HTTP ENRICHERS, call the API through enricher_invocations with enricher_id \`${draft.id}\`; the app makes the request. It is not listed while the enricher is a draft or disabled. Do not tell the user to run raw curl for this API.
 `;
     const confirmMsg = [
       "Is it OK to install this enricher skill into your vault and create or update the files below?",
@@ -727,6 +723,7 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
       `Skill (markdown): ${skillPath}`,
       `Auth mode: ${draft.auth.type}${draft.auth.envVar ? ` (env: ${draft.auth.envVar})` : ""}`,
       "No credentials will be stored; env var references only.",
+      "The enricher is saved as a disabled draft. Check its URL and allowed domains, then activate it with the \"Set HTTP enricher enabled state\" command.",
     ].join("\n");
     new ConfirmModal(
       this.app,
@@ -752,7 +749,7 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
             this.enricherRegistry.invalidate();
             this.skillRegistry.invalidate();
             await this.appendEnricherAuditLine(`approved create_or_update id=${draft.id} doc=${docUrl}`);
-            new Notice(`Enricher ${draft.name} saved and activated.`);
+            new Notice(`Enricher ${draft.name} saved as a draft. To activate it, run "Set HTTP enricher enabled state".`, 8000);
           } catch (e) {
             new Notice(`Failed to save enricher: ${e instanceof Error ? e.message : String(e)}`, 8000);
           }
@@ -765,46 +762,47 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
     ).open();
   }
 
-  private async setHttpEnricherEnabledState(): Promise<void> {
-    const idInput = (window.prompt("Enricher id (without ENRICH_):") || "").trim().toLowerCase();
-    if (!idInput) return;
-    const nextRaw = (window.prompt("Set state: active or disabled") || "").trim().toLowerCase();
-    const nextStatus = nextRaw === "disabled" ? "disabled" : nextRaw === "active" ? "active" : "";
-    if (!nextStatus) {
-      new Notice("Cancelled: state must be 'active' or 'disabled'.");
+  /** The set-state command: pick an enricher in the vault and the state to give it. */
+  private async openEnricherStateModal(): Promise<void> {
+    let enrichers: EnricherSpec[];
+    try {
+      enrichers = await this.enricherRegistry.listAll();
+    } catch (e) {
+      new Notice(`Could not read the enrichers folder: ${e instanceof Error ? e.message : String(e)}`, 8000);
       return;
     }
-    const path = `${this.settings.enrichersFolder}/${idInput}.json`;
-    const file = this.app.vault.getAbstractFileByPath(path);
+    if (enrichers.length === 0) {
+      new Notice("No HTTP enrichers in the vault yet. Draft one first.");
+      return;
+    }
+    new EnricherStateModal(this.app, enrichers, (id, state) => this.setHttpEnricherEnabledState(id, state)).open();
+  }
+
+  /** The modal's Set state button is the approval; the audit line records it. */
+  private async setHttpEnricherEnabledState(id: string, nextStatus: EnricherState): Promise<void> {
+    const path = enricherJsonPathFromId(this.settings.enrichersFolder, id);
+    const file = path ? this.app.vault.getAbstractFileByPath(path) : null;
     if (!(file instanceof TFile)) {
-      new Notice(`Enricher not found: ${path}`);
+      new Notice(`Enricher not found: ${path ?? id}`);
       return;
     }
-    const raw = await this.app.vault.read(file);
-    const parsed = normalizeEnricherSpec(JSON.parse(raw));
-    if (!parsed) {
-      new Notice("Invalid enricher spec JSON.");
-      return;
+    try {
+      const raw = await this.app.vault.read(file);
+      const parsed = normalizeEnricherSpec(JSON.parse(raw));
+      if (!parsed) {
+        new Notice("Invalid enricher spec JSON.");
+        return;
+      }
+      parsed.status = nextStatus;
+      parsed.enabled = nextStatus === "active";
+      parsed.updatedAt = new Date().toISOString();
+      await this.app.vault.modify(file, JSON.stringify(parsed, null, 2));
+      this.enricherRegistry.invalidate();
+      await this.appendEnricherAuditLine(`approved set_state id=${parsed.id} status=${nextStatus}`);
+      new Notice(`Enricher ${parsed.name} is now ${nextStatus}.`);
+    } catch (e) {
+      new Notice(`Failed to change the enricher: ${e instanceof Error ? e.message : String(e)}`, 8000);
     }
-    const nextEnabled = nextStatus === "active";
-    const msg = `Change enricher "${parsed.name}" status to ${nextStatus}?`;
-    new ConfirmModal(
-      this.app,
-      "Approve enricher state change",
-      msg,
-      () => {
-        void (async () => {
-          parsed.status = nextStatus as EnricherSpec["status"];
-          parsed.enabled = nextEnabled;
-          parsed.updatedAt = new Date().toISOString();
-          await this.app.vault.modify(file, JSON.stringify(parsed, null, 2));
-          this.enricherRegistry.invalidate();
-          await this.appendEnricherAuditLine(`approved set_state id=${parsed.id} status=${nextStatus}`);
-          new Notice(`Enricher ${parsed.name} is now ${nextStatus}.`);
-        })();
-      },
-      () => new Notice("State change cancelled."),
-    ).open();
   }
 
   /**

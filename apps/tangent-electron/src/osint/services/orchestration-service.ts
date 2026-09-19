@@ -16,6 +16,7 @@ import { enrichToolId } from './enrichers/enricher-schema';
 import { createAgentProvider } from './agent-runtime/create-agent-provider';
 import { HermesAgentProvider } from './agent-runtime/hermes-agent-provider';
 import type { AgentTurnContext } from './agent-runtime/provider-types';
+import type { VaultSkillManifest } from '../skills/skill-types';
 import { aiOperationsToGraphCommands } from './graph-commands-from-operations';
 import { resolveEntityImage, type ResolvedEntityImage } from './entity-image-service';
 import type { CustomVaultOperation } from './custom-vault-operations';
@@ -182,11 +183,24 @@ export class OrchestrationService {
         }
 
         let availableEnricherIds: string[] = [];
+        const enricherInstructions: Record<string, string> = {};
         try {
             const runnable = await this.plugin.enricherRegistry.listRunnable();
             availableEnricherIds = runnable.map((e) => e.id);
+            for (const e of runnable) {
+                if (e.skillInstructions) enricherInstructions[e.id] = e.skillInstructions;
+            }
         } catch (e) {
             console.warn("[OrchestrationService] enricher registry:", e);
+        }
+
+        // Inline, not as paths: a runtime without vault access (Hermes, a custom one)
+        // could not open the skill files itself.
+        let vaultSkills: VaultSkillManifest[] = [];
+        try {
+            vaultSkills = (await this.plugin.skillRegistry?.listVaultSkills()) ?? [];
+        } catch (e) {
+            console.warn("[OrchestrationService] skill registry:", e);
         }
 
         const agentCtx: AgentTurnContext = {
@@ -196,7 +210,9 @@ export class OrchestrationService {
             conversationMemory,
             vaultAugmentation: vaultAug,
             availableEnricherIds,
+            enricherInstructions,
             enrichersFolderDisplay: this.plugin.settings.enrichersFolder,
+            vaultSkills,
         };
 
         const provider = createAgentProvider(this.plugin);

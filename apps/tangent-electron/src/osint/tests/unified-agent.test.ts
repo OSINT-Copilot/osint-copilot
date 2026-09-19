@@ -11,6 +11,13 @@ import { AGENT_TURN_SCHEMA_VERSION } from '../services/agent-runtime/provider-ty
 import { aiOperationsToGraphCommands } from '../services/graph-commands-from-operations';
 import { createAgentProvider } from '../services/agent-runtime/create-agent-provider';
 import { getConfiguredRuntimeOptions } from '../services/agent-runtime/runtime-registry';
+import {
+    buildUnifiedAgentUserPrompt,
+    formatVaultSkillsSection,
+    VAULT_SKILLS_MAX_TOTAL_CHARS,
+} from '../services/agent-runtime/build-unified-agent-prompt';
+import type { AgentTurnContext } from '../services/agent-runtime/provider-types';
+import type { VaultSkillManifest } from '../skills/skill-types';
 import type { AIOperation } from '../entities/types';
 
 describe('parseAgentTurnResult', () => {
@@ -156,7 +163,140 @@ describe('getConfiguredRuntimeOptions', () => {
     });
 });
 
+function skill(id: string, body: string, description = `Use for ${id} requests`): VaultSkillManifest {
+    return { id, name: `Skill ${id}`, description, body, sourcePath: `OSINTCopilot/custom/skills/${id}.md` };
+}
+
+function turnContext(extra: Partial<AgentTurnContext> = {}): AgentTurnContext {
+    return {
+        query: 'Who owns northgate.example?',
+        attachmentsContext: '',
+        graphEntitiesSummary: 'Empty graph.',
+        conversationMemory: [],
+        ...extra,
+    };
+}
+
+describe('vault skills in the unified agent prompt', () => {
+    it('sends each skill with its name, id, description, path and body', () => {
+        const prompt = buildUnifiedAgentUserPrompt(turnContext({
+            vaultSkills: [skill('breach_lookup_triage', 'Report breach names and dates only.', 'Reporting breach results')],
+        }));
+        expect(prompt).toContain('=== VAULT SKILLS');
+        expect(prompt).toContain(
+            '--- Skill breach_lookup_triage (breach_lookup_triage) — Reporting breach results [OSINTCopilot/custom/skills/breach_lookup_triage.md]',
+        );
+        expect(prompt).toContain('Report breach names and dates only.');
+        // After the vault rules, before the closing instruction.
+        expect(prompt.indexOf('=== VAULT SKILLS')).toBeLessThan(prompt.indexOf('Produce the JSON object now.'));
+    });
+
+    it('has no skills section when the vault has no skills', () => {
+        expect(buildUnifiedAgentUserPrompt(turnContext())).not.toContain('VAULT SKILLS');
+        expect(buildUnifiedAgentUserPrompt(turnContext({ vaultSkills: [] }))).not.toContain('VAULT SKILLS');
+        expect(formatVaultSkillsSection([])).toBe('');
+    });
+
+    it('lists the skills past the budget by name and path only, and stays under the cap', () => {
+        const big = 'x'.repeat(5_000);
+        const skills = Array.from({ length: 8 }, (_, i) => skill(`s${i}`, `BODY-${i} ${big}`));
+        const section = formatVaultSkillsSection(skills);
+
+        expect(section.length).toBeLessThanOrEqual(VAULT_SKILLS_MAX_TOTAL_CHARS);
+        expect(section).toContain('BODY-0');
+        expect(section).not.toContain('BODY-7');
+        // Every skill is still named, with the file to read.
+        for (const s of skills) expect(section).toContain(`(${s.id})`);
+        expect(section).toContain('Body omitted to keep this prompt small; it is in OSINTCopilot/custom/skills/s7.md.');
+    });
+
+    it('cuts one very long body and says where the rest is', () => {
+        const section = formatVaultSkillsSection([skill('long', `START ${'y'.repeat(20_000)} END`)]);
+        expect(section).toContain('START');
+        expect(section).not.toContain('END');
+        expect(section).toContain('the rest is in OSINTCopilot/custom/skills/long.md');
+    });
+
+    it('ends with a count once even the headings no longer fit', () => {
+        const skills = Array.from({ length: 400 }, (_, i) => skill(`s${i}`, 'b', 'd'.repeat(200)));
+        const section = formatVaultSkillsSection(skills);
+        expect(section.length).toBeLessThanOrEqual(VAULT_SKILLS_MAX_TOTAL_CHARS);
+        expect(section).toMatch(/\(\d+ more skill\(s\) not listed here\.\)$/);
+    });
+
+    it("lists each active enricher's skillInstructions next to its id", () => {
+        const prompt = buildUnifiedAgentUserPrompt(turnContext({
+            availableEnricherIds: ['rdap-domain', 'leakcheck'],
+            enricherInstructions: { leakcheck: 'Use for an e-mail address;\nreport breach names and dates only.' },
+        }));
+        expect(prompt).toContain('Active enricher ids (use enricher_id exactly): rdap-domain, leakcheck');
+        expect(prompt).toContain('- leakcheck: Use for an e-mail address; report breach names and dates only.');
+        expect(prompt).not.toContain('- rdap-domain:');
+    });
+});
+
 describe('OrchestrationService unified path', () => {
+    function vaultSkillPlugin(skillRegistry: unknown) {
+        const turnJson = JSON.stringify({
+            version: AGENT_TURN_SCHEMA_VERSION,
+            answer_markdown: 'Done.',
+            retrieval_hits: [],
+            graph_operations: [],
+            custom_vault_operations: [],
+            enricher_invocations: [],
+        });
+        return {
+            settings: {
+                enableGraphFeatures: true,
+                credentialsFolder: 'OSINTCopilot/custom/credentials',
+                agentRuntimeProvider: 'claude-code',
+                hermesAgentCliPath: 'hermes',
+                hermesAgentExtraArgs: '',
+                hermesAgentTimeoutMs: 120_000,
+                hermesAgentHealthCheckArgs: '--version',
+                customAgentRuntimes: [],
+            },
+            graphApiService: {
+                tryExtractTextFromUrl: vi.fn(),
+                callLocalProviderModel: vi.fn().mockResolvedValue(turnJson),
+            },
+            vaultPromptLoader: { getOrchestrationAugmentation: vi.fn().mockResolvedValue('') },
+            enricherRegistry: {
+                listRunnable: vi.fn().mockResolvedValue([{ id: 'leakcheck', skillInstructions: 'Use for an e-mail address.' }]),
+            },
+            skillRegistry,
+        } as any;
+    }
+
+    it("sends the vault's skills and the enrichers' instructions to the agent", async () => {
+        const plugin = vaultSkillPlugin({
+            listVaultSkills: vi.fn().mockResolvedValue([skill('breach_lookup_triage', 'List breach names and dates only.')]),
+        });
+        const result = await new OrchestrationService(plugin).processRequest(
+            'Check alex@northgate.example', '', { entities: [] }, [], vi.fn(), {},
+        );
+        expect(result.finalResponse).toContain('Done.');
+        const userPrompt = plugin.graphApiService.callLocalProviderModel.mock.calls[0][1][1].content as string;
+        expect(userPrompt).toContain('List breach names and dates only.');
+        expect(userPrompt).toContain('(breach_lookup_triage)');
+        expect(userPrompt).toContain('- leakcheck: Use for an e-mail address.');
+    });
+
+    it('completes the turn when the skill registry fails or is missing', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        for (const registry of [{ listVaultSkills: vi.fn().mockRejectedValue(new Error('EACCES')) }, undefined]) {
+            const plugin = vaultSkillPlugin(registry);
+            const result = await new OrchestrationService(plugin).processRequest(
+                'Hello', '', { entities: [] }, [], vi.fn(), {},
+            );
+            expect(result.finalResponse).toContain('Done.');
+            const userPrompt = plugin.graphApiService.callLocalProviderModel.mock.calls[0][1][1].content as string;
+            expect(userPrompt).not.toContain('VAULT SKILLS');
+        }
+        expect(warn).toHaveBeenCalledWith('[OrchestrationService] skill registry:', expect.any(Error));
+        warn.mockRestore();
+    });
+
     it('keeps URLs in attachment context from triggering URL extraction', async () => {
         const turnJson = JSON.stringify({
             version: AGENT_TURN_SCHEMA_VERSION,

@@ -39,7 +39,13 @@ export async function applyVaultFilesV1(
 			result.errors.push("Skipping entry: missing path");
 			continue;
 		}
-		const rel = normalizePath(file.path.replace(/\\/g, "/"));
+		let rel = normalizePath(file.path.replace(/\\/g, "/"));
+		// A bare filename can only mean the agent's own folder. The stock memo writer and
+		// report drafter used to ask for exactly that, and bootstrap never rewrites a file
+		// a vault already has. A path with folders is left alone, never prefixed twice.
+		if (!rel.includes("/") && agentOutputRoots.length > 0) {
+			rel = normalizePath(`${agentOutputRoots[0]}/${rel}`);
+		}
 		if (!isPathAllowedForWrite(rel, agentOutputRoots, globalAllowlistRoots)) {
 			result.errors.push(`Not allowed: ${rel}`);
 			continue;

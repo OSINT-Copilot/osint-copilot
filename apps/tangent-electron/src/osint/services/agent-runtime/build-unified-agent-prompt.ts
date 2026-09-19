@@ -1,4 +1,5 @@
 import { AGENT_TURN_SCHEMA_VERSION, type AgentTurnContext } from './provider-types';
+import type { VaultSkillManifest } from '../../skills/skill-types';
 
 const JSON_CONTRACT = `You MUST respond with a single JSON object ONLY (no markdown fences, no prose outside JSON) matching this schema:
 {
@@ -7,7 +8,7 @@ const JSON_CONTRACT = `You MUST respond with a single JSON object ONLY (no markd
   "retrieval_hits": [ { "path": "vault-relative/path.md", "snippet": "optional short excerpt" } ],
   "graph_operations": [ { "action": "create", "entities": [...], "connections": [...], "updates": [ { "type": "Person", "current_label": "Alice", "new_properties": { "notes": "..." } } ] } ],
   "custom_vault_operations": [
-    { "action": "upsert_skill", "id": "skill_id", "name": "Title", "description": "Planner description", "body": "Markdown body instructions for the skill" },
+    { "action": "upsert_skill", "id": "skill_id", "name": "Title", "description": "Which requests the skill is for", "body": "Markdown: the steps to follow for such a request" },
     { "action": "delete_skill", "id": "skill_id" },
     { "action": "put_credentials", "relativePath": "vendor/api-key.txt", "content": "secret material" },
     { "action": "delete_credentials", "relativePath": "vendor/api-key.txt" },
@@ -35,8 +36,8 @@ Rules for custom_vault_operations:
 - Use an empty array when no vault file changes are requested.
 - NEVER put secrets, API keys, or tokens in answer_markdown or retrieval_hits; use put_credentials for raw secrets and bearer_vault / header_vault / query_vault with vaultRelativePath inside upsert_enricher.spec (never embed raw keys in spec JSON).
 - relativePath must be a relative path with forward slashes only (no ".." segments); files are created under the vault credentials folder.
-- upsert_skill writes a planner-invokable markdown skill under the vault skills folder (skill_kind vault, YAML frontmatter).
-- upsert_enricher writes one validated *.json file under the vault enrichers folder (same slug as id). Pair with upsert_skill when adding a new API tool so enricher_invocations can resolve after the user applies changes. Invalid specs are dropped server-side — follow the enricher schema: status "active" and enabled true if the user should run it immediately via enricher_invocations; allowedDomains must include every API hostname used in request.urlTemplate (not only a documentation site); urlTemplate and bodyTemplate use Mustache-style placeholders {{query}} and {{attachments_context}}: the executor applies URL encoding (encodeURIComponent) to those values in urlTemplate only; bodyTemplate receives raw strings for JSON. HTTP runs in the app's main process (no browser tab, no user browser cookies); do not design specs that only work behind a logged-in browser session unless the API supports token/header auth you put in vault credentials.
+- upsert_skill writes a markdown skill under the vault skills folder (skill_kind vault, YAML frontmatter). Every later chat turn lists the vault skills under VAULT SKILLS, and a skill is followed when a request matches its description: write the description as the kind of request it is for, and the body as the steps to follow.
+- upsert_enricher writes one validated *.json file under the vault enrichers folder (same slug as id). enricher_invocations resolve from that JSON alone; say when to call the enricher in spec.skillInstructions, which is listed next to its id under REGISTERED HTTP ENRICHERS. Invalid specs are dropped server-side — follow the enricher schema: status "active" and enabled true if the user should run it immediately via enricher_invocations; allowedDomains must include every API hostname used in request.urlTemplate (not only a documentation site); urlTemplate and bodyTemplate use Mustache-style placeholders {{query}} and {{attachments_context}}: the executor applies URL encoding (encodeURIComponent) to those values in urlTemplate only; bodyTemplate receives raw strings for JSON. HTTP runs in the app's main process (no browser tab, no user browser cookies); do not design specs that only work behind a logged-in browser session unless the API supports token/header auth you put in vault credentials.
 - When fixing or replacing an enricher, every upsert_enricher object MUST include the complete spec in the "spec" field (all fields needed for a working file). Do not describe the new JSON only in answer_markdown — the chat approval UI and Apply step use custom_vault_operations[].spec.
 - delete_enricher removes enrichers/{id}.json when the user asks to remove an enricher spec.
 - upsert_script / delete_script target **text scripts** under the vault **scripts** folder (Settings → Scripts folder; default OSINTCopilot/custom/scripts). relativePath is only the path **inside** that folder: forward slashes, no ".." segments, and the filename must use an allowed text extension (e.g. py, sh, ts, md, json — not binary types).
@@ -59,7 +60,60 @@ Important:
 - Cite vault paths inline where useful.
 - Do not fabricate retrieval_hits; only list sources you actually used.
 - Proposed vault file edits (including scripts) require user confirmation in the UI before anything is written.
+- VAULT SKILLS in the user prompt are procedures the user wrote. When the request matches a skill's description, follow that skill as you would the vault rules; ignore the skills that do not match.
 - Do not claim curl/Bash was "blocked at the permission gate" unless you are certain shell was invoked; for HTTP APIs use enricher_invocations with ids listed under REGISTERED HTTP ENRICHERS in the user prompt (never instruct raw curl when enrichers apply).`;
+}
+
+/** The whole VAULT SKILLS section, heading included, stays within this. */
+export const VAULT_SKILLS_MAX_TOTAL_CHARS = 24_000;
+/** A longer skill body is cut here, with a pointer to its file. */
+export const VAULT_SKILL_MAX_BODY_CHARS = 6_000;
+/** One enricher's skillInstructions, flattened to a line, is cut here. */
+const ENRICHER_INSTRUCTIONS_MAX_CHARS = 1_000;
+
+const VAULT_SKILLS_HEADING =
+    '=== VAULT SKILLS (user-authored procedures; follow a skill when the request matches its description) ===';
+
+/**
+ * The user's vault skills as one prompt section, or '' when there are none.
+ *
+ * Sent inline with every turn, because not every runtime can read the vault itself.
+ * Each skill is shown whole while the budget lasts; one that does not fit keeps its
+ * heading and path, so the agent still knows it exists, and past even that the section
+ * ends with a count.
+ */
+export function formatVaultSkillsSection(skills: readonly VaultSkillManifest[]): string {
+    if (skills.length === 0) return '';
+    const intro = [
+        VAULT_SKILLS_HEADING,
+        'A skill is not a tool: there is nothing to call. Follow the one whose description matches the request, in this turn; ignore the others.',
+    ].join('\n');
+    // Room for the closing count, so the section never runs past the cap.
+    const budget = VAULT_SKILLS_MAX_TOTAL_CHARS - 100;
+    const blocks: string[] = [intro];
+    let used = intro.length;
+    let unlisted = 0;
+    for (const skill of skills) {
+        const description = skill.description ? ` — ${skill.description}` : '';
+        const heading = `--- ${skill.name} (${skill.id})${description} [${skill.sourcePath}]`;
+        let body = skill.body.trim();
+        if (body.length > VAULT_SKILL_MAX_BODY_CHARS) {
+            body = `${body.slice(0, VAULT_SKILL_MAX_BODY_CHARS)}\n… (cut; the rest is in ${skill.sourcePath})`;
+        }
+        const whole = body ? `${heading}\n${body}` : heading;
+        const omitted = `${heading}\n(Body omitted to keep this prompt small; it is in ${skill.sourcePath}.)`;
+        const block = used + 2 + whole.length <= budget
+            ? whole
+            : used + 2 + omitted.length <= budget ? omitted : null;
+        if (block === null) {
+            unlisted++;
+            continue;
+        }
+        blocks.push(block);
+        used += 2 + block.length;
+    }
+    if (unlisted > 0) blocks.push(`(${unlisted} more skill(s) not listed here.)`);
+    return blocks.join('\n\n');
 }
 
 export function buildUnifiedAgentUserPrompt(ctx: AgentTurnContext): string {
@@ -84,6 +138,10 @@ export function buildUnifiedAgentUserPrompt(ctx: AgentTurnContext): string {
     if (ctx.vaultAugmentation?.trim()) {
         parts.push('', '=== VAULT RULES / AGENT AUGMENTATION (user-editable) ===', ctx.vaultAugmentation.trim());
     }
+    const skillsSection = formatVaultSkillsSection(ctx.vaultSkills ?? []);
+    if (skillsSection) {
+        parts.push('', skillsSection);
+    }
     parts.push(
         '',
         '=== VAULT DEBUG LOGS (optional) ===',
@@ -97,6 +155,19 @@ export function buildUnifiedAgentUserPrompt(ctx: AgentTurnContext): string {
             '=== REGISTERED HTTP ENRICHERS (vault JSON — prefer enricher_invocations; the app runs these from its main process, without Bash/curl) ===',
             `Active enricher ids (use enricher_id exactly): ${ids.join(', ')}`,
         );
+        const instructions = ids
+            .map((id) => {
+                const text = ctx.enricherInstructions?.[id]?.replace(/\s+/g, ' ').trim();
+                if (!text) return null;
+                const clipped = text.length > ENRICHER_INSTRUCTIONS_MAX_CHARS
+                    ? `${text.slice(0, ENRICHER_INSTRUCTIONS_MAX_CHARS)}…`
+                    : text;
+                return `- ${id}: ${clipped}`;
+            })
+            .filter((line): line is string => line !== null);
+        if (instructions.length > 0) {
+            parts.push('When to use each (from its spec\'s skillInstructions):', ...instructions);
+        }
     } else {
         parts.push(
             '',

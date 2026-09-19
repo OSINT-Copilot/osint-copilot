@@ -1,6 +1,7 @@
 import type { AIOperation } from '../../entities/types';
 import type { CustomVaultOperation } from '../custom-vault-operations';
 import type { ExtractionLogOptions } from '../claude-code-service';
+import type { VaultSkillManifest } from '../../skills/skill-types';
 
 export const AGENT_TURN_SCHEMA_VERSION = 'osint_copilot_agent_turn_v1' as const;
 
@@ -43,7 +44,11 @@ export interface AgentTurnContext {
     vaultAugmentation?: string;
     /** Active enricher spec ids from vault JSON at prompt build time. */
     availableEnricherIds?: string[];
+    /** Each active enricher's spec skillInstructions, by id; enrichers without any are absent. */
+    enricherInstructions?: Record<string, string>;
     enrichersFolderDisplay?: string;
+    /** The user's vault skills, sent with every turn (see formatVaultSkillsSection). */
+    vaultSkills?: VaultSkillManifest[];
 }
 
 export interface AgentProvider {

@@ -40,6 +40,24 @@ export function isPathAllowedForWrite(
 	return underAgent && underGlobal;
 }
 
+/**
+ * The folders a task agent can actually write to: where one of its output roots and one
+ * of the global allowlist roots overlap, the deeper of the two. Empty when none overlap.
+ */
+export function effectiveOutputRoots(agentOutputRoots: string[], globalAllowlistRoots: string[]): string[] {
+	const within = (path: string, root: string) => path === root || path.startsWith(`${root}/`);
+	const agent = agentOutputRoots.map((r) => normalizeVaultPath(r)).filter(Boolean);
+	const global = globalAllowlistRoots.map((r) => normalizeVaultPath(r)).filter(Boolean);
+	const out: string[] = [];
+	for (const a of agent) {
+		for (const g of global) {
+			const root = within(a, g) ? a : within(g, a) ? g : null;
+			if (root && !out.includes(root)) out.push(root);
+		}
+	}
+	return out;
+}
+
 export function normalizeRootList(raw: string): string[] {
 	return raw
 		.split(/[,\n]/)

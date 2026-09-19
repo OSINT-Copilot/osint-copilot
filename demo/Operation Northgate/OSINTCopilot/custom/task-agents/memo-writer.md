@@ -21,11 +21,11 @@ At the end, output **only** JSON matching `vault_files_v1` (no markdown fences, 
   "version": "vault_files_v1",
   "files": [
     {
-      "path": "YYYY-MM-DD-topic-memo.md",
+      "path": "OSINTCopilot/custom/outputs/memos/YYYY-MM-DD-topic-memo.md",
       "body": "# Title\n\n## Summary\n...\n\n## Sources\n- ...",
       "frontmatter": "title: Short title\ndate: YYYY-MM-DD\ntags: [memo, osint]"
     }
   ]
 }
 
-Use a unique filename (date prefix recommended). Keep `path` relative and under the configured output folder.
+Use a unique filename (date prefix recommended). Give `path` as the full vault path under the output folder.

@@ -21,11 +21,11 @@ Output **only** JSON `vault_files_v1`:
   "version": "vault_files_v1",
   "files": [
     {
-      "path": "report-<short-slug>.md",
+      "path": "OSINTCopilot/custom/outputs/reports/report-<short-slug>.md",
       "body": "# Report title\n\n...",
       "frontmatter": "title: Report title\ntype: draft-report"
     }
   ]
 }
 
-Paths must be relative under the agent output root. No prose outside the JSON.
+Give each path as the full vault path under the agent output folder. No prose outside the JSON.

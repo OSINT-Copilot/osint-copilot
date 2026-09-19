@@ -43,14 +43,14 @@ The model must output **only** valid JSON:
 {
   "version": "vault_files_v1",
   "files": [
-    { "path": "relative/note.md", "body": "markdown body" }
+    { "path": "OSINTCopilot/custom/outputs/memos/note.md", "body": "markdown body" }
   ]
 }
 \`\`\`
 
 Optional per file: \`frontmatter\` as a string (YAML block) or omit for body-only notes.
 
-Paths must stay under **both** the agent’s \`output_roots\` **and** the global allowlist in **Settings → OSINT Copilot → Task agents**.
+Paths are full vault paths, and must stay under **both** the agent’s \`output_roots\` **and** the global allowlist in **Settings → OSINT Copilot → Task agents**. A bare filename is written into the agent’s first \`output_roots\` folder.
 
 ## Settings
 
@@ -82,14 +82,14 @@ At the end, output **only** JSON matching \`vault_files_v1\` (no markdown fences
   "version": "vault_files_v1",
   "files": [
     {
-      "path": "YYYY-MM-DD-topic-memo.md",
+      "path": "OSINTCopilot/custom/outputs/memos/YYYY-MM-DD-topic-memo.md",
       "body": "# Title\\n\\n## Summary\\n...\\n\\n## Sources\\n- ...",
       "frontmatter": "title: Short title\\ndate: YYYY-MM-DD\\ntags: [memo, osint]"
     }
   ]
 }
 
-Use a unique filename (date prefix recommended). Keep \`path\` relative and under the configured output folder.
+Use a unique filename (date prefix recommended). Give \`path\` as the full vault path under the output folder.
 `,
 	},
 	{
@@ -117,14 +117,14 @@ Output **only** JSON \`vault_files_v1\`:
   "version": "vault_files_v1",
   "files": [
     {
-      "path": "report-<short-slug>.md",
+      "path": "OSINTCopilot/custom/outputs/reports/report-<short-slug>.md",
       "body": "# Report title\\n\\n...",
       "frontmatter": "title: Report title\\ntype: draft-report"
     }
   ]
 }
 
-Paths must be relative under the agent output root. No prose outside the JSON.
+Give each path as the full vault path under the agent output folder. No prose outside the JSON.
 `,
 	},
 ];

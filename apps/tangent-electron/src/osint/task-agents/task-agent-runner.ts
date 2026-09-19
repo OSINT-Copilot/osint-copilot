@@ -3,7 +3,7 @@ import type { LocalCliService } from "../services/claude-code-service";
 import type { VaultPromptLoader } from "../services/vault-prompt-loader";
 import { assembleTaskAgentContext } from "./context-assembler";
 import type { IndexedNoteLike } from "./context-assembler";
-import { normalizeRootList } from "./path-allowlist";
+import { effectiveOutputRoots, normalizeRootList } from "./path-allowlist";
 import type { TaskAgentManifest } from "./types";
 import { parseVaultFilesJson } from "./json-response";
 import { applyVaultFilesV1, formatApplyNotice } from "./write-applier";
@@ -49,6 +49,16 @@ export class TaskAgentRunner {
 				appliedPaths: [],
 			};
 		}
+		// The model is told these, since it cannot see the manifest's frontmatter or the
+		// settings; without them it guessed, and a bare filename matches neither list.
+		const outputFolders = effectiveOutputRoots(manifest.outputRoots, globalRoots);
+		if (outputFolders.length === 0) {
+			return {
+				assistantText:
+					`Task agent **${manifest.name}** has nowhere to write: none of its output_roots (${manifest.outputRoots.join(", ")}) is inside the **global output allowlist** in Settings (Task agents).`,
+				appliedPaths: [],
+			};
+		}
 
 		const wiki = await assembleTaskAgentContext(
 			this.app,
@@ -64,11 +74,12 @@ export class TaskAgentRunner {
 {
   "version": "vault_files_v1",
   "files": [
-    { "path": "relative/path/from/vault/root.md", "body": "markdown content", "frontmatter": "optional yaml lines" }
+    { "path": "${outputFolders[0]}/note-name.md", "body": "markdown content", "frontmatter": "optional yaml lines" }
   ]
 }
 
-Paths must be vault-relative, use forward slashes, and stay within the agent output_roots AND the user's global allowlist.`;
+Paths must be vault-relative, use forward slashes, and stay within the agent output_roots AND the user's global allowlist.
+ALLOWED OUTPUT FOLDERS — use the full vault path, e.g. ${outputFolders[0]}/<name>.md: ${outputFolders.join(", ")}`;
 
 		const parts: string[] = [];
 		if (globalRules) parts.push("=== GLOBAL RULES (vault) ===\n" + globalRules);

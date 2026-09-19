@@ -1,16 +1,19 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { ToolsSkillsRegistryView, submitOnEnter } from '../views/tools-skills-registry-view';
+import { ToolsSkillsRegistryView } from '../views/tools-skills-registry-view';
+import { submitOnEnter } from '../utils/submit-on-enter';
+import { SkillRegistry } from '../skills/skill-registry';
+import { createTestAppAsync, type TestApp } from '../obsidian-shim/testing/create-test-app';
 
 vi.mock('obsidian', async (importOriginal) => {
     const mock = await importOriginal<Record<string, unknown>>();
     return { ...mock, Notice: vi.fn() };
 });
 
-function makeView() {
+function makeView(app: TestApp | { vault: { on: () => { detach(): void } } } = { vault: { on: () => ({ detach() {} }) } }) {
     const host = {
-        app: {} as any,
-        skillRegistry: { invalidate: vi.fn(), listVaultSkills: vi.fn(async () => []) },
-        enricherRegistry: { invalidate: vi.fn(), listAll: vi.fn(async () => []) },
+        app: app as any,
+        skillRegistry: { invalidate: vi.fn(), listVaultSkills: vi.fn(async (): Promise<unknown[]> => []) },
+        enricherRegistry: { invalidate: vi.fn(), listAll: vi.fn(async (): Promise<unknown[]> => []) },
         settings: { skillsFolder: '', enrichersFolder: '' },
     };
     const view = new ToolsSkillsRegistryView({} as any, host as any);
@@ -18,6 +21,10 @@ function makeView() {
     containerEl.createDiv({ cls: 'view-header' });
     containerEl.createDiv({ cls: 'view-content' });
     (view as any).containerEl = containerEl;
+    // What the shim's ItemView provides and the mock's lacks. Listeners stay attached
+    // to the vault; registerEvent only records them for unload.
+    (view as any).app = app;
+    (view as any).registerEvent = vi.fn();
     document.body.appendChild(containerEl);
     return { view, host, root: containerEl.children[1] as HTMLElement };
 }
@@ -25,6 +32,7 @@ function makeView() {
 const columns = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLElement>('.osint-copilot-registry-column'));
 
 afterEach(() => {
+    vi.useRealTimers();
     document.body.innerHTML = '';
 });
 
@@ -68,6 +76,105 @@ describe('ToolsSkillsRegistryView reload', () => {
         await new Promise((r) => setTimeout(r, 0));
         expect(refresh.disabled).toBe(false);
         expect(refresh.textContent).toBe('Refresh');
+    });
+});
+
+describe('ToolsSkillsRegistryView follows the vault', () => {
+    const SKILL = (id: string) => `---\nskill_kind: vault\nid: ${id}\nname: ${id}\ndescription: d\n---\n\nSteps.\n`;
+
+    async function openOnVault() {
+        const app = await createTestAppAsync({
+            files: { 'OSINTCopilot/custom/skills/old.md': SKILL('old_skill') },
+        });
+        const made = makeView(app);
+        await made.view.onOpen();
+        made.host.skillRegistry.listVaultSkills.mockClear();
+        made.host.enricherRegistry.listAll.mockClear();
+        return { app, ...made };
+    }
+
+    it('reloads once, 400 ms after a burst of skill and enricher writes', async () => {
+        const { app, host } = await openOnVault();
+        vi.useFakeTimers();
+        await app.vault.create('OSINTCopilot/custom/skills/new.md', SKILL('new_skill'));
+        await app.vault.create('OSINTCopilot/custom/enrichers/leakcheck.json', '{"id":"leakcheck"}');
+        await vi.advanceTimersByTimeAsync(399);
+        expect(host.skillRegistry.listVaultSkills).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(host.skillRegistry.listVaultSkills).toHaveBeenCalledTimes(1);
+        expect(host.enricherRegistry.listAll).toHaveBeenCalledTimes(1);
+    });
+
+    it('reloads after a skill is renamed out of the folder or deleted', async () => {
+        const { app, host } = await openOnVault();
+        vi.useFakeTimers();
+        const file = app.vault.getAbstractFileByPath('OSINTCopilot/custom/skills/old.md')!;
+        await app.vault.rename(file, 'Archive/old.md');
+        await vi.advanceTimersByTimeAsync(400);
+        expect(host.skillRegistry.listVaultSkills).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores writes outside both folders, and the enrichers audit log', async () => {
+        const { app, host } = await openOnVault();
+        vi.useFakeTimers();
+        await app.vault.create('Notes/other.md', 'x');
+        await app.vault.create('OSINTCopilot/custom/skills/notes.txt', 'x');
+        await app.vault.create('OSINTCopilot/custom/enrichers/audit.log.md', '# Enricher audit log');
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(host.skillRegistry.listVaultSkills).not.toHaveBeenCalled();
+
+        await app.vault.modify(app.vault.getAbstractFileByPath('OSINTCopilot/custom/skills/old.md') as any, SKILL('renamed_id'));
+        await vi.advanceTimersByTimeAsync(400);
+        expect(host.skillRegistry.listVaultSkills).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops reloading once closed', async () => {
+        const { app, host, view } = await openOnVault();
+        vi.useFakeTimers();
+        await app.vault.create('OSINTCopilot/custom/skills/a.md', SKILL('a'));
+        await vi.advanceTimersByTimeAsync(400);
+        expect(host.skillRegistry.listVaultSkills).toHaveBeenCalledTimes(1);
+
+        // A write whose reload is still pending when the view closes.
+        await app.vault.create('OSINTCopilot/custom/skills/b.md', SKILL('b'));
+        await view.onClose();
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(host.skillRegistry.listVaultSkills).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows a skill added while it is open, read by the real registry', async () => {
+        const app = await createTestAppAsync({
+            files: { 'OSINTCopilot/custom/skills/old.md': SKILL('old_skill') },
+        });
+        const { view, host, root } = makeView(app);
+        const registry = new SkillRegistry(app as any, () => '');
+        (host as any).skillRegistry = registry;
+        await view.onOpen();
+        expect(columns(root)[0].textContent).toContain('old_skill');
+
+        vi.useFakeTimers();
+        await app.vault.create('OSINTCopilot/custom/skills/new.md', SKILL('breach_lookup_triage'));
+        await vi.advanceTimersByTimeAsync(400);
+        vi.useRealTimers();
+        await vi.waitFor(() => expect(columns(root)[0].textContent).toContain('breach_lookup_triage'));
+    });
+
+    it('runs once more after a reload that was asked for while one ran', async () => {
+        const { view, host } = makeView();
+        await view.onOpen();
+        host.skillRegistry.listVaultSkills.mockClear();
+
+        let release!: (v: unknown[]) => void;
+        host.skillRegistry.listVaultSkills.mockReturnValueOnce(new Promise<unknown[]>((r) => { release = r; }));
+        const first = (view as any).reload();
+        // Two more asks while it runs: they coalesce into one more run, not two.
+        (view as any).reload();
+        (view as any).reload();
+        release([]);
+        await first;
+        await vi.waitFor(() => expect(host.skillRegistry.listVaultSkills).toHaveBeenCalledTimes(2));
+        await new Promise((r) => setTimeout(r, 10));
+        expect(host.skillRegistry.listVaultSkills).toHaveBeenCalledTimes(2);
     });
 });
 

@@ -288,7 +288,7 @@ export class VaultAISettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Skills folder")
 			.setDesc(
-				"Markdown skill files for vault-defined workflows; the unified agent can propose creating or updating them via custom_vault_operations (same flow can propose enricher *.json under the enrichers folder; enricher HTTP tools use companion skills here).",
+				"Markdown skills, sent to the chat agent with every request; it follows a skill when the request matches its description. The agent can propose creating or updating them via custom_vault_operations (the same flow can propose enricher *.json under the enrichers folder).",
 			)
 			.addText((text) =>
 				text
@@ -677,7 +677,7 @@ export class VaultAISettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName("Local AI CLI").setHeading();
 
 		containerEl.createEl("p", {
-			text: "Select the CLI used for bulk entity extraction, image analysis, vault skills, and task agents. Choosing Claude or Codex as the chat runtime also selects it here; Hermes/custom chat leaves this choice unchanged.",
+			text: "Select the CLI used for bulk entity extraction, image analysis, and task agents. Choosing Claude or Codex as the chat runtime also selects it here; Hermes/custom chat leaves this choice unchanged.",
 			cls: "setting-item-description",
 		});
 

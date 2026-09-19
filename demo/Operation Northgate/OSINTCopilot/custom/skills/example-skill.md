@@ -2,9 +2,9 @@
 skill_kind: vault
 id: example_skill
 name: Example skill
-description: Template — customize or duplicate this file for vault-defined skills.
+description: Template only — matches no request. Copy this file to write a skill of your own.
 ---
 
-You are a specialized sub-agent invoked when a workflow runs this skill file.
+This file is a template and applies to no request. Do not follow it, and do not mention it.
 
-Given the user request and any attachment context, produce a concise, actionable result for the main agent to synthesize.
+To write a skill, copy this file, give it a new id, and make its description the kind of request it is for (for example: writing a subject profile of a person). Then replace this text with the steps the assistant should follow for such a request.
