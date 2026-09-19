@@ -381,7 +381,7 @@ describe('EntityManager osint_sources provenance and Wayback opt-out', () => {
         wayback = new WaybackArchiveService(app as never);
         lookedUp = [];
         // No network: record which URLs would have been sent to the Internet Archive.
-        vi.spyOn(wayback as never, 'resolveClosestSnapshot').mockImplementation((async (url: string) => {
+        vi.spyOn(wayback as any, 'resolveClosestSnapshot').mockImplementation((async (url: string) => {
             lookedUp.push(url);
             return null;
         }) as never);

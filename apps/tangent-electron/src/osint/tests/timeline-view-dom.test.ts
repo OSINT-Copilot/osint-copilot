@@ -19,7 +19,7 @@ function event(id: string, start_date: string) {
 function makeView(entities: unknown[] = []) {
     const entityManager = {
         getBasePath: () => 'Entities',
-        loadEntitiesFromNotes: vi.fn(async () => undefined),
+        loadEntitiesFromNotes: vi.fn(async (): Promise<void> => undefined),
         getAllEntities: vi.fn(() => entities),
         getEntity: vi.fn(),
         updateEntity: vi.fn(async () => null),

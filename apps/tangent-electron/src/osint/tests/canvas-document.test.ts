@@ -120,7 +120,7 @@ describe('CanvasDocumentStore mutations', () => {
     afterEach(() => { vi.useRealTimers(); });
 
     it('centres a card on the point it was dropped at', () => {
-        const node = store.addNodeAt('text', { x: 100, y: 100 }, { width: 400, height: 200 });
+        const node = store.addNodeAt('text', { x: 100, y: 100 }, { width: 400, height: 200 })!;
         expect(node.x).toBe(-100);
         expect(node.y).toBe(0);
     });
@@ -265,7 +265,9 @@ describe('CanvasDocumentStore saving', () => {
 
     it('does not persist an older board when two writes overlap', async () => {
         // Writes are async; unserialized, they can land out of order.
-        let release: (() => void) | null = null;
+        // Asserted, not annotated: TypeScript does not see the closure assign it, and
+        // would treat it as always null below.
+        let release = null as (() => void) | null;
         const order: string[] = [];
         const files: CanvasFileStore = {
             async read() { return null; },

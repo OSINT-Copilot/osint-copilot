@@ -21,6 +21,7 @@
 		"../main/osint/**/*.ts"
 	],
 	"exclude": [
+		// Checked by tests/tsconfig.json and tests/tsconfig.tangent.json.
 		"../osint/tests",
 		"../main/osint/index.ts"
 	]

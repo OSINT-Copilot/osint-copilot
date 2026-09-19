@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { App, TFile } from 'obsidian';
+import { TFile } from 'obsidian';
+import { App } from './obsidian-mock';
 import { EntityManager } from '../services/entity-manager';
 import { EntityType } from '../entities/types';
 

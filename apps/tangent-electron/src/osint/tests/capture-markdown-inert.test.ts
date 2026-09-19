@@ -3,9 +3,10 @@ import { htmlToMarkdown } from '../../main/osint/capture/html-to-markdown-node'
 import { markdownToTextDocument } from '../../common/markdownModel/parser'
 
 // Here rather than beside the converter (html-to-markdown-node.test.ts): Tangent's parser
-// is not written to the strict null checks src/main/osint is typechecked with, and
-// src/osint/tests is outside that check. What is asserted is the converter's text output,
-// which does not depend on which DOM turndown parsed with.
+// is not written to the strict null checks src/main/osint is typechecked with, and the
+// tests here that load it are checked with Tangent's own settings (tsconfig.tangent.json).
+// What is asserted is the converter's text output, which does not depend on which DOM
+// turndown parsed with.
 
 /**
  * The check that matters: what Tangent's own parser makes of the output, as the editor

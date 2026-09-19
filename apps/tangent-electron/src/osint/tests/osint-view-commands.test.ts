@@ -3,18 +3,21 @@ import { OpenOsintViewCommand, NewOsintCanvasCommand } from '../../app/model/com
 import { OSINT_VIEWS } from '../integration/osint-view-types';
 import { publishOsintPluginState } from '../integration/osint-plugin-state';
 
+/** The part of Tangent's current node these commands read. */
+type CurrentNode = { fileType?: string; path?: string } | null;
+
 /** A writable store with the shape Tangent's currentNode exposes: `.value` and `subscribe`. */
-function nodeStore(initial: { fileType?: string } | null) {
+function nodeStore(initial: CurrentNode) {
     const subs = new Set<(v: unknown) => void>();
     const store = {
-        value: initial as { fileType?: string } | null,
+        value: initial,
         subscribe(run: (v: unknown) => void) { subs.add(run); run(store.value); return () => subs.delete(run); },
-        set(next: { fileType?: string } | null) { store.value = next; for (const run of subs) run(next); },
+        set(next: CurrentNode) { store.value = next; for (const run of subs) run(next); },
     };
     return store;
 }
 
-function fakeWorkspace(current: { fileType?: string; path?: string } | null) {
+function fakeWorkspace(current: CurrentNode) {
     const currentNode = nodeStore(current);
     return {
         workspace: { viewState: { tangent: { currentNode } }, directoryStore: { files: { path: '/vault' } } } as never,

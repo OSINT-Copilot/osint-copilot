@@ -1,0 +1,26 @@
+{
+	// The tests, checked like the code they test (../tsconfig.json). `npm run typecheck:osint`
+	// runs it.
+	//
+	// `obsidian` still maps to the shim here, although vitest aliases it to obsidian-mock.ts:
+	// one program cannot map it both ways, and mapping it to the mock would check the
+	// product code against a stub. So a test that relies on the mock's behaviour imports
+	// './obsidian-mock' itself (the same file and module instance at run time) and casts at
+	// the boundary where product code wants the real type.
+	//
+	// This is also the nearest tsconfig.json for every test, which is what Vite's esbuild
+	// reads when it transpiles one. Keep compilerOptions to type-checking options only.
+	"extends": "../tsconfig.json",
+	"include": ["./**/*.ts"],
+	// Replaces the inherited list, which excludes this folder. These tests load Tangent's
+	// own modules, which are written to its looser settings and report hundreds of errors
+	// under strict null checks; tsconfig.tangent.json checks them against those settings.
+	"exclude": [
+		"./capture-markdown-inert.test.ts",
+		"./capture-placement-inert.test.ts",
+		"./inbox-service.test.ts",
+		"./link-preview-privacy.test.ts",
+		"./osint-view-commands.test.ts",
+		"./osint-view-types.test.ts"
+	]
+}

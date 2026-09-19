@@ -43,7 +43,7 @@ function button(root: HTMLElement, text: string): HTMLButtonElement {
 }
 
 function openModal(existing?: Record<string, unknown>) {
-    const service = { addCustomType: vi.fn(async () => {}) };
+    const service = { addCustomType: vi.fn(async (_type: unknown) => {}) };
     const modal = new CustomTypeCreationModal({} as never, service as never, existing as never);
     modal.open();
     return { modal, service, root: modal.contentEl };

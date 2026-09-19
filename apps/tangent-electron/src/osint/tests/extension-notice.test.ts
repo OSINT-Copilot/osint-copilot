@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { App } from 'obsidian';
+import { App } from './obsidian-mock';
 import { CountingNotice } from '../inbox/extension-notice';
 import VaultAIPlugin from '../plugin/vault-ai-plugin';
 
@@ -12,7 +12,7 @@ vi.mock('obsidian', async (importOriginal) => {
 });
 
 const message = (n: number) => `${n} ${n === 1 ? 'item' : 'items'} added from the browser extension. Click to review.`;
-const shown = () => [...document.querySelectorAll('.notice')].map((n) => n.textContent);
+const shown = () => Array.from(document.querySelectorAll('.notice')).map((n) => n.textContent);
 const click = () => (document.querySelector('.notice') as HTMLElement).click();
 
 beforeEach(() => {

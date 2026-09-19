@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { App } from 'obsidian';
+import { App } from './obsidian-mock';
 import VaultAIPlugin from '../plugin/vault-ai-plugin';
 import { createTestAppAsync, type TestApp } from '../obsidian-shim/testing/create-test-app';
 import { GRAPH_NODE_POSITIONS_FILE } from '../constants/vault-layout';

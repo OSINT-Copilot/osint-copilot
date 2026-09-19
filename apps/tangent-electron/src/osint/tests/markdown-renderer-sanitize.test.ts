@@ -36,8 +36,8 @@ describe('rendered markdown cannot execute or phone home', () => {
 
     it('creates no element carrying an inline event handler', async () => {
         const el = await renderToElement(HOSTILE)
-        for (const node of el.querySelectorAll('*')) {
-            for (const attr of node.attributes) {
+        for (const node of Array.from(el.querySelectorAll('*'))) {
+            for (const attr of Array.from(node.attributes)) {
                 expect(attr.name.toLowerCase().startsWith('on')).toBe(false)
             }
         }

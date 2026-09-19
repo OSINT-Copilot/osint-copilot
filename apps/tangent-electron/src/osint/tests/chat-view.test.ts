@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import VaultAIPlugin from '../plugin/vault-ai-plugin';
 import { ChatView, CHAT_VIEW_TYPE } from '../views/chat-view';
-import { App, WorkspaceLeaf } from 'obsidian';
+import type { WorkspaceLeaf } from 'obsidian';
+import { App } from './obsidian-mock';
 import {
 	DEFAULT_CREDENTIALS_FOLDER,
 	DEFAULT_PROMPTS_FOLDER,
@@ -19,7 +20,7 @@ describe('ChatView', () => {
     beforeEach(() => {
         // Instantiate mocks
         const app = new App();
-        plugin = new VaultAIPlugin(app, { id: 'test-plugin', name: 'Test Plugin' } as any);
+        plugin = new VaultAIPlugin(app as never, { id: 'test-plugin', name: 'Test Plugin' } as any);
 
         // Mock plugin dependencies
         plugin.settings = {

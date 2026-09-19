@@ -312,18 +312,18 @@ describe('miroImportPrompt', () => {
             items: [{}, {}, {}],
             connectors: [{}],
         },
-    } as never;
+    };
 
     it('links the note without its extension, the way wikilinks are written here', async () => {
         const { miroImportPrompt } = await import('../services/miro-import-service');
-        const prompt = miroImportPrompt(outcome);
+        const prompt = miroImportPrompt(outcome as never);
         expect(prompt).toContain('[[OSINTCopilot/MiroBoards/Case 7 (uXjVabc)]]');
         expect(prompt).not.toContain('.md]]');
     });
 
     it('names the board and says what was imported', async () => {
         const { miroImportPrompt } = await import('../services/miro-import-service');
-        const prompt = miroImportPrompt(outcome);
+        const prompt = miroImportPrompt(outcome as never);
         expect(prompt).toContain('"Case 7"');
         expect(prompt).toContain('3 items, 1 connectors');
     });

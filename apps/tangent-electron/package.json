@@ -14,7 +14,7 @@
     "start": "node scripts/launch.mjs",
     "app": "npm run build && npm run start",
     "build": "node build/index.js",
-    "typecheck:osint": "tsc --noEmit -p src/osint/tsconfig.json",
+    "typecheck:osint": "tsc --noEmit -p src/osint/tsconfig.json && tsc --noEmit -p src/osint/tests/tsconfig.json && tsc --noEmit -p src/osint/tests/tsconfig.tangent.json",
     "build:dev": "NODE_ENV=development NO_WATCH=true npm run build",
     "clean": "rm -rf dist ; rm -rf __build",
     "clean-build": "npm run clean && npm run build",

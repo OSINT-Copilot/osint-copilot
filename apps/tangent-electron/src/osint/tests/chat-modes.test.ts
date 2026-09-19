@@ -10,7 +10,7 @@ vi.mock('../services/agent-runtime/chat-runtime-availability', () => ({
 
 import VaultAIPlugin from '../plugin/vault-ai-plugin';
 import { ChatView } from '../views/chat-view';
-import { App } from 'obsidian';
+import { App } from './obsidian-mock';
 import {
   DEFAULT_CONVERSATION_FOLDER,
   DEFAULT_CREDENTIALS_FOLDER,
@@ -24,6 +24,7 @@ import {
   DEFAULT_ENABLED_SCHEMA_FAMILIES,
   DEFAULT_OIDSF_MODAL_LAYERS,
 } from '../services/schema-catalog-types';
+import type { VaultAISettings } from '../settings/vault-ai-settings';
 
 /**
  * Send routing: orchestration (handleOrchestrationAgent), or the selected task agent.
@@ -35,8 +36,9 @@ describe('ChatView send routing', () => {
 
   beforeEach(() => {
     app = new App();
-    plugin = new VaultAIPlugin(app, { id: 'test-plugin', name: 'Test Plugin' } as any);
+    plugin = new VaultAIPlugin(app as never, { id: 'test-plugin', name: 'Test Plugin' } as any);
 
+    // Only what these tests need; `satisfies` still catches a renamed or mistyped key.
     plugin.settings = {
       systemPrompt: 'You are a vault assistant.',
       maxNotes: 15,
@@ -79,7 +81,7 @@ describe('ChatView send routing', () => {
       oidsfModalLayers: { ...DEFAULT_OIDSF_MODAL_LAYERS },
       miroAccessToken: '',
       miroLastBoardInput: '',
-    };
+    } satisfies Partial<VaultAISettings> as never;
 
     plugin.conversationService = {
       getMostRecentConversation: vi.fn(),
@@ -144,7 +146,7 @@ describe('ChatView send routing', () => {
       app,
     } as any;
     view = new ChatView(leaf, plugin);
-    view.app = app;
+    view.app = app as never;
 
     view.inputEl = { value: '' } as any;
     view.messagesContainer = {

@@ -31,6 +31,15 @@ export interface CanvasFileStore {
  */
 export const SAVE_DEBOUNCE_MS = 1000;
 
+/**
+ * A node as addNode takes it: the store makes `extra`, and the id when none is given.
+ *
+ * Per node type, not Omit over the union: that keeps only the keys every type shares, so
+ * a text card's `text` or a file card's `file` would not type-check.
+ */
+type NewCanvasNode<N extends CanvasNode = CanvasNode> =
+    N extends CanvasNode ? Omit<N, 'id' | 'extra'> & { id?: string } : never;
+
 let idCounter = 0;
 
 /**
@@ -238,7 +247,7 @@ export class CanvasDocumentStore {
 
     // ------------------------------------------------------------------ mutations
 
-    addNode(node: Omit<CanvasNode, 'id' | 'extra'> & { id?: string }): CanvasNode {
+    addNode(node: NewCanvasNode): CanvasNode {
         const created = { ...node, id: node.id ?? nextId('n'), extra: {} } as CanvasNode;
         this.state.doc.nodes = [...this.state.doc.nodes, created];
         this.touch();
@@ -276,7 +285,7 @@ export class CanvasDocumentStore {
             y: at.y - height / 2,
             width,
             height,
-        } as Omit<CanvasNode, 'id' | 'extra'>);
+        } as NewCanvasNode);
     }
 
     /**

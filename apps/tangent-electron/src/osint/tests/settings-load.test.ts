@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import VaultAIPlugin from '../plugin/vault-ai-plugin';
-import { App } from 'obsidian';
+import { App } from './obsidian-mock';
 
 /** A plugin whose persisted data is whatever the test says, and which writes nowhere. */
 function pluginWithSaved(data: Record<string, unknown>) {
-    const plugin = new VaultAIPlugin(new App(), { id: 'osint-copilot', name: 'x', version: '0' } as never);
+    const plugin = new VaultAIPlugin(new App() as never, { id: 'osint-copilot', name: 'x', version: '0' } as never);
     (plugin as unknown as { loadData: () => Promise<unknown> }).loadData = vi.fn().mockResolvedValue(data);
     (plugin as unknown as { saveData: () => Promise<void> }).saveData = vi.fn().mockResolvedValue(undefined);
     return plugin;

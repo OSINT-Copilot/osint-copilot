@@ -88,7 +88,7 @@ describe('the stored path is rendered as text, never as markup', () => {
             app: app as never, container, folder: FOLDER, onChange: () => {},
         });
 
-        const remove = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Remove');
+        const remove = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Remove');
         expect(remove!.style.display).toBe('none');
         expect(container.textContent).toContain('coloured tile');
     });
@@ -149,7 +149,7 @@ describe('removing a picture', () => {
             folder: FOLDER, onChange: (p) => changes.push(p),
         });
 
-        const remove = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Remove');
+        const remove = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Remove');
         remove!.click();
 
         expect(changes).toEqual(['']);
