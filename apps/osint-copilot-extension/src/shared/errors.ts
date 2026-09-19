@@ -40,6 +40,7 @@ const MESSAGES: Record<string, string> = {
 	highlight_no_access: 'The extension cannot reach this page. Click the toolbar button on the page, or use the Highlight menu item on your selection, then try again.',
 	highlight_no_selection: 'Select some text on the page first.',
 	highlight_too_long: 'That selection is too long to highlight (over 4000 characters). Select less.',
+	highlight_hidden_text: 'The page hides some text inside that selection, so the quote would not be what you see. Nothing was highlighted. Select a passage without hidden text in it (a collapsed section, for example, holds hidden text).',
 	highlight_gone: 'That highlight is no longer stored in this browser.',
 	blob_missing: 'The captured files are no longer stored in the browser (site data may have been cleared). Delete this item and capture the page again.',
 	// Protocol codes (PROTOCOL.md §9).

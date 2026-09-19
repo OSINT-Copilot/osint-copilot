@@ -155,6 +155,41 @@ describe('finding a highlight again', () => {
 		expect(anchor(buildTextModel(document.body), [selectors[0], selectors[1]])!.start).toBe(0);
 	});
 
+	it('does not take a repeated value at the old place when the highlighted one has moved', () => {
+		const table = (rows: string[][]) => `<table>${rows.map(([n, v]) => `<tr><td>${n}</td><td>${v}</td></tr>`).join('')}</table>`;
+		page(table([['Alice', 'Yes'], ['Bob', 'No'], ['Carol', 'Yes']]));
+		const s = describe_('Yes', 1);
+		// A row above, and Bob's answer changed: Bob's "Yes" now sits where Carol's was.
+		page(table([['Dave', 'No'], ['Alice', 'Yes'], ['Bob', 'Yes'], ['Carol', 'Yes']]));
+		const model = buildTextModel(document.body);
+		const a = anchor(model, s)!;
+		expect(model.text.slice(a.start - 5, a.start)).toBe('Carol');
+	});
+
+	it('does not take the right words at the stored position in the wrong sentence', () => {
+		page('<p>Witness: Mary. Suspect: John.</p>');
+		const s = describe_('Mary');
+		page('<p>Suspect: Mary. Witness: Mary.</p>');
+		const model = buildTextModel(document.body);
+		const a = anchor(model, s)!;
+		expect(model.text.slice(a.start - 9, a.start)).toBe('Witness: ');
+	});
+
+	it('never matches a short quote approximately: a vanished name is not found in a similar word', () => {
+		page('<p>Contact Smith at the office.</p>');
+		const s = describe_('Smith');
+		page('<p>Contact us at the office. The smith shop is closed.</p>');
+		expect(anchor(buildTextModel(document.body), s)).toBeNull();
+	});
+
+	it('does not match approximately in an unrelated passage', () => {
+		page('<p>Invoice 4471: payment routed via Brightwater Holdings Ltd in March.</p>');
+		const s = describe_('payment routed via Brightwater Holdings');
+		// Similar words, but nothing around them is the passage that was highlighted.
+		page('<p>Unrelated article. Comment: a payment routed via Brightwater Holding was rumoured, nobody knows.</p>');
+		expect(anchor(buildTextModel(document.body), s)).toBeNull();
+	});
+
 	it('uses the element path when the page has only changed elsewhere', () => {
 		page('<p>aaa</p><p>target text here</p>');
 		const s = describe_('target text');

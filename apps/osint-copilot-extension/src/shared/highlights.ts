@@ -48,7 +48,8 @@ export type ContentCommand =
 
 export type DescribeReply =
 	| { ok: true; selectors: HighlightSelectors; exact: string }
-	| { ok: false; reason: 'no-selection' | 'empty' | 'too-long' | 'not-in-page' };
+	/** hidden-text: the page hides text inside the selection, so the quote is not what was seen. */
+	| { ok: false; reason: 'no-selection' | 'empty' | 'too-long' | 'not-in-page' | 'hidden-text' };
 
 /** The painter's names are random and of exactly this shape; anything else is not styled. */
 export const HIGHLIGHT_NAME = /^oc-[a-z0-9]{12}$/;

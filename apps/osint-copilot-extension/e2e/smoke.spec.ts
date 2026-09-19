@@ -70,7 +70,8 @@ function startWebsite(): Promise<{ url: string; origin: string; close(): Promise
 	const server = http.createServer((req, res) => {
 		res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
 		if (req.url === '/story') {
-			res.end(`<!doctype html><title>Story</title><h1>Story</h1><p>Intro paragraph.</p><p>${story}</p>`);
+			res.end(`<!doctype html><title>Story</title><h1>Story</h1><p>Intro paragraph.</p><p>${story}</p>`
+				+ '<p id="hidden">Alice paid <span style="display:none">no money to </span>Bob in cash.</p>');
 			return;
 		}
 		res.end(req.url === '/article' ? ARTICLE : '<!doctype html><title>Profile of alice</title><p>Contact: alice@example.com</p>');
@@ -296,6 +297,16 @@ async function selectText(page: Page, phrase: string): Promise<void> {
 	}, phrase);
 }
 
+/** Selects the whole of an element's contents. */
+async function selectElement(page: Page, selector: string): Promise<void> {
+	await page.evaluate((sel) => {
+		const range = document.createRange();
+		range.selectNodeContents(document.querySelector(sel)!);
+		window.getSelection()!.removeAllRanges();
+		window.getSelection()!.addRange(range);
+	}, selector);
+}
+
 /** What the page's highlight registry holds: the page's own scripts can see it too. */
 function painted(page: Page): Promise<string[]> {
 	return page.evaluate(() => {
@@ -352,6 +363,15 @@ test('highlights a selection, files it, paints it again on a revisit, and lists 
 		await expect.poll(() => painted(site), { timeout: 10_000 }).toEqual([phrase]);
 		expect(await site.evaluate(() => document.querySelectorAll('[class*=highlight], mark').length)).toBe(0);
 		await expect(panel.locator('#highlights li .quote')).toHaveText([phrase]);
+
+		// A selection holding text the page hides is refused: the quote would not be what
+		// the investigator saw. Chrome's own reading of the selection leaves hidden text out.
+		await selectElement(site, '#hidden');
+		const beforeHidden = (await harness.pending()).length;
+		await panel.click('#highlight-create');
+		await expect(panel.locator('#flash')).toContainText('hides some text');
+		expect((await harness.pending()).length).toBe(beforeHidden);
+		await expect(panel.locator('#highlights li')).toHaveCount(1);
 
 		// The page's own scripts share the registry and can wipe it: the next change to the
 		// page makes the painter notice and put its marks back.

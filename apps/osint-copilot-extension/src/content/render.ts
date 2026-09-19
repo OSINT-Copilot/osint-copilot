@@ -59,13 +59,20 @@ export class Painter {
 		this.sync();
 	}
 
+	/** Paints `set` and takes `remove` off, redrawing once however many there are. */
+	update(set: PaintEntry[], remove: string[] = []): void {
+		let changed = set.length > 0;
+		for (const id of remove) changed = this.entries.delete(id) || changed;
+		for (const e of set) this.entries.set(e.id, e);
+		if (changed) this.sync();
+	}
+
 	set(entry: PaintEntry): void {
-		this.entries.set(entry.id, entry);
-		this.sync();
+		this.update([entry]);
 	}
 
 	remove(id: string): void {
-		if (this.entries.delete(id)) this.sync();
+		this.update([], [id]);
 	}
 
 	clear(): void {
@@ -86,8 +93,14 @@ export class Painter {
 	 */
 	ensureRegistered(): boolean {
 		let restored = false;
-		const expected = (h: Highlight, fuzzy: boolean) => [...this.entries.values()].filter((e) => e.fuzzy === fuzzy).length === h.size;
-		if (!expected(this.exact, false) || !expected(this.fuzzy, true)) {
+		// Every range of ours, and nothing else: a page can swap one of ours for its own
+		// without changing the count.
+		const entries = [...this.entries.values()];
+		const intact = (h: Highlight, fuzzy: boolean) => {
+			const ours = entries.filter((e) => e.fuzzy === fuzzy);
+			return ours.length === h.size && ours.every((e) => h.has(e.range));
+		};
+		if (!intact(this.exact, false) || !intact(this.fuzzy, true)) {
 			this.fill();
 			restored = true;
 		}

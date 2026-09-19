@@ -161,6 +161,7 @@ const DESCRIBE_ERRORS: Record<Exclude<DescribeReply, { ok: true }>['reason'], st
 	empty: 'highlight_no_selection',
 	'too-long': 'highlight_too_long',
 	'not-in-page': 'highlight_no_selection',
+	'hidden-text': 'highlight_hidden_text',
 };
 
 export class Highlights {
