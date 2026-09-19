@@ -1037,8 +1037,7 @@ export class MapView extends ItemView {
      * Single-flight. refresh() is reachable from eight places -- the debounced vault
      * watcher, the toolbar, two modal callbacks, the edit menu, the geocoder, and the
      * workspace controller for *background* views -- three of them floating promises.
-     * Two overlapping runs both clear and rebuild the shared entity store, so the second
-     * can observe a half-populated one.
+     * Two overlapping runs would read every note twice for one result.
      */
     async refresh(): Promise<void> {
         if (!this.map) return;
@@ -1051,11 +1050,11 @@ export class MapView extends ItemView {
 
     private async doRefresh(): Promise<void> {
         try {
-            await this.entityManager.loadEntitiesFromNotes();
+            await this.entityManager.loadEntitiesFromNotes({ graphYaml: 'changed' });
         } catch (error) {
             // Stop here. This used to log and carry on into the marker rebuild, which
             // turned a transient read failure into a blanked map -- and, because
-            // loadEntitiesFromNotes() clears the shared entity store first, into a
+            // loadEntitiesFromNotes() cleared the shared entity store first, into a
             // truncated store for the graph and timeline views too.
             console.error('[MapView] failed to reload entities; keeping the current markers:', error);
             // Say so. A console line is invisible from the map, and a pane that quietly
@@ -1495,7 +1494,7 @@ class GeolocateMissingModal extends Modal {
                 }
             );
 
-            await this.entityManager.updateEntity(entity.id, geocodeResultUpdates(entity, fields, result));
+            await this.saveGeocodeResult(entity, fields, result);
             this.setRowState(entity.id, 'done');
         } catch (error) {
             this.setRowState(entity.id, 'failed');
@@ -1505,6 +1504,15 @@ class GeolocateMissingModal extends Modal {
                 new Notice(`Failed to geocode ${entity.label}`);
             }
         }
+    }
+
+    /**
+     * Write a geocoding result to the note, or throw. updateEntity answers null when it
+     * wrote nothing (the note is locked, or the entity is gone), and the row said Done.
+     */
+    private async saveGeocodeResult(entity: Entity, fields: GeocodeFields, result: GeocodingResult): Promise<void> {
+        const updated = await this.entityManager.updateEntity(entity.id, geocodeResultUpdates(entity, fields, result));
+        if (!updated) throw new Error(`${entity.label} was not updated`);
     }
 
     private async geolocateAll(): Promise<void> {
@@ -1545,7 +1553,7 @@ class GeolocateMissingModal extends Modal {
                     break;
                 }
 
-                await this.entityManager.updateEntity(entity.id, geocodeResultUpdates(entity, fields, result));
+                await this.saveGeocodeResult(entity, fields, result);
                 this.setRowState(entity.id, 'done');
                 success++;
             } catch (error) {

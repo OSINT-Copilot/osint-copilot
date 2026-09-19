@@ -20,7 +20,7 @@ import { GeocodingService, GeocodingError } from '../services/geocoding-service'
 import { GRAPH_NODE_POSITIONS_FILE } from '../constants/vault-layout';
 import type { VaultLockService } from '../services/vault-lock-service';
 import { isEventEntityType, isShownOnTimeline } from './timeline-view';
-import { geocodeFieldsFor, geocodeResultUpdates, isLocationEntityType, isMappableEntity } from './map-view';
+import { geocodeFieldsFor, geocodeResultUpdates, isLocationEntityType, isMappableEntity, parseCoordinate } from './map-view';
 import { entityHasMapCoordinates } from '../ui/vault-op-previews';
 import { GRAPH_NODE_SIZE, entityImagePath, graphNodeStyles, isGraphImageExtension } from './graph-node-visual';
 import { ENTITY_IMAGE_KEY } from '../services/entity-image-service';
@@ -557,11 +557,18 @@ export class GraphView extends ItemView {
         return created?.path ?? null;
     }
 
-    /** Writes the entity's new picture and repaints its node without a full refresh. */
+    /**
+     * Writes the entity's new picture and repaints its node without a full refresh. True
+     * even when the note was not written: the drop was a picture, and must not fall
+     * through to adding the file to the graph.
+     */
     private async setEntityImage(entity: Entity, path: string): Promise<boolean> {
-        await this.entityManager.updateEntity(entity.id, { [ENTITY_IMAGE_KEY]: path });
-        const updated = this.entityManager.getEntity(entity.id);
-        if (updated) this.updateEntityInGraph(updated);
+        const updated = await this.entityManager.updateEntity(entity.id, { [ENTITY_IMAGE_KEY]: path });
+        if (!updated) {
+            new Notice('Could not set that picture.', 6000, 'error');
+            return true;
+        }
+        this.updateEntityInGraph(updated);
         new Notice(`Picture set for ${entity.label}.`, 4000);
         return true;
     }
@@ -662,8 +669,24 @@ export class GraphView extends ItemView {
             position: position,
         });
 
-        this.nodePositionsCache.set(entity.id, position);
-        this.savePositionsDebounced();
+        this.joinWorkspace(entity.id, position);
+    }
+
+    /**
+     * An entity added to the graph by hand joins the workspace it was added to. A named
+     * workspace shows only its members, and the vault watcher's refresh, 400 ms after the
+     * new note's 'create' event, dropped a node whose membership waited for the 1 s
+     * position save (a file drop) or for no save at all (+ add entity, undoing a delete).
+     * Saved at once as well, so the file has it if the app closes first.
+     */
+    private joinWorkspace(entityId: string, position: NodePosition): void {
+        this.nodePositionsCache.set(entityId, position);
+        if (this.positionsGraphId !== 'default') {
+            const members = this.allGraphMembers[this.positionsGraphId] ?? new Set<string>();
+            members.add(entityId);
+            this.allGraphMembers[this.positionsGraphId] = members;
+        }
+        void this.savePositions();
     }
 
     /**
@@ -988,7 +1011,8 @@ export class GraphView extends ItemView {
                 refreshBtn.textContent = '↻ refreshing...';
 
                 try {
-                    await this.refreshWithSavedPositions();
+                    // No fit, as the tooltip says: zoom and positions stay as they are.
+                    await this.refreshWithSavedPositions({ fit: false });
                     new Notice('Graph refreshed successfully');
 
                     // Brief visual feedback - flash the button
@@ -1134,12 +1158,14 @@ export class GraphView extends ItemView {
      * Enter box selection mode - user can drag to select multiple items.
      */
     private enterBoxSelectMode(): void {
+        // On before connection mode is left: leaving it runs a held vault refresh unless
+        // another mode is on, and this one must hold it too.
+        this.boxSelectMode = true;
+
         // Exit connection mode if active
         if (this.connectionMode) {
             this.exitConnectionMode();
         }
-
-        this.boxSelectMode = true;
 
         if (this.boxSelectBtn) {
             this.boxSelectBtn.addClass('graph_copilot-box-select-active');
@@ -1519,16 +1545,13 @@ export class GraphView extends ItemView {
 
         this.cy.on('mouseover', 'node', (evt: CytoscapeEvent) => {
             const node = evt.target as NodeSingular;
-            const entityType = node.data('type');
             // A class, not .style(): an inline style is a bypass that outranks the
             // stylesheet permanently, so the old pair of handlers pinned every node's
             // border to 2px for the rest of the session after a single hover.
             node.addClass('hovered');
 
-            // Show tooltip with map hint for Location entities
-            if (entityType === EntityType.Location) {
-                this.showLocationTooltip(node);
-            }
+            // A map hint for every entity the map plots, by the map's own rule.
+            this.showLocationTooltip(node);
         });
 
         this.cy.on('mouseout', 'node', (evt: CytoscapeEvent) => {
@@ -2271,14 +2294,16 @@ export class GraphView extends ItemView {
                 const timelineItem = this.createMenuItem(timelineLabel, () => {
                     void (async () => {
                         try {
-                            await this.entityManager.updateEntity(entityId, {
+                            const updatedEntity = await this.entityManager.updateEntity(entityId, {
                                 add_to_timeline: !isOnTimeline
                             });
-                            new Notice(isOnTimeline ? 'Removed from Timeline' : 'Added to Timeline');
-                            // Update the node in the graph
-                            const updatedEntity = this.entityManager.getEntity(entityId);
                             if (updatedEntity) {
+                                new Notice(isOnTimeline ? 'Removed from Timeline' : 'Added to Timeline');
+                                // Update the node in the graph
                                 this.updateEntityInGraph(updatedEntity);
+                            } else {
+                                // Nothing was written: the note is locked or the entity is gone.
+                                new Notice('Failed to update timeline status');
                             }
                         } catch (error) {
                             console.error('[GraphView] Failed to toggle timeline status:', error);
@@ -2640,12 +2665,13 @@ export class GraphView extends ItemView {
     }
 
     /**
-     * Show tooltip for Location entities with map preview hint.
+     * Show tooltip with a map preview hint, for an entity the map plots (isMappableEntity):
+     * any location type, and coordinates as the map reads them, 0 included.
      */
     private showLocationTooltip(node: NodeSingular): void {
         const entityId = node.id();
         const entity = this.entityManager.getEntity(entityId);
-        if (!entity || !entity.properties.latitude || !entity.properties.longitude) return;
+        if (!entity || !isMappableEntity(entity)) return;
 
         // Remove existing tooltip
         this.hideLocationTooltip();
@@ -2654,8 +2680,9 @@ export class GraphView extends ItemView {
         tooltip.id = 'graph_copilot-location-tooltip';
         tooltip.className = 'graph_copilot-location-tooltip';
 
-        const lat = parseFloat(entity.properties.latitude as string);
-        const lng = parseFloat(entity.properties.longitude as string);
+        // Not null: isMappableEntity has parsed both.
+        const lat = parseCoordinate(entity.properties.latitude as string | number | undefined, 'lat') as number;
+        const lng = parseCoordinate(entity.properties.longitude as string | number | undefined, 'lng') as number;
 
         const titleDiv = tooltip.createDiv();
         titleDiv.setCssProps({ 'font-weight': 'bold', 'margin-bottom': '4px' });
@@ -2663,7 +2690,8 @@ export class GraphView extends ItemView {
 
         const infoDiv = tooltip.createDiv();
         infoDiv.setCssProps({ 'font-size': '11px', color: 'var(--text-muted)' });
-        infoDiv.setText((entity.properties.address as string) || '');
+        // The address as the geocoder reads it: an Address note keeps it in street or full.
+        infoDiv.setText(geocodeFieldsFor(entity).address ?? '');
         infoDiv.createEl('br');
         infoDiv.createSpan({ text: `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}` });
 
@@ -2777,16 +2805,18 @@ export class GraphView extends ItemView {
         // Reload entities from disk to ensure we have the latest data
         // This is critical for persistence across Obsidian restarts
         try {
-            await this.entityManager.loadEntitiesFromNotes();
+            await this.entityManager.loadEntitiesFromNotes({ graphYaml: 'changed' });
         } catch (error) {
-            // Return, do not carry on. loadEntitiesFromNotes clears the shared store
-            // before it reads, so after a failure getGraphData() is empty -- and the code
-            // below would then remove every element and rebuild from nothing, silently
+            // Return, do not carry on. loadEntitiesFromNotes used to clear the shared store
+            // before it read, so after a failure getGraphData() was empty -- and the code
+            // below then removed every element and rebuilt from nothing, silently
             // blanking the whole graph on a transient read error.
             console.error('[GraphView] Failed to reload entities from notes:', error);
             new Notice('Could not reload entities; keeping the current graph.', 8000, 'error');
             return;
         }
+        // Closed while the notes were read: onClose has destroyed the graph.
+        if (!this.cy) return;
 
         const { entities: allEntities, connections: allConnections } = this.entityManager.getGraphData();
         const entities = this.getEntitiesForActiveWorkspace(allEntities);
@@ -2899,16 +2929,18 @@ export class GraphView extends ItemView {
 
         // Reload entities from disk to ensure we have the latest data
         try {
-            await this.entityManager.loadEntitiesFromNotes();
+            await this.entityManager.loadEntitiesFromNotes({ graphYaml: 'changed' });
         } catch (error) {
-            // Return, do not carry on. loadEntitiesFromNotes clears the shared store
-            // before it reads, so after a failure getGraphData() is empty -- and the code
-            // below would then remove every element and rebuild from nothing, silently
+            // Return, do not carry on. loadEntitiesFromNotes used to clear the shared store
+            // before it read, so after a failure getGraphData() was empty -- and the code
+            // below then removed every element and rebuilt from nothing, silently
             // blanking the whole graph on a transient read error.
             console.error('[GraphView] Failed to reload entities from notes:', error);
             new Notice('Could not reload entities; keeping the current graph.', 8000, 'error');
             return;
         }
+        // Closed while the notes were read: onClose has destroyed the graph.
+        if (!this.cy) return;
 
         const { entities: allEntities, connections: allConnections } = this.entityManager.getGraphData();
         const entities = this.getEntitiesForActiveWorkspace(allEntities);
@@ -3858,7 +3890,7 @@ export class GraphView extends ItemView {
             position: position,
         });
 
-        this.nodePositionsCache.set(entity.id, position);
+        this.joinWorkspace(entity.id, position);
     }
 
     /**
@@ -3954,13 +3986,15 @@ export class GraphView extends ItemView {
             );
 
             // Coordinates, and any address components the note left blank.
-            await this.entityManager.updateEntity(entityId, geocodeResultUpdates(entity, fields, result));
+            const updatedEntity = await this.entityManager.updateEntity(entityId, geocodeResultUpdates(entity, fields, result));
+            if (!updatedEntity) {
+                // Found, but not written: the note is locked or the entity is gone.
+                new Notice(`Could not save the coordinates of ${entity.label}.`);
+                return;
+            }
 
             // Update the node in the graph
-            const updatedEntity = this.entityManager.getEntity(entityId);
-            if (updatedEntity) {
-                this.updateEntityInGraph(updatedEntity);
-            }
+            this.updateEntityInGraph(updatedEntity);
 
             new Notice(`✓ Geocoded: ${result.displayName} \nLat: ${result.latitude.toFixed(4)}, Lng: ${result.longitude.toFixed(4)} \nConfidence: ${result.confidence} `);
 

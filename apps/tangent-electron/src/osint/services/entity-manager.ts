@@ -144,6 +144,12 @@ const CONNECTION_FRONTMATTER_KEYS = new Set([
 /** generateNoteContent (undo/restore) also writes these two itself. */
 const HISTORY_NOTE_FRONTMATTER_KEYS = new Set([...RESERVED_FRONTMATTER_KEYS, 'created', 'modified']);
 
+/** The in-memory store: entities and connections by id. */
+interface GraphMaps {
+    entities: Map<string, Entity>;
+    connections: Map<string, Connection>;
+}
+
 function isSchemaFamilyFolderName(name: string): name is SchemaFamily {
     return SCHEMA_FAMILY_FOLDERS.includes(name as SchemaFamily);
 }
@@ -160,6 +166,17 @@ export class EntityManager {
      */
     private identifierIndex: Map<string, string[]> = new Map();
     private identifierKeysById: Map<string, string[]> = new Map();
+    /**
+     * One entry per loadEntitiesFromNotes() still reading: the ids of the entities and
+     * connections written through this class (put, changed in place or removed) since it
+     * began. See loadEntitiesFromNotes.
+     */
+    private loadWriteLogs = new Set<{ entities: Set<string>; connections: Set<string> }>();
+    /** Order of the loads begun, and of the latest one whose result is in memory. */
+    private loadsStarted = 0;
+    private loadInMemory = 0;
+    /** The graph-yaml syncs run one after another, so an older one cannot land last. */
+    private graphYamlSync: Promise<void> = Promise.resolve();
     private vaultLockService: VaultLockService | null = null;
     private schemaCatalog: SchemaCatalogService | null = null;
     private waybackArchiveService: WaybackArchiveService | null = null;
@@ -338,60 +355,106 @@ export class EntityManager {
 
     /**
      * Load all entities from existing notes.
+     *
+     * The notes are read into new maps that replace the old ones at the end. The store
+     * used to be cleared first and refilled as the notes were read, and the views now
+     * reload it on every note change: an action taken meanwhile found its entity missing
+     * (the graph's timeline toggle reported a change it never made; a delete failed).
+     *
+     * An entity or connection written through this class while the notes are read keeps
+     * that write, since the read may have seen its note before it. When loads overlap,
+     * the one begun last decides what is in memory.
+     *
+     * @param options.graphYaml how the graph-yaml mirror follows: 'full' rewrites every
+     *   entry (the default: plugin load and the reload commands); 'changed', for the
+     *   views' routine reloads, writes only the entries this load changed.
      */
-    async loadEntitiesFromNotes(): Promise<void> {
-        this.entities.clear();
-        this.connections.clear();
-        this.identifierIndex.clear();
-        this.identifierKeysById.clear();
+    async loadEntitiesFromNotes(options: { graphYaml?: 'full' | 'changed' } = {}): Promise<void> {
+        const load = ++this.loadsStarted;
+        const writes = { entities: new Set<string>(), connections: new Set<string>() };
+        const entities = new Map<string, Entity>();
+        const connections = new Map<string, Connection>();
+        this.loadWriteLogs.add(writes);
+        try {
+            const baseFolder = this.app.vault.getAbstractFileByPath(this.basePath);
+            if (baseFolder instanceof TFolder) {
+                // Not entity-type folders -- conversations and custom (prompts/skills/task-agents/
+                // enrichers/credentials/scripts) both live directly under the vault root too by
+                // default, and the "legacy flat type folder" fallback below would otherwise try to
+                // parse every .md file in them as an entity note (rejected for lacking type/id, but
+                // not before logging a YAML-parse warning for anything whose frontmatter isn't
+                // strict YAML). The getter reflects each folder's *actual* configured path, so a
+                // renamed conversation/prompts/etc. folder is still correctly excluded.
+                const reserved = new Set(this.getReservedTopLevelFolderNames());
+                for (const child of baseFolder.children) {
+                    if (!(child instanceof TFolder)) continue;
+                    if (child.name === 'Connections') continue;
+                    if (child.name === 'schemas') continue;
+                    if (child.name === GRAPH_YAML_FOLDER_NAME) continue;
+                    if (reserved.has(child.name)) continue;
 
-        const baseFolder = this.app.vault.getAbstractFileByPath(this.basePath);
-        if (baseFolder instanceof TFolder) {
-            // Not entity-type folders -- conversations and custom (prompts/skills/task-agents/
-            // enrichers/credentials/scripts) both live directly under the vault root too by
-            // default, and the "legacy flat type folder" fallback below would otherwise try to
-            // parse every .md file in them as an entity note (rejected for lacking type/id, but
-            // not before logging a YAML-parse warning for anything whose frontmatter isn't
-            // strict YAML). The getter reflects each folder's *actual* configured path, so a
-            // renamed conversation/prompts/etc. folder is still correctly excluded.
-            const reserved = new Set(this.getReservedTopLevelFolderNames());
-            for (const child of baseFolder.children) {
-                if (!(child instanceof TFolder)) continue;
-                if (child.name === 'Connections') continue;
-                if (child.name === 'schemas') continue;
-                if (child.name === GRAPH_YAML_FOLDER_NAME) continue;
-                if (reserved.has(child.name)) continue;
-
-                if (isSchemaFamilyFolderName(child.name)) {
-                    await this.loadFamilyEntityTree(child, child.name);
-                } else {
-                    await this.loadLegacyFlatTypeFolder(child);
+                    if (isSchemaFamilyFolderName(child.name)) {
+                        await this.loadFamilyEntityTree(child, child.name, entities);
+                    } else {
+                        await this.loadLegacyFlatTypeFolder(child, entities);
+                    }
                 }
             }
+
+            // Connections come from Connections/ notes and nowhere else.
+            //
+            // Entity notes still RENDER their relationships as wikilinks, and those stay
+            // clickable via the app's link index -- but they are no longer parsed back
+            // into Connection objects. That round-trip minted a fresh random id on every
+            // load for any hand-written [[A]] REL [[B]] line, producing a connection with
+            // unstable identity and no note behind it: invisible to the graph-yaml mirror,
+            // and impossible for undo/redo or selection to track across a reload.
+            await this.loadConnectionsFromNotes(connections);
+        } finally {
+            this.loadWriteLogs.delete(writes);
         }
 
-        // Connections come from Connections/ notes and nowhere else.
-        //
-        // Entity notes still RENDER their relationships as wikilinks, and those stay
-        // clickable via the app's link index -- but they are no longer parsed back
-        // into Connection objects. That round-trip minted a fresh random id on every
-        // load for any hand-written [[A]] REL [[B]] line, producing a connection with
-        // unstable identity and no note behind it: invisible to the graph-yaml mirror,
-        // and impossible for undo/redo or selection to track across a reload.
-        await this.loadConnectionsFromNotes();
+        // A load begun after this one has already put newer notes in memory.
+        if (load < this.loadInMemory) return;
+        this.loadInMemory = load;
 
-        await this.syncAllGraphYamlFromMemory();
+        for (const id of writes.entities) {
+            const live = this.entities.get(id);
+            if (live) entities.set(id, live);
+            else entities.delete(id);
+        }
+        for (const id of writes.connections) {
+            const live = this.connections.get(id);
+            if (live) connections.set(id, live);
+            else connections.delete(id);
+        }
+
+        const previous = { entities: this.entities, connections: this.connections };
+        this.entities = entities;
+        this.connections = connections;
+        this.identifierIndex.clear();
+        this.identifierKeysById.clear();
+        for (const entity of entities.values()) {
+            this.indexEntity(entity);
+        }
+
+        const current = { entities, connections };
+        const sync = this.graphYamlSync.then(() => options.graphYaml === 'changed'
+            ? this.syncChangedGraphYaml(previous, current)
+            : this.syncAllGraphYamlFromMemory());
+        this.graphYamlSync = sync;
+        await sync;
     }
 
     /** e.g. OSINTCopilot/ftm/Person/*.md */
-    private async loadFamilyEntityTree(folder: TFolder, family: SchemaFamily): Promise<void> {
+    private async loadFamilyEntityTree(folder: TFolder, family: SchemaFamily, into: Map<string, Entity>): Promise<void> {
         for (const typeFolder of folder.children) {
             if (!(typeFolder instanceof TFolder)) continue;
             for (const file of typeFolder.children) {
                 if (file instanceof TFile && file.extension === 'md') {
                     const entity = await this.parseEntityFromNote(file, family);
                     if (entity) {
-                        this.putEntity(entity);
+                        into.set(entity.id, entity);
                     }
                 }
             }
@@ -399,12 +462,12 @@ export class EntityManager {
     }
 
     /** Legacy: OSINTCopilot/Person/*.md (no family segment). */
-    private async loadLegacyFlatTypeFolder(folder: TFolder): Promise<void> {
+    private async loadLegacyFlatTypeFolder(folder: TFolder, into: Map<string, Entity>): Promise<void> {
         for (const file of folder.children) {
             if (file instanceof TFile && file.extension === 'md') {
                 const entity = await this.parseEntityFromNote(file, 'ftm');
                 if (entity) {
-                    this.putEntity(entity);
+                    into.set(entity.id, entity);
                 }
             }
         }
@@ -656,7 +719,7 @@ export class EntityManager {
     /**
      * Load connections from the Connections folder.
      */
-    private async loadConnectionsFromNotes(): Promise<void> {
+    private async loadConnectionsFromNotes(into: Map<string, Connection>): Promise<void> {
         const folderPath = normalizePath(`${this.basePath}/Connections`);
         const folder = this.app.vault.getAbstractFileByPath(folderPath);
 
@@ -665,7 +728,7 @@ export class EntityManager {
                 if (file instanceof TFile && file.extension === 'md') {
                     const connection = await this.parseConnectionFromNote(file);
                     if (connection) {
-                        this.connections.set(connection.id, connection);
+                        into.set(connection.id, connection);
                     }
                 }
             }
@@ -758,12 +821,39 @@ export class EntityManager {
     private putEntity(entity: Entity): void {
         this.entities.set(entity.id, entity);
         this.indexEntity(entity);
+        this.recordWrite('entities', entity.id);
     }
 
     /** Forget an entity in memory, identifiers included. Its note is untouched. */
     private dropEntity(entityId: string): void {
         this.entities.delete(entityId);
         this.unindexEntity(entityId);
+        this.recordWrite('entities', entityId);
+    }
+
+    /**
+     * After a write that changed an entity in place: that object, as its note now is, is
+     * the one in memory, even when a reload that finished during the write swapped in a
+     * copy read before it.
+     */
+    private settleEntityWrite(entity: Entity): void {
+        this.putEntity(entity);
+    }
+
+    private putConnection(connection: Connection): void {
+        this.connections.set(connection.id, connection);
+        this.recordWrite('connections', connection.id);
+    }
+
+    private dropConnection(connectionId: string): boolean {
+        const dropped = this.connections.delete(connectionId);
+        this.recordWrite('connections', connectionId);
+        return dropped;
+    }
+
+    /** Tell every loadEntitiesFromNotes() still reading that this id was written. */
+    private recordWrite(kind: 'entities' | 'connections', id: string): void {
+        for (const log of this.loadWriteLogs) log[kind].add(id);
     }
 
     private indexEntity(entity: Entity): void {
@@ -904,6 +994,7 @@ export class EntityManager {
             Object.assign(entity, previous);
             throw e;
         }
+        this.settleEntityWrite(entity);
         return entity;
     }
 
@@ -1005,6 +1096,7 @@ export class EntityManager {
             Object.assign(entity, previous);
             throw e;
         }
+        this.settleEntityWrite(entity);
         return entity;
     }
 
@@ -1816,7 +1908,7 @@ ${(entity.properties.notes as string) || ''}
         // A label change renames the note, so record where it is now. When the label is
         // unchanged the note stays put, whatever its file is called.
         entity.filePath = await this.saveEntityNote(entity, { keepPath: entity.label === previousLabel });
-        this.indexEntity(entity);
+        this.settleEntityWrite(entity);
 
         return entity;
     }
@@ -1876,7 +1968,7 @@ ${(entity.properties.notes as string) || ''}
 
         // Remove related connections
         for (const connId of connIdsToDrop) {
-            this.connections.delete(connId);
+            this.dropConnection(connId);
         }
 
         return true;
@@ -1895,7 +1987,7 @@ ${(entity.properties.notes as string) || ''}
         // Remove related connections
         for (const [connId, conn] of this.connections) {
             if (conn.fromEntityId === entityId || conn.toEntityId === entityId) {
-                this.connections.delete(connId);
+                this.dropConnection(connId);
             }
         }
 
@@ -2123,7 +2215,7 @@ ${(entity.properties.notes as string) || ''}
             } catch (e) {
                 console.warn('[EntityManager] graph-yaml connection delete failed:', e);
             }
-            this.connections.delete(connId);
+            this.dropConnection(connId);
         }
 
         return { deleted, failed };
@@ -2178,7 +2270,7 @@ ${(entity.properties.notes as string) || ''}
         const filePath = await this.saveConnectionAsNote(connection, fromEntity, toEntity);
         connection.filePath = filePath;
 
-        this.connections.set(connection.id, connection);
+        this.putConnection(connection);
 
         // Also update the source entity's note with the relationship (for backward compatibility)
         await this.addRelationshipToNote(fromEntity, toEntity, relationship);
@@ -2219,6 +2311,8 @@ ${(entity.properties.notes as string) || ''}
             const filePath = await this.saveConnectionAsNote(connection, fromEntity, toEntity);
             connection.filePath = filePath;
         }
+        // As settleEntityWrite: this object, as its note now is, is the one in memory.
+        this.putConnection(connection);
 
         try {
             await this.writeConnectionYamlFile(connection);
@@ -2257,7 +2351,7 @@ ${(entity.properties.notes as string) || ''}
                 await this.app.vault.modify(file, content);
             }
 
-            this.connections.set(connection.id, connection);
+            this.putConnection(connection);
 
             try {
                 await this.writeConnectionYamlFile(connection);
@@ -2562,7 +2656,7 @@ ${this.buildConnectionPropertiesSection(connection)}
 
         // Get the source entity to update its note
         if (!fromEntity) {
-            return this.connections.delete(connectionId);
+            return this.dropConnection(connectionId);
         }
         if (fromEntity && fromEntity.filePath) {
             const file = this.app.vault.getAbstractFileByPath(fromEntity.filePath);
@@ -2589,7 +2683,7 @@ ${this.buildConnectionPropertiesSection(connection)}
         }
 
         // Remove from connections map
-        return this.connections.delete(connectionId);
+        return this.dropConnection(connectionId);
     }
 
     /**
@@ -2603,7 +2697,7 @@ ${this.buildConnectionPropertiesSection(connection)}
      * Delete a connection (in-memory only, for backward compatibility).
      */
     deleteConnection(connectionId: string): boolean {
-        return this.connections.delete(connectionId);
+        return this.dropConnection(connectionId);
     }
 
     /**
@@ -2620,7 +2714,7 @@ ${this.buildConnectionPropertiesSection(connection)}
         }
 
         // Add to connections map
-        this.connections.set(connection.id, connection);
+        this.putConnection(connection);
 
         // Update the source entity's note
         if (fromEntity && toEntity) {
@@ -2719,9 +2813,13 @@ ${this.buildConnectionPropertiesSection(connection)}
         };
     }
 
-    private connectionToYamlDocument(connection: Connection): Record<string, unknown> {
-        const fromE = this.entities.get(connection.fromEntityId);
-        const toE = this.entities.get(connection.toEntityId);
+    /** @param entities where the endpoint labels are looked up */
+    private connectionToYamlDocument(
+        connection: Connection,
+        entities: Map<string, Entity> = this.entities,
+    ): Record<string, unknown> {
+        const fromE = entities.get(connection.fromEntityId);
+        const toE = entities.get(connection.toEntityId);
         return {
             kind: 'connection',
             id: connection.id,
@@ -2764,12 +2862,15 @@ ${this.buildConnectionPropertiesSection(connection)}
         }
     }
 
-    private async writeConnectionYamlFile(connection: Connection): Promise<void> {
+    private async writeConnectionYamlFile(
+        connection: Connection,
+        entities: Map<string, Entity> = this.entities,
+    ): Promise<void> {
         const path = this.connectionYamlFilePath(connection.id);
         await this.ensureFolderExists(normalizePath(`${this.graphYamlRoot()}/connections`));
         const header =
             '# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.\n';
-        const body = stringifyYaml(this.connectionToYamlDocument(connection), { lineWidth: 120 });
+        const body = stringifyYaml(this.connectionToYamlDocument(connection, entities), { lineWidth: 120 });
         const content = `${header}${body}\n`;
         const existing = this.app.vault.getAbstractFileByPath(path);
         if (existing instanceof TFile) {
@@ -2840,6 +2941,47 @@ ${this.buildConnectionPropertiesSection(connection)}
             await this.pruneGraphYamlOrphans();
         } catch (err) {
             console.warn('[EntityManager] graph-yaml full sync failed:', err);
+        }
+    }
+
+    /**
+     * The graph-yaml mirror after a routine reload: write the entries whose entity or
+     * connection the reload changed or added, and remove the ones it dropped. A write made
+     * through this class has already updated its entry, so what is left is what changed on
+     * disk behind its back (the editor, the file tree, git). The full sync rewrote every
+     * file of the mirror each time, and the views reload after every note save.
+     */
+    private async syncChangedGraphYaml(previous: GraphMaps, current: GraphMaps): Promise<void> {
+        const same = (a: Record<string, unknown>, b: Record<string, unknown>): boolean =>
+            JSON.stringify(a) === JSON.stringify(b);
+        try {
+            for (const entity of current.entities.values()) {
+                const before = previous.entities.get(entity.id);
+                if (before && same(this.entityToYamlDocument(before), this.entityToYamlDocument(entity))) continue;
+                // A new type or family moves the entry.
+                const oldPath = before ? this.entityYamlFilePath(before) : null;
+                if (oldPath && oldPath !== this.entityYamlFilePath(entity)) {
+                    await this.deleteYamlFileIfExists(oldPath);
+                }
+                await this.writeEntityYamlFile(entity);
+            }
+            for (const [id, before] of previous.entities) {
+                if (!current.entities.has(id)) await this.deleteYamlFileIfExists(this.entityYamlFilePath(before));
+            }
+            // Compared with each side's own entities, since an entry carries its endpoints' labels.
+            for (const connection of current.connections.values()) {
+                const before = previous.connections.get(connection.id);
+                if (before && same(
+                    this.connectionToYamlDocument(before, previous.entities),
+                    this.connectionToYamlDocument(connection, current.entities),
+                )) continue;
+                await this.writeConnectionYamlFile(connection, current.entities);
+            }
+            for (const id of previous.connections.keys()) {
+                if (!current.connections.has(id)) await this.deleteYamlFileIfExists(this.connectionYamlFilePath(id));
+            }
+        } catch (err) {
+            console.warn('[EntityManager] graph-yaml sync failed:', err);
         }
     }
 

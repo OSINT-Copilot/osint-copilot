@@ -223,11 +223,11 @@ export class TimelineView extends ItemView {
 
         // Reload entities from disk to ensure we have the latest data
         try {
-            await this.entityManager.loadEntitiesFromNotes();
+            await this.entityManager.loadEntitiesFromNotes({ graphYaml: 'changed' });
         } catch (error) {
             // Stop here, as the map does. This used to fall through into the render with
             // whatever the failed load left in the store -- usually nothing, since
-            // loadEntitiesFromNotes() clears it first -- so a transient read failure
+            // loadEntitiesFromNotes() cleared it first -- so a transient read failure
             // showed the "no events yet" empty state over a vault full of them.
             console.error('[TimelineView] Failed to reload entities from notes:', error);
             new Notice('Could not reload events; showing the last known timeline.');

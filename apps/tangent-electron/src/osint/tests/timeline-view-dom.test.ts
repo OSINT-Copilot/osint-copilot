@@ -110,6 +110,13 @@ describe('TimelineView', () => {
         expect(vi.mocked(Notice)).toHaveBeenCalledWith('Could not reload events; showing the last known timeline.');
     });
 
+    it('reloads the notes as a routine reload, which rewrites only the changed graph-yaml entries', async () => {
+        const { view, entityManager } = makeView();
+        await view.onOpen();
+        await view.refresh();
+        expect(entityManager.loadEntitiesFromNotes).toHaveBeenLastCalledWith({ graphYaml: 'changed' });
+    });
+
     it('shows a busy state on Refresh while the reload runs', async () => {
         const { view, root, entityManager } = makeView();
         await view.onOpen();
