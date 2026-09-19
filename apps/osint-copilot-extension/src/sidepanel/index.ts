@@ -11,25 +11,15 @@
  */
 import { classify } from '../shared/classify';
 import { describeError } from '../shared/errors';
+import { mb } from '../shared/format';
 import { CAPTURE_PERMISSIONS, CHANGED, HIGHLIGHT_CLICKED, PENDING_SELECTION, type CaptureStatus, type PanelState, type PendingSelection, type QueueEntry, type Reply } from '../shared/messages';
 import type { EntityKind, EntityPayload, WalletChain } from '../shared/protocol';
 import { platformFromUrl } from '../shared/url';
 import { validateEntity } from '../shared/validate';
 import { ask } from './api';
+import { $, h } from './dom';
 import { initHighlights } from './highlights';
 import { currentPage, selectedText, type PageInfo } from './page';
-
-function $<T extends HTMLElement>(id: string): T {
-	const el = document.getElementById(id);
-	if (!el) throw new Error(`missing #${id}`);
-	return el as T;
-}
-
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
-	const el = Object.assign(document.createElement(tag), props);
-	el.append(...children);
-	return el;
-}
 
 const ui = {
 	connection: $<HTMLSpanElement>('connection'),
@@ -163,11 +153,6 @@ async function refreshCapturePermission(): Promise<void> {
 		granted = false;
 	}
 	ui.capturePermission.hidden = granted;
-}
-
-function mb(bytes: number): string {
-	const n = bytes / (1024 * 1024);
-	return n < 0.1 ? '<0.1' : n < 10 ? n.toFixed(1) : String(Math.round(n));
 }
 
 function renderWorkspaces(next: PanelState): void {

@@ -2,7 +2,7 @@
 // Copyright 2026 Probe Point Analytics LLC
 
 /**
- * Synchronous SHA-256 and Keccak-256 for the wallet checksums in entity-checks.ts.
+ * Synchronous SHA-256 and Keccak-256 for the wallet checksums in validate.ts.
  *
  * WebCrypto has SHA-256 but only asynchronously, and no Keccak at all (Ethereum's EIP-55
  * uses the original Keccak padding, 0x01, which FIPS SHA3-256 does not). The side panel

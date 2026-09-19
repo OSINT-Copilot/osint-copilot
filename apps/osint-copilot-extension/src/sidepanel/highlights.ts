@@ -12,6 +12,7 @@
 import { describeError } from '../shared/errors';
 import { HIGHLIGHT_PERMISSIONS, type PanelRequest, type PanelState, type Reply } from '../shared/messages';
 import type { HighlightItem, HighlightList } from '../sw/highlights';
+import { $, h } from './dom';
 
 export interface HighlightPanelDeps {
 	ask(request: PanelRequest): Promise<Reply>;
@@ -37,18 +38,6 @@ const UNSHOWN_TEXT: Partial<Record<HighlightList['shown'], string>> = {
 	no: 'Your highlights for this page are not shown on it.',
 	navigated: 'This page changed its address without reloading, as single-page sites do, so its highlights are not shown on it yet.',
 };
-
-function $<T extends HTMLElement>(id: string): T {
-	const el = document.getElementById(id);
-	if (!el) throw new Error(`missing #${id}`);
-	return el as T;
-}
-
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
-	const el = Object.assign(document.createElement(tag), props);
-	el.append(...children);
-	return el;
-}
 
 export function initHighlights(deps: HighlightPanelDeps) {
 	const ui = {

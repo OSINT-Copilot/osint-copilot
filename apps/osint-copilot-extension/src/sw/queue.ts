@@ -28,16 +28,17 @@
  * user action.
  */
 import { CAPTURE_FILE_NAMES, MAX_CONTROL_BODY, type CaptureFileName, type Manifest } from '../shared/protocol';
+import { isRecord } from '../shared/validate';
 import { ChannelError, errorCodeOf, type Channel } from './channel';
+import { done, req } from './idb';
 
 export const DB_NAME = 'oc';
-/** 1: 'queue'. 2: adds 'blobs'. */
 export const DB_VERSION = 2;
 export const STORE = 'queue';
 export const BLOBS = 'blobs';
 export const MAX_ITEMS = 100;
-export const MAX_BYTES = 300 * 1024 * 1024;
-export const BASE_BACKOFF_MS = 5_000;
+const MAX_BYTES = 300 * 1024 * 1024;
+const BASE_BACKOFF_MS = 5_000;
 export const MAX_BACKOFF_MS = 10 * 60_000;
 
 export type ItemState = 'queued' | 'sending' | 'failed';
@@ -127,10 +128,6 @@ const PERMANENT = new Set(['unknown_workspace', 'invalid', 'bad_json', 'too_larg
 /** Transient refusals that apply to every item, not just this one. */
 const APP_WIDE = new Set(['rate_limited', 'unlicensed', 'clock_skew', 'internal']);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 type Reply = { status: number; body: unknown };
 
 /** Sends one signed step; a request that got no trustworthy answer becomes a queue outcome. */
@@ -206,21 +203,6 @@ async function sendCaptureFiles(channel: Channel, manifest: Extract<Manifest, { 
 	return receipt(commit, manifest.bundleId) ?? refusal(commit.body);
 }
 
-function req<T>(request: IDBRequest<T>): Promise<T> {
-	return new Promise((resolve, reject) => {
-		request.onsuccess = () => resolve(request.result);
-		request.onerror = () => reject(request.error);
-	});
-}
-
-function done(tx: IDBTransaction): Promise<void> {
-	return new Promise((resolve, reject) => {
-		tx.oncomplete = () => resolve();
-		tx.onerror = () => reject(tx.error);
-		tx.onabort = () => reject(tx.error ?? new Error('transaction aborted'));
-	});
-}
-
 export class Queue {
 	private db: Promise<IDBDatabase> | null = null;
 	/** Upload progress of the item being sent, for the panel. Not stored: it is only true while we send. */
@@ -236,15 +218,12 @@ export class Queue {
 	private open(): Promise<IDBDatabase> {
 		this.db ??= new Promise((resolve, reject) => {
 			const request = this.deps.indexedDB.open(DB_NAME, DB_VERSION);
-			// Each step only adds, so items queued under version 1 are still there after.
-			request.onupgradeneeded = event => {
+			request.onupgradeneeded = () => {
 				const db = request.result;
-				if (event.oldVersion < 1 && !db.objectStoreNames.contains(STORE)) {
+				if (!db.objectStoreNames.contains(STORE)) {
 					db.createObjectStore(STORE, { keyPath: 'bundleId' }).createIndex('createdAt', 'createdAt');
 				}
-				if (event.oldVersion < 2 && !db.objectStoreNames.contains(BLOBS)) {
-					db.createObjectStore(BLOBS);
-				}
+				if (!db.objectStoreNames.contains(BLOBS)) db.createObjectStore(BLOBS);
 			};
 			request.onsuccess = () => resolve(request.result);
 			request.onerror = () => reject(request.error);
@@ -260,17 +239,6 @@ export class Queue {
 
 	progress(bundleId: string): Progress | undefined {
 		return this.uploads.get(bundleId);
-	}
-
-	/** The stored files of an item, name to size; for tests and the panel. */
-	async blobSizes(bundleId: string): Promise<Record<string, number>> {
-		const db = await this.open();
-		const store = db.transaction(BLOBS).objectStore(BLOBS);
-		// All requested before any is awaited, so the read-only transaction stays open for them.
-		const records = await Promise.all(CAPTURE_FILE_NAMES.map(name => req(store.get(blobKey(bundleId, name)) as IDBRequest<BlobRecord | undefined>)));
-		const out: Record<string, number> = {};
-		for (const record of records) if (record) out[record.name] = record.blob.size;
-		return out;
 	}
 
 	private async readBlob(bundleId: string, name: CaptureFileName): Promise<Uint8Array<ArrayBuffer> | undefined> {

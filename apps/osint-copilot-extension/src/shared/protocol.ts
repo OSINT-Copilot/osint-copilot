@@ -14,7 +14,7 @@ import { fromB64url } from './b64url';
 
 export const PROTO = 1;
 
-export const HOST = '127.0.0.1';
+const HOST = '127.0.0.1';
 /** The app binds the first free one of these; the pairing string says which (§2). */
 export const PORTS: readonly number[] = [23760, 23761, 23762, 23763, 23764];
 
@@ -34,35 +34,6 @@ export const B64URL_32 = /^[A-Za-z0-9_-]{43}$/;
 export const WORKSPACE_ID = /^[A-Za-z0-9_-]{22}$/;
 export const EXT_VERSION = /^[0-9A-Za-z.+-]{1,32}$/;
 
-export type ErrorCode =
-	| 'bad_proto'
-	| 'bad_json'
-	| 'bad_content_type'
-	| 'unauthenticated'
-	| 'bad_signature'
-	| 'clock_skew'
-	| 'replay'
-	| 'forbidden'
-	| 'bad_origin'
-	| 'pair_expired'
-	| 'pair_denied'
-	| 'unlicensed'
-	| 'not_found'
-	| 'method_not_allowed'
-	| 'unknown_workspace'
-	| 'too_large'
-	| 'bad_host'
-	| 'invalid'
-	| 'hash_mismatch'
-	| 'rate_limited'
-	| 'budget_exceeded'
-	| 'internal';
-
-export interface ErrorBody {
-	error: ErrorCode;
-	detail?: string;
-}
-
 // --- handshake -----------------------------------------------------------------------
 
 export interface PairRequest {
@@ -79,11 +50,6 @@ export interface PairResponse {
 	serverProof: string;
 }
 
-export interface HelloRequest {
-	clientId: string;
-	clientNonce: string;
-}
-
 export interface HelloResponse {
 	instanceId: string;
 	serverNonce: string;
@@ -94,33 +60,10 @@ export interface HelloResponse {
 
 // --- signed endpoints ----------------------------------------------------------------
 
-export interface StatusResponse {
-	licensed: boolean;
-	receiving: boolean;
-	pendingCount: number;
-}
-
 export interface WorkspaceInfo {
 	id: string;
 	name: string;
 	open: boolean;
-}
-
-export interface WorkspacesResponse {
-	workspaces: WorkspaceInfo[];
-}
-
-export interface BundleResponse {
-	status: 'accepted' | 'duplicate';
-	bundleId: string;
-	receivedAt: string;
-}
-
-/** A capture created and waiting for its files (§7.4). */
-export interface CaptureCreatedResponse {
-	status: 'created';
-	bundleId: string;
-	missing: CaptureFileName[];
 }
 
 // --- manifest (§8) -------------------------------------------------------------------

@@ -97,7 +97,7 @@ async function digest(blob: Blob): Promise<{ size: number; sha256: string }> {
 }
 
 /** Is `after` still the same page, in front, in the same window as `before`? */
-export async function stillShowing(api: CaptureApi, before: chrome.tabs.Tab, after: chrome.tabs.Tab): Promise<boolean> {
+async function stillShowing(api: CaptureApi, before: chrome.tabs.Tab, after: chrome.tabs.Tab): Promise<boolean> {
 	if (after.id !== before.id || after.url !== before.url || after.active !== before.active || !after.active) return false;
 	if (after.windowId !== before.windowId) return false;
 	const front = await api.activeTabOf(after.windowId).catch(() => undefined);

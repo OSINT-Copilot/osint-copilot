@@ -20,6 +20,8 @@ const channelModule = `${extensionSrc}/sw/channel`
 const queueModule = `${extensionSrc}/sw/queue`
 const storageModule = `${extensionSrc}/sw/storage`
 const manifestModule = `${extensionSrc}/shared/manifest`
+/** The extension tests' stand-in for chrome.storage.local. */
+const memoryKVModule = `${extensionSrc}/../test/memory-kv`
 
 type Manifest = { bundleId: string; workspaceId: string; kind: string; [k: string]: unknown }
 type SendOutcome = { kind: 'delivered'; status: string } | { kind: 'transient' | 'permanent'; error: string }
@@ -57,6 +59,8 @@ interface QueueModule {
 }
 interface StorageModule {
 	KEYS: { pairing: string }
+}
+interface MemoryKVModule {
 	memoryKV(): KV
 }
 interface ManifestModule {
@@ -103,7 +107,7 @@ function startRelay(target: number): Promise<{ port: number; seen: string[]; clo
 }
 
 let harness: ExtensionHarness
-let ext: { channel: ChannelModule; queue: QueueModule; storage: StorageModule; manifest: ManifestModule }
+let ext: { channel: ChannelModule; queue: QueueModule; storage: StorageModule; manifest: ManifestModule; kv: MemoryKVModule }
 
 beforeAll(async () => {
 	ext = {
@@ -111,6 +115,7 @@ beforeAll(async () => {
 		queue: await vi.importActual<QueueModule>(queueModule),
 		storage: await vi.importActual<StorageModule>(storageModule),
 		manifest: await vi.importActual<ManifestModule>(manifestModule),
+		kv: await vi.importActual<MemoryKVModule>(memoryKVModule),
 	}
 	harness = await startExtensionHarness()
 })
@@ -121,7 +126,7 @@ afterAll(async () => {
 
 describe('the extension\'s client against the app\'s server', () => {
 	it('pairs, lists the case, queues an entity and a note into it, and a resend is a duplicate', async () => {
-		const storage = ext.storage.memoryKV()
+		const storage = ext.kv.memoryKV()
 		const channel = new ext.channel.Channel({
 			fetch: extensionFetch,
 			storage,
@@ -191,7 +196,7 @@ describe('the extension\'s client against the app\'s server', () => {
 	})
 
 	it('refuses a relay squatting another port, and finds the app on its own port instead', async () => {
-		const storage = ext.storage.memoryKV()
+		const storage = ext.kv.memoryKV()
 		const channel = new ext.channel.Channel({
 			fetch: extensionFetch,
 			storage,

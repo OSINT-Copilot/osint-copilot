@@ -108,7 +108,7 @@ export function sameSelection(menuText: string, shown: string): boolean {
 }
 
 /** The painter's names are random and of exactly this shape; anything else is not styled. */
-export const HIGHLIGHT_NAME = /^oc-[a-z0-9]{12}$/;
+const HIGHLIGHT_NAME = /^oc-[a-z0-9]{12}$/;
 
 export function isHighlightNames(value: unknown): value is HighlightNames {
 	const v = value as Partial<HighlightNames> | null;

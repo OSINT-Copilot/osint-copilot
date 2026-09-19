@@ -7,6 +7,7 @@
  * free of chrome.* itself so the tests can drive it.
  */
 import { describeError } from '../shared/errors';
+import { mb } from '../shared/format';
 import { buildManifest } from '../shared/manifest';
 import type { CaptureStatus, PanelRequest, PanelState, QueueEntry, Reply } from '../shared/messages';
 import { WORKSPACE_ID, type Manifest, type WorkspaceInfo } from '../shared/protocol';
@@ -40,11 +41,6 @@ export interface ServiceDeps {
 
 function validTab(tabId: unknown): tabId is number {
 	return typeof tabId === 'number' && Number.isInteger(tabId) && tabId >= 0;
-}
-
-function mb(bytes: number): string {
-	const n = bytes / (1024 * 1024);
-	return n < 10 ? n.toFixed(1) : String(Math.round(n));
 }
 
 function label(manifest: Manifest): string {
@@ -81,7 +77,6 @@ function toEntry(item: QueueItem, queue: Queue): QueueEntry {
 		attempts: item.attempts,
 		problem: item.lastError ? describeError(item.lastError, item.lastErrorDetail) : null,
 		nextAttemptAt: item.nextAttemptAt,
-		createdAt: item.createdAt,
 	};
 }
 
@@ -148,7 +143,7 @@ export class Service {
 	}
 
 	private setCapture(phase: CaptureStatus['phase'], message: string, bundleId: string | null = null): void {
-		this.captureStatus = { phase, message, bundleId, progress: null, at: this.deps.now() };
+		this.captureStatus = { phase, message, bundleId, progress: null };
 		this.deps.onChange?.();
 	}
 
@@ -366,7 +361,9 @@ export class Service {
 		}
 	}
 
-	private async highlight(request: Extract<PanelRequest, { tabId: number }>): Promise<Reply> {
+	private async highlight(request: Extract<PanelRequest, {
+		type: 'highlights' | 'highlight.create' | 'highlight.note' | 'highlight.delete' | 'highlight.findAgain' | 'highlight.show' | 'highlight.showHere';
+	}>): Promise<Reply> {
 		const h = this.deps.highlights;
 		if (!h) return this.fail('highlight_no_access');
 		if (!validTab(request.tabId)) return this.fail('highlight_no_page');
@@ -392,8 +389,6 @@ export class Service {
 				return { ok: true, state: await this.state(), highlights: await h.list(request.tabId) };
 			case 'highlight.showHere':
 				return settle(await h.showHere(request.tabId));
-			default:
-				return this.fail('highlight_no_access');
 		}
 	}
 

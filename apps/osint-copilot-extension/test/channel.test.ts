@@ -2,11 +2,12 @@
 // Copyright 2026 Probe Point Analytics LLC
 
 import { describe, expect, it } from 'vitest';
-import { fromHex, toB64url } from '../src/shared/b64url';
+import { toB64url } from '../src/shared/b64url';
 import { Channel, ChannelError } from '../src/sw/channel';
-import { KEYS, memoryKV, type PairingRecord } from '../src/sw/storage';
+import { KEYS, type PairingRecord } from '../src/sw/storage';
 import { FakeApp, counterBytes, fakeNetwork, json, type Handler } from './fake-app';
-import { protocolVectors as v } from './vectors';
+import { memoryKV } from './memory-kv';
+import { fromHex, protocolVectors as v } from './vectors';
 
 const KEY = Buffer.from(v.keyDerivation.keyHex, 'hex');
 const INSTANCE = v.inputs.instanceId as string;

@@ -9,9 +9,11 @@
  * can drive it, so a message from one proves nothing about what the user wanted. Every
  * action here (pairing, choosing an investigation, sending, the queue) is therefore
  * accepted only from our own extension pages, identified by sender.url on this
- * extension's origin. Content scripts get a refusal and learn nothing: not the port, the
- * key, the investigations or the queue. Messages from any other extension are ignored;
- * this extension declares neither externally_connectable nor onMessageExternal.
+ * extension's origin. A content script in a tab's top frame may send only the content.*
+ * highlight requests, about its own page; anything else gets a refusal, and it learns
+ * nothing: not the port, the key, the investigations or the queue. Messages from any
+ * other extension are ignored; this extension declares neither externally_connectable
+ * nor onMessageExternal.
  */
 import { PANEL_REQUEST_TYPES, type PanelRequest, type Reply } from '../shared/messages';
 import { CONTENT_REQUEST_TYPES, type ContentRequest } from '../shared/highlights';
@@ -44,7 +46,7 @@ export interface RouterOptions {
 type Listener = (message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (reply: unknown) => void) => boolean;
 
 /** Our own extension pages: the side panel, and nothing a web page can host or script. */
-export function isExtensionPage(sender: chrome.runtime.MessageSender, runtimeId: string, extensionOrigin: string): boolean {
+function isExtensionPage(sender: chrome.runtime.MessageSender, runtimeId: string, extensionOrigin: string): boolean {
 	if (sender.id !== runtimeId) return false;
 	if (typeof sender.url !== 'string' || !sender.url.startsWith(extensionOrigin)) return false;
 	// Where Chrome reports the origin too, it must agree; an opaque or foreign one is not ours.
@@ -58,7 +60,7 @@ function isContentRequest(message: unknown): message is ContentRequest {
 }
 
 /** A content script of ours in a tab's top frame, or null. */
-export function contentSender(sender: chrome.runtime.MessageSender, runtimeId: string, extensionOrigin: string): ContentSender | null {
+function contentSender(sender: chrome.runtime.MessageSender, runtimeId: string, extensionOrigin: string): ContentSender | null {
 	if (sender.id !== runtimeId || isExtensionPage(sender, runtimeId, extensionOrigin)) return null;
 	const tabId = sender.tab?.id;
 	if (typeof tabId !== 'number' || tabId < 0 || sender.frameId !== 0) return null;

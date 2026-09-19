@@ -24,7 +24,6 @@ import {
 	baseUrl,
 	endpointFor,
 	parsePairingString,
-	type ErrorBody,
 	type HelloResponse,
 	type PairRequest,
 	type PairResponse,
@@ -44,6 +43,7 @@ import {
 	utf8,
 	verifyMac,
 } from '../shared/signing';
+import { isRecord } from '../shared/validate';
 import { KEYS, type KV, type PairingRecord } from './storage';
 
 export interface ChannelDeps {
@@ -51,10 +51,6 @@ export interface ChannelDeps {
 	storage: KV;
 	now: () => number;
 	randomBytes: (n: number) => Uint8Array;
-	/** A probe that hangs must not stall discovery of the port the app really holds. */
-	probeTimeoutMs?: number;
-	requestTimeoutMs?: number;
-	uploadTimeoutMs?: number;
 }
 
 export type ChannelErrorCode = 'not_paired' | 'unreachable' | 'unverified' | 'bad_response';
@@ -83,6 +79,12 @@ export interface SignedResponse {
 const JSON_TYPE = 'application/json';
 const OCTET_TYPE = 'application/octet-stream';
 
+/** A probe that hangs must not stall discovery of the port the app really holds. */
+const PROBE_TIMEOUT_MS = 3000;
+const REQUEST_TIMEOUT_MS = 30_000;
+/** Loopback moves 50 MB in well under a second; the long timeout is for a busy disk. */
+const UPLOAD_TIMEOUT_MS = 5 * 60_000;
+
 export function webDeps(storage: KV): ChannelDeps {
 	return {
 		fetch: (url, init) => fetch(url, init),
@@ -90,10 +92,6 @@ export function webDeps(storage: KV): ChannelDeps {
 		now: () => Date.now(),
 		randomBytes: n => crypto.getRandomValues(new Uint8Array(n)),
 	};
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function parseJson(bytes: Uint8Array): unknown {
@@ -227,7 +225,7 @@ export class Channel {
 		const clientNonce = this.nonce();
 		let res: Response;
 		try {
-			res = await this.post(port, '/hello', { clientId: pairing.clientId, clientNonce }, this.deps.probeTimeoutMs ?? 3000);
+			res = await this.post(port, '/hello', { clientId: pairing.clientId, clientNonce }, PROBE_TIMEOUT_MS);
 		} catch {
 			return { ok: false, reason: 'unreachable' };
 		}
@@ -301,7 +299,7 @@ export class Channel {
 	 */
 	async request(method: 'GET' | 'POST', pathWithQuery: string, body?: unknown): Promise<SignedResponse> {
 		const bytes = method === 'POST' ? utf8(JSON.stringify(body ?? {})) : null;
-		return this.signed(method, pathWithQuery, bytes, JSON_TYPE, this.deps.requestTimeoutMs ?? 30_000);
+		return this.signed(method, pathWithQuery, bytes, JSON_TYPE, REQUEST_TIMEOUT_MS);
 	}
 
 	/**
@@ -310,8 +308,7 @@ export class Channel {
 	 * covers. The reply is verified the same way.
 	 */
 	async upload(pathWithQuery: string, bytes: Uint8Array<ArrayBuffer>): Promise<SignedResponse> {
-		// Loopback moves 50 MB in well under a second; the long timeout is for a busy disk.
-		return this.signed('POST', pathWithQuery, bytes, OCTET_TYPE, this.deps.uploadTimeoutMs ?? 5 * 60_000);
+		return this.signed('POST', pathWithQuery, bytes, OCTET_TYPE, UPLOAD_TIMEOUT_MS);
 	}
 
 	private async signed(
@@ -401,5 +398,3 @@ function isHelloResponse(body: unknown): body is HelloResponse {
 		&& isRecord(body.proto) && typeof body.proto.min === 'number' && typeof body.proto.max === 'number'
 		&& typeof body.appVersion === 'string';
 }
-
-export type { ErrorBody };

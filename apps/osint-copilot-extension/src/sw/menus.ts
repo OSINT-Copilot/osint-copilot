@@ -2,18 +2,19 @@
 // Copyright 2026 Probe Point Analytics LLC
 
 /**
- * The context menus ("Send to OSINT Copilot as entity" on a selection, "Capture this page
- * to OSINT Copilot" on a page) and the capture keyboard command.
+ * The context menus ("Highlight in OSINT Copilot" and "Send to OSINT Copilot as entity"
+ * on a selection, "Capture this page to OSINT Copilot" on a page) and the capture
+ * keyboard command.
  *
  * The click is a user gesture, which is what lets chrome.sidePanel.open() run without
- * the panel having been open, and what grants activeTab for the tab. The selection itself
- * goes to storage.session (trusted contexts only, cleared when the browser closes), where
- * the panel picks it up to prefill the entity form. Nothing is sent until the user
- * presses Send there.
+ * the panel having been open, and what grants activeTab for the tab. For an entity, the
+ * selection goes to storage.session (trusted contexts only, cleared when the browser
+ * closes), where the panel picks it up to prefill the entity form. Nothing is sent until
+ * the user presses Send there.
  */
 import { PENDING_SELECTION, type PendingSelection } from '../shared/messages';
 
-export const MENU_SEND_ENTITY = 'oc-send-entity';
+const MENU_SEND_ENTITY = 'oc-send-entity';
 export const MENU_CAPTURE_PAGE = 'oc-capture-page';
 export const MENU_HIGHLIGHT = 'oc-highlight';
 /** The manifest's commands key for capture. */

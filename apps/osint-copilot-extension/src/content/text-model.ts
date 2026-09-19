@@ -12,7 +12,6 @@
  * the investigator makes the highlight, and finding it again on a later visit. Changing
  * it would move every stored offset, which is why it carries a version.
  */
-export const TEXT_MODEL = 'v1';
 
 /** Elements whose text is not page text a reader sees. Lower-case local names. */
 const SKIPPED = new Set(['script', 'style', 'noscript', 'template', 'textarea', 'input']);

@@ -71,7 +71,6 @@ export interface QueueEntry {
 	/** Plain-language text for the last failure, if any. */
 	problem: string | null;
 	nextAttemptAt: number;
-	createdAt: number;
 }
 
 export interface PanelState {
@@ -98,7 +97,6 @@ export interface CaptureStatus {
 	message: string;
 	bundleId: string | null;
 	progress: { sent: number; total: number } | null;
-	at: number;
 }
 
 export type Reply =

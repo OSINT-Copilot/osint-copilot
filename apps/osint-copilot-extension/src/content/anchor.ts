@@ -30,20 +30,18 @@ export interface Anchored {
 	start: number;
 	end: number;
 	fuzzy: boolean;
-	/** 1 for an exact match; the similarity for a fuzzy one. */
-	similarity: number;
 }
 
 /** Below this, an approximate match is more likely a different passage than an edited one. */
-export const MIN_SIMILARITY = 0.8;
+const MIN_SIMILARITY = 0.8;
 /**
  * Shorter quotes are never matched approximately. Up to 20% of a quote may differ, which
  * for a name of five letters is one letter anywhere on the page: "Smith" would land on the
  * "smith" of a smith's shop.
  */
-export const FUZZY_MIN_QUOTE = 16;
+const FUZZY_MIN_QUOTE = 16;
 /** An approximate match's context must be at least this much the stored one. */
-export const FUZZY_MIN_CONTEXT = 0.5;
+const FUZZY_MIN_CONTEXT = 0.5;
 /** Quotes longer than this are not searched approximately: the cost grows with length. */
 const FUZZY_MAX_QUOTE = 2000;
 /** On a very long page, the approximate search looks this far either side of the old position. */
@@ -112,8 +110,8 @@ export function anchor(model: TextModel, selectors: HighlightSelectors): Anchore
 	// A hint is taken as it is only where the quote AND all of its context still match.
 	const viaPath = byXPath(model, selectors);
 	const exactWithContext = (start: number, end: number) => exactAt(start, end) && contextScore(text, start, end, quote) === 1;
-	if (viaPath && exactWithContext(viaPath[0], viaPath[1])) return { start: viaPath[0], end: viaPath[1], fuzzy: false, similarity: 1 };
-	if (exactWithContext(position.start, position.end)) return { start: position.start, end: position.end, fuzzy: false, similarity: 1 };
+	if (viaPath && exactWithContext(viaPath[0], viaPath[1])) return { start: viaPath[0], end: viaPath[1], fuzzy: false };
+	if (exactWithContext(position.start, position.end)) return { start: position.start, end: position.end, fuzzy: false };
 
 	// Otherwise the hints only say where to look first: ties in context go to the nearest.
 	const hint = viaPath && exactAt(viaPath[0], viaPath[1]) ? viaPath[0] : position.start;
@@ -122,7 +120,7 @@ export function anchor(model: TextModel, selectors: HighlightSelectors): Anchore
 		const score = contextScore(text, i, i + exact.length, quote) + PROXIMITY_WEIGHT * proximity(i, hint, text.length);
 		if (!best || score > best.score) best = { at: i, score };
 	}
-	if (best) return { start: best.at, end: best.at + exact.length, fuzzy: false, similarity: 1 };
+	if (best) return { start: best.at, end: best.at + exact.length, fuzzy: false };
 
 	return fuzzy(model, quote, hint);
 }
@@ -137,7 +135,7 @@ function fuzzy(model: TextModel, quote: TextQuoteSelector, hint: number): Anchor
 	const to = text.length > 2 * FUZZY_WINDOW ? Math.min(text.length, hint + FUZZY_WINDOW) : text.length;
 	const matches = search(text.slice(from, to), exact, maxErrors);
 
-	let best: (Anchored & { score: number }) | null = null;
+	let best: { start: number; end: number; score: number } | null = null;
 	for (const m of matches) {
 		const start = from + m.start;
 		const end = from + m.end;
@@ -147,8 +145,8 @@ function fuzzy(model: TextModel, quote: TextQuoteSelector, hint: number): Anchor
 		const context = contextScore(text, start, end, quote);
 		if (context < FUZZY_MIN_CONTEXT) continue;
 		const score = 3 * similarity + context + PROXIMITY_WEIGHT * proximity(start, hint, text.length);
-		if (!best || score > best.score) best = { start, end, fuzzy: true, similarity, score };
+		if (!best || score > best.score) best = { start, end, score };
 	}
 	if (!best) return null;
-	return { start: best.start, end: best.end, fuzzy: true, similarity: best.similarity };
+	return { start: best.start, end: best.end, fuzzy: true };
 }

@@ -16,16 +16,17 @@
  */
 import { buildManifest } from '../shared/manifest';
 import type {
-	ContentCommand, ContentHighlight, ContentReady, ContentStatus, DescribeReply, HighlightNames, HighlightReport, HighlightStatus,
+	ContentCommand, ContentReady, ContentStatus, DescribeReply, HighlightNames, HighlightReport, HighlightStatus,
 } from '../shared/highlights';
 import { highlightCss, isHighlightNames, sameSelection } from '../shared/highlights';
 import { normalisePageUrl } from '../shared/url';
 import type { HighlightAnnotation, HighlightManifest, Manifest } from '../shared/protocol';
+import { done, req } from './idb';
 import { ItemTooLargeError, QueueFullError, type Queue } from './queue';
 import { KEYS, type KV } from './storage';
 
-export const HIGHLIGHTS_DB = 'oc-highlights';
-export const HIGHLIGHTS_DB_VERSION = 1;
+const HIGHLIGHTS_DB = 'oc-highlights';
+const HIGHLIGHTS_DB_VERSION = 1;
 const STORE = 'highlights';
 
 export interface HighlightRecord {
@@ -46,21 +47,6 @@ export function pageKeyOf(url: string): string | null {
 	const u = new URL(clean);
 	u.hash = '';
 	return u.href;
-}
-
-function req<T>(r: IDBRequest<T>): Promise<T> {
-	return new Promise((resolve, reject) => {
-		r.onsuccess = () => resolve(r.result);
-		r.onerror = () => reject(r.error);
-	});
-}
-
-function done(tx: IDBTransaction): Promise<void> {
-	return new Promise((resolve, reject) => {
-		tx.oncomplete = () => resolve();
-		tx.onerror = () => reject(tx.error);
-		tx.onabort = () => reject(tx.error);
-	});
 }
 
 /**
@@ -167,12 +153,10 @@ export interface HighlightItem {
 	note: string;
 	/** Unknown until the page's content script has reported. */
 	status: HighlightStatus | 'unknown';
-	created: string;
 }
 
 export interface HighlightList {
 	tabId: number;
-	page: { url: string; title: string } | null;
 	items: HighlightItem[];
 	/**
 	 * Whether the page shows them: yes; not yet, and the panel offers to (no); not since the
@@ -228,7 +212,7 @@ export class Highlights {
 		const page = await this.deps.tabs.page(tabId);
 		const workspaceId = await this.workspace();
 		const key = page ? pageKeyOf(page.url) : null;
-		if (!page || !key || !workspaceId || !(await this.deps.paired())) return { tabId, page, items: [], shown: 'no' };
+		if (!page || !key || !workspaceId || !(await this.deps.paired())) return { tabId, items: [], shown: 'no' };
 		const records = await this.deps.store.forPage(workspaceId, key);
 		let state = this.tabStates.get(tabId);
 		let pending = false;
@@ -243,13 +227,11 @@ export class Highlights {
 		}
 		return {
 			tabId,
-			page,
 			items: records.map((r) => ({
 				id: r.id,
 				exact: r.annotation.target.selector[0].exact,
 				note: r.annotation.body?.value ?? '',
 				status: state?.statuses.get(r.id) ?? 'unknown',
-				created: r.annotation.created,
 			})),
 			shown: state ? (state.navigated ? 'navigated' : 'yes') : pending ? 'pending' : 'no',
 		};
@@ -353,7 +335,7 @@ export class Highlights {
 	}
 
 	/** Sets or clears a highlight's note, and queues the edit for the app. */
-	async setNote(id: string, note: string, tabId?: number): Promise<HighlightResult> {
+	async setNote(id: string, note: string, tabId: number): Promise<HighlightResult> {
 		const record = await this.deps.store.get(id);
 		if (!record) return { ok: false, error: 'highlight_gone' };
 		const text = note.trim();
@@ -372,11 +354,11 @@ export class Highlights {
 		if (failed) return { ok: false, error: failed };
 		await this.deps.store.put({ ...record, annotation: (built.value as HighlightManifest).highlight.annotation });
 		this.deps.onChange?.();
-		return { ok: true, list: tabId === undefined ? { tabId: -1, page: null, items: [], shown: 'no' } : await this.list(tabId), note: 'Note saved.' };
+		return { ok: true, list: await this.list(tabId), note: 'Note saved.' };
 	}
 
 	/** Deletes a highlight here and queues the delete for the app, which keeps a tombstone. */
-	async remove(id: string, tabId?: number): Promise<HighlightResult> {
+	async remove(id: string, tabId: number): Promise<HighlightResult> {
 		const record = await this.deps.store.get(id);
 		if (!record) return { ok: false, error: 'highlight_gone' };
 		const built = buildManifest({
@@ -388,12 +370,10 @@ export class Highlights {
 		const failed = await this.enqueue(built.value);
 		if (failed) return { ok: false, error: failed };
 		await this.deps.store.delete(id);
-		if (tabId !== undefined) {
-			this.tabStates.get(tabId)?.statuses.delete(id);
-			await this.deps.tabs.send(tabId, { type: 'content.remove', id }).catch(() => {});
-		}
+		this.tabStates.get(tabId)?.statuses.delete(id);
+		await this.deps.tabs.send(tabId, { type: 'content.remove', id }).catch(() => {});
 		this.deps.onChange?.();
-		return { ok: true, list: tabId === undefined ? { tabId: -1, page: null, items: [], shown: 'no' } : await this.list(tabId), note: 'Highlight deleted.' };
+		return { ok: true, list: await this.list(tabId), note: 'Highlight deleted.' };
 	}
 
 	/** Asks the page to look for a highlight again (after the page changed), and scroll to it. */

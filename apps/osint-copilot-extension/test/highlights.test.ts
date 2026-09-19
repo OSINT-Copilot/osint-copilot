@@ -10,8 +10,9 @@ import { Channel } from '../src/sw/channel';
 import { HighlightStore, Highlights, pageKeyOf, type HighlightTabs } from '../src/sw/highlights';
 import { createRouter } from '../src/sw/messages';
 import { Queue, sendBundle } from '../src/sw/queue';
-import { KEYS, memoryKV, type PairingRecord } from '../src/sw/storage';
+import { KEYS, type PairingRecord } from '../src/sw/storage';
 import { FakeApp, counterBytes, fakeNetwork, type Handler } from './fake-app';
+import { memoryKV } from './memory-kv';
 import { protocolVectors as v } from './vectors';
 
 const WS = 'gtoz4Juogr-egTX3kAreCn';

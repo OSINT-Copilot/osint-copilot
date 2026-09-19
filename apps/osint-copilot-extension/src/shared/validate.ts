@@ -62,11 +62,11 @@ export function stripControlChars(text: string): string {
 	return text.replace(SINGLE_LINE_STRIP, '');
 }
 
-export function stripControlCharsMultiline(text: string): string {
+function stripControlCharsMultiline(text: string): string {
 	return text.replace(/\r\n?/g, '\n').replace(MULTI_LINE_STRIP, '');
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 

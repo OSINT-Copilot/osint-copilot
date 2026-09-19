@@ -77,11 +77,11 @@ describe('the painter', () => {
 		const { api, registry } = fakeApi();
 		const p = new Painter(api);
 		const ours = rangeFromOffsets(buildTextModel(document.body), 0, 5)!;
-		p.set({ id: 'a', range: ours, fuzzy: false });
+		p.update([{ id: 'a', range: ours, fuzzy: false }]);
 		const h = registry.get(p.names.exact)!;
 		h.delete(ours);
 		h.add(document.createRange());
-		expect(p.ensureRegistered()).toBe(true);
+		p.ensureRegistered();
 		expect(h.has(ours)).toBe(true);
 		expect(h.size).toBe(1);
 	});
@@ -91,7 +91,7 @@ describe('the painter', () => {
 		const { api, registry } = fakeApi();
 		const p = new Painter(api);
 		const model = buildTextModel(document.body);
-		p.set({ id: 'old', range: rangeFromOffsets(model, 0, 3)!, fuzzy: false });
+		p.update([{ id: 'old', range: rangeFromOffsets(model, 0, 3)!, fuzzy: false }]);
 		const clear = vi.spyOn(FakeHighlight.prototype, 'clear');
 		p.update([
 			{ id: 'a', range: rangeFromOffsets(model, 4, 7)!, fuzzy: false },

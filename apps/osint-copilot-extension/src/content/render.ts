@@ -32,10 +32,10 @@ export function windowHighlightApi(win: Window & typeof globalThis): HighlightAp
 	return { registry: win.CSS.highlights, create: () => new win.Highlight() };
 }
 
-function randomName(random: () => number): string {
+function randomName(): string {
 	const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
 	let s = 'oc-';
-	for (let i = 0; i < 12; i++) s += alphabet[Math.floor(random() * alphabet.length)];
+	for (let i = 0; i < 12; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
 	return s;
 }
 
@@ -46,17 +46,10 @@ export class Painter {
 	private readonly fuzzy: Highlight;
 	private readonly entries = new Map<string, PaintEntry>();
 
-	constructor(private readonly api: HighlightApi, random: () => number = Math.random) {
-		this.names = { exact: randomName(random), fuzzy: randomName(random) };
+	constructor(private readonly api: HighlightApi) {
+		this.names = { exact: randomName(), fuzzy: randomName() };
 		this.exact = api.create();
 		this.fuzzy = api.create();
-	}
-
-	/** Replaces everything painted with `entries`. */
-	paint(entries: PaintEntry[]): void {
-		this.entries.clear();
-		for (const e of entries) this.entries.set(e.id, e);
-		this.sync();
 	}
 
 	/** Paints `set` and takes `remove` off, redrawing once however many there are. */
@@ -65,10 +58,6 @@ export class Painter {
 		for (const id of remove) changed = this.entries.delete(id) || changed;
 		for (const e of set) this.entries.set(e.id, e);
 		if (changed) this.sync();
-	}
-
-	set(entry: PaintEntry): void {
-		this.update([entry]);
 	}
 
 	remove(id: string): void {
@@ -83,16 +72,8 @@ export class Painter {
 		this.api.registry.delete(this.names.fuzzy);
 	}
 
-	entry(id: string): PaintEntry | undefined {
-		return this.entries.get(id);
-	}
-
-	/**
-	 * Puts our highlights back if the page deleted, replaced or emptied them. Returns
-	 * whether anything had to be restored.
-	 */
-	ensureRegistered(): boolean {
-		let restored = false;
+	/** Puts our highlights back if the page deleted, replaced or emptied them. */
+	ensureRegistered(): void {
 		// Every range of ours, and nothing else: a page can swap one of ours for its own
 		// without changing the count.
 		const entries = [...this.entries.values()];
@@ -100,21 +81,16 @@ export class Painter {
 			const ours = entries.filter((e) => e.fuzzy === fuzzy);
 			return ours.length === h.size && ours.every((e) => h.has(e.range));
 		};
-		if (!intact(this.exact, false) || !intact(this.fuzzy, true)) {
-			this.fill();
-			restored = true;
-		}
+		if (!intact(this.exact, false) || !intact(this.fuzzy, true)) this.fill();
 		for (const [name, highlight] of [[this.names.exact, this.exact], [this.names.fuzzy, this.fuzzy]] as const) {
 			const wanted = highlight.size > 0;
 			const present = this.api.registry.get(name) === highlight;
 			if (wanted && !present) {
 				this.api.registry.set(name, highlight);
-				restored = true;
 			} else if (!wanted && this.api.registry.has(name)) {
 				this.api.registry.delete(name);
 			}
 		}
-		return restored;
 	}
 
 	/** The highlight at a DOM point (from caretPositionFromPoint), if any. */

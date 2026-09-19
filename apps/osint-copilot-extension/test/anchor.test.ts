@@ -125,9 +125,10 @@ describe('finding a highlight again', () => {
 		page('<p>Funds were moved to an account at First Metro Bank on 3 March 2024.</p>');
 		const s = describe_('an account at First Metro Bank on 3 March');
 		page('<p>Funds were moved to an account at First Metro Bnak on 3 March 2024.</p>');
-		const a = anchor(buildTextModel(document.body), s)!;
+		const model = buildTextModel(document.body);
+		const a = anchor(model, s)!;
 		expect(a.fuzzy).toBe(true);
-		expect(a.similarity).toBeGreaterThanOrEqual(0.8);
+		expect(model.text.slice(a.start, a.end)).toBe('an account at First Metro Bnak on 3 March');
 	});
 
 	it('finds nothing when the passage is gone, rather than something unrelated', () => {

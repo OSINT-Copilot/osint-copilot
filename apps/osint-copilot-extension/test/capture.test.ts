@@ -4,19 +4,19 @@
 import { createHash } from 'node:crypto';
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fromHex } from '../src/shared/b64url';
 import { describeError } from '../src/shared/errors';
-import type { CaptureManifest } from '../src/shared/protocol';
+import { CAPTURE_FILE_NAMES, type CaptureManifest } from '../src/shared/protocol';
 import { hmacB64url, requestStringToSign, sha256Hex } from '../src/shared/signing';
 import { validateManifest } from '../src/shared/validate';
 import { CaptureError, captureErrorCode, capturePage, chromeCaptureApi, type CaptureApi } from '../src/sw/capture';
 import { Channel } from '../src/sw/channel';
 import { captureFromGesture, type CaptureGestureDeps } from '../src/sw/menus';
-import { BLOBS, DB_NAME, Queue, STORE, sendBundle, type QueueItem } from '../src/sw/queue';
+import { BLOBS, DB_NAME, Queue, sendBundle, type QueueItem } from '../src/sw/queue';
 import { Service } from '../src/sw/service';
-import { KEYS, memoryKV, type PairingRecord } from '../src/sw/storage';
+import { KEYS, type PairingRecord } from '../src/sw/storage';
 import { FakeApp, counterBytes, fakeNetwork, type Handler } from './fake-app';
-import { protocolVectors as v } from './vectors';
+import { memoryKV } from './memory-kv';
+import { fromHex, protocolVectors as v } from './vectors';
 
 const hex = (data: Uint8Array | string) => createHash('sha256').update(data).digest('hex');
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
@@ -379,7 +379,7 @@ describe('capture through the queue', () => {
 		const item = await onlyItem(w.queue);
 		expect(item.manifest.kind).toBe('capture');
 		expect(validateManifest(item.manifest).ok).toBe(true);
-		expect(await w.queue.blobSizes(item.bundleId)).toEqual({ 'page.mhtml': Buffer.byteLength(MHTML), 'viewport.png': PNG.length });
+		expect(await blobSizes(w.indexedDB, item.bundleId)).toEqual({ 'page.mhtml': Buffer.byteLength(MHTML), 'viewport.png': PNG.length });
 
 		await w.queue.drain();
 		expect(w.log.filter(l => l.startsWith('POST'))).toEqual([
@@ -394,7 +394,7 @@ describe('capture through the queue', () => {
 		]);
 		expect(w.committed.has(item.bundleId)).toBe(true);
 		expect(await w.queue.list()).toEqual([]);
-		expect(await w.queue.blobSizes(item.bundleId)).toEqual({});
+		expect(await blobSizes(w.indexedDB, item.bundleId)).toEqual({});
 		expect((await w.service.state()).capture).toMatchObject({ phase: 'done', bundleId: item.bundleId });
 	});
 
@@ -407,7 +407,7 @@ describe('capture through the queue', () => {
 		await w.queue.drain();
 		expect(w.staged.get(item.bundleId)!.received).toEqual(new Set(['page.mhtml']));
 		expect(await onlyItem(w.queue)).toMatchObject({ bundleId: item.bundleId, state: 'queued', lastError: 'unreachable' });
-		expect(await w.queue.blobSizes(item.bundleId)).toHaveProperty('viewport.png');
+		expect(await blobSizes(w.indexedDB, item.bundleId)).toHaveProperty('viewport.png');
 
 		// A new worker, as after Chrome restarted it: nothing in memory survives.
 		const restarted = w.boot();
@@ -419,17 +419,7 @@ describe('capture through the queue', () => {
 		expect(w.uploads.map(u => u.name)).toEqual(['page.mhtml', 'viewport.png']);
 		expect(w.committed).toEqual(new Set([item.bundleId]));
 		expect(await restarted.queue.list()).toEqual([]);
-		expect(await restarted.queue.blobSizes(item.bundleId)).toEqual({});
-	});
-
-	it('resumes an item a stopped worker left in "sending"', async () => {
-		const w = world();
-		await w.service.handle({ type: 'capture', tabId: 7 });
-		const item = await onlyItem(w.queue);
-		await putRaw(w.indexedDB, STORE, { ...item, state: 'sending' });
-		const restarted = w.boot();
-		await restarted.queue.drain();
-		expect(w.committed).toEqual(new Set([item.bundleId]));
+		expect(await blobSizes(w.indexedDB, item.bundleId)).toEqual({});
 	});
 
 	it('keeps the blobs through a permanent refusal, shows the item failed, and retry sends them', async () => {
@@ -439,7 +429,7 @@ describe('capture through the queue', () => {
 		w.failCommitOnce();
 		await w.queue.drain();
 		expect(await onlyItem(w.queue)).toMatchObject({ state: 'failed', lastError: 'invalid' });
-		expect(Object.keys(await w.queue.blobSizes(item.bundleId))).toEqual(['page.mhtml', 'viewport.png']);
+		expect(Object.keys(await blobSizes(w.indexedDB, item.bundleId))).toEqual(['page.mhtml', 'viewport.png']);
 		const state = await w.service.state();
 		expect(state.queue[0]).toMatchObject({ kind: 'capture', state: 'failed', label: 'Page: Profile' });
 		expect(state.capture).toMatchObject({ phase: 'failed' });
@@ -447,7 +437,7 @@ describe('capture through the queue', () => {
 		expect(await w.queue.retry(item.bundleId)).toBe(true);
 		await w.queue.drain();
 		expect(w.committed).toEqual(new Set([item.bundleId]));
-		expect(await w.queue.blobSizes(item.bundleId)).toEqual({});
+		expect(await blobSizes(w.indexedDB, item.bundleId)).toEqual({});
 	});
 
 	it('keeps the blobs while the app is away, and counts "duplicate" as delivered', async () => {
@@ -456,13 +446,13 @@ describe('capture through the queue', () => {
 		const item = await onlyItem(w.queue);
 		w.cutUpload.add('page.mhtml');
 		await w.queue.drain();
-		expect(Object.keys(await w.queue.blobSizes(item.bundleId))).toHaveLength(2);
+		expect(Object.keys(await blobSizes(w.indexedDB, item.bundleId))).toHaveLength(2);
 		// Committed meanwhile (say, by another copy of this item): the answer is duplicate.
 		w.committed.add(item.bundleId);
 		w.advance(60_000);
 		await w.queue.drain();
 		expect(await w.queue.list()).toEqual([]);
-		expect(await w.queue.blobSizes(item.bundleId)).toEqual({});
+		expect(await blobSizes(w.indexedDB, item.bundleId)).toEqual({});
 	});
 
 	it('deletes the blobs with the item when the user deletes it', async () => {
@@ -470,7 +460,7 @@ describe('capture through the queue', () => {
 		await w.service.handle({ type: 'capture', tabId: 7 });
 		const item = await onlyItem(w.queue);
 		await w.service.handle({ type: 'queue.delete', bundleId: item.bundleId });
-		expect(await w.queue.blobSizes(item.bundleId)).toEqual({});
+		expect(await blobSizes(w.indexedDB, item.bundleId)).toEqual({});
 	});
 
 	it('fails an item whose stored files are gone, rather than retrying forever', async () => {
@@ -498,43 +488,6 @@ describe('capture through the queue', () => {
 		const note = { v: 1 as const, bundleId: '0b7e7c1e-3f7a-4c56-9a3e-00000000000f', workspaceId: WS, kind: 'note' as const, page: { url: URL_A, title: '' }, clientTime: '2025-10-09T08:53:20.000Z', note: { text: 'fits' } };
 		await w.queue.enqueue(note);
 		expect(await w.queue.list()).toHaveLength(2);
-	});
-});
-
-describe('the IndexedDB upgrade', () => {
-	it('keeps items queued under version 1 and adds the blobs store', async () => {
-		const indexedDB = new IDBFactory();
-		const old = await new Promise<IDBDatabase>((resolve, reject) => {
-			const r = indexedDB.open(DB_NAME, 1);
-			r.onupgradeneeded = () => r.result.createObjectStore(STORE, { keyPath: 'bundleId' }).createIndex('createdAt', 'createdAt');
-			r.onsuccess = () => resolve(r.result);
-			r.onerror = () => reject(r.error);
-		});
-		const legacy: QueueItem = {
-			bundleId: '0b7e7c1e-3f7a-4c56-9a3e-000000000001',
-			createdAt: 5,
-			workspaceId: WS,
-			manifest: { v: 1, bundleId: '0b7e7c1e-3f7a-4c56-9a3e-000000000001', workspaceId: WS, kind: 'note', page: { url: URL_A, title: '' }, clientTime: '2025-10-09T08:53:20.000Z', note: { text: 'kept' } },
-			state: 'failed',
-			attempts: 2,
-			lastError: 'unknown_workspace',
-			nextAttemptAt: 5,
-			size: 10,
-		};
-		await new Promise<void>((resolve, reject) => {
-			const tx = old.transaction(STORE, 'readwrite');
-			tx.objectStore(STORE).put(legacy);
-			tx.oncomplete = () => resolve();
-			tx.onerror = () => reject(tx.error);
-		});
-		// The old worker's connection gives way, as Chrome's does when the new one upgrades.
-		old.onversionchange = () => old.close();
-
-		const queue = new Queue({ indexedDB, now: () => 10, send: async () => ({ kind: 'delivered', status: 'accepted' }) });
-		expect(await queue.list()).toEqual([legacy]);
-		await queue.enqueue(legacy.manifest.kind === 'note' ? { ...legacy.manifest, bundleId: '0b7e7c1e-3f7a-4c56-9a3e-000000000002' } : legacy.manifest, { 'page.mhtml': new Blob(['x']) });
-		expect(await queue.blobSizes('0b7e7c1e-3f7a-4c56-9a3e-000000000002')).toEqual({ 'page.mhtml': 1 });
-		expect((await queue.list()).map(i => i.bundleId)).toEqual([legacy.bundleId, '0b7e7c1e-3f7a-4c56-9a3e-000000000002']);
 	});
 });
 
@@ -599,15 +552,20 @@ async function openDb(indexedDB: IDBFactory): Promise<IDBDatabase> {
 	});
 }
 
-async function putRaw(indexedDB: IDBFactory, store: string, value: unknown): Promise<void> {
+/** The stored files of an item, name to size, read straight from the blobs store. */
+async function blobSizes(indexedDB: IDBFactory, bundleId: string): Promise<Record<string, number>> {
 	const db = await openDb(indexedDB);
-	await new Promise<void>((resolve, reject) => {
-		const tx = db.transaction(store, 'readwrite');
-		tx.objectStore(store).put(value);
-		tx.oncomplete = () => resolve();
-		tx.onerror = () => reject(tx.error);
-	});
+	const store = db.transaction(BLOBS).objectStore(BLOBS);
+	// All requested before any is awaited, so the read-only transaction stays open for them.
+	const records = await Promise.all(CAPTURE_FILE_NAMES.map(name => new Promise<{ name: string; blob: Blob } | undefined>((resolve, reject) => {
+		const r = store.get(`${bundleId}/${name}`);
+		r.onsuccess = () => resolve(r.result);
+		r.onerror = () => reject(r.error);
+	})));
 	db.close();
+	const out: Record<string, number> = {};
+	for (const record of records) if (record) out[record.name] = record.blob.size;
+	return out;
 }
 
 async function deleteRaw(indexedDB: IDBFactory, store: string, key: string): Promise<void> {

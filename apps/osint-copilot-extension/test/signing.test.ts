@@ -2,7 +2,7 @@
 // Copyright 2026 Probe Point Analytics LLC
 
 import { describe, expect, it } from 'vitest';
-import { fromB64url, fromHex, toB64url, toHex } from '../src/shared/b64url';
+import { fromB64url, toB64url, toHex } from '../src/shared/b64url';
 import { endpointFor, parsePairingString } from '../src/shared/protocol';
 import {
 	EMPTY_SHA256,
@@ -19,7 +19,7 @@ import {
 	utf8,
 	verifyMac,
 } from '../src/shared/signing';
-import { protocolVectors as v } from './vectors';
+import { fromHex, protocolVectors as v } from './vectors';
 
 const secret = fromHex(v.inputs.pairSecretHex)!;
 

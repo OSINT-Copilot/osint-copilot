@@ -237,13 +237,7 @@ test('an ordinary web page cannot read the app\'s port', async () => {
 
 test('captures a page into the investigation: create, upload, commit', async () => {
 	// The build, with the two optional permissions granted at install (see the top).
-	const granted = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-e2e-granted-'));
-	fs.cpSync(dist, granted, { recursive: true });
-	const manifestPath = path.join(granted, 'manifest.json');
-	const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-	manifest.permissions.push('pageCapture');
-	manifest.host_permissions.push('<all_urls>');
-	fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+	const granted = grantedBuild(['pageCapture']);
 	const captureProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-e2e-profile-'));
 	const ctx = await launch(captureProfile, granted);
 	try {
@@ -362,12 +356,14 @@ function painted(page: Page): Promise<string[]> {
 /**
  * A copy of the build whose manifest grants reading every page at install, as page capture
  * would have: permission, but not the investigator's choice to have highlights come back.
+ * `extraPermissions` are granted at install too.
  */
-function grantedBuild(): string {
+function grantedBuild(extraPermissions: string[] = []): string {
 	const granted = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-e2e-granted-'));
 	fs.cpSync(dist, granted, { recursive: true });
 	const manifestPath = path.join(granted, 'manifest.json');
 	const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	manifest.permissions.push(...extraPermissions);
 	manifest.host_permissions.push('<all_urls>');
 	fs.writeFileSync(manifestPath, JSON.stringify(manifest));
 	return granted;

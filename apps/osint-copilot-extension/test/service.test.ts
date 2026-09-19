@@ -7,8 +7,9 @@ import { Channel } from '../src/sw/channel';
 import { Queue, sendBundle } from '../src/sw/queue';
 import type { Highlights } from '../src/sw/highlights';
 import { Service, type ServiceDeps } from '../src/sw/service';
-import { KEYS, memoryKV, type PairingRecord } from '../src/sw/storage';
+import { KEYS, type PairingRecord } from '../src/sw/storage';
 import { FakeApp, counterBytes, fakeNetwork, type Handler } from './fake-app';
+import { memoryKV } from './memory-kv';
 import { protocolVectors as v } from './vectors';
 
 const WS = [{ id: 'gtoz4Juogr-egTX3kAreCn', name: 'Case été', open: true }, { id: 'AAAAAAAAAAAAAAAAAAAAAA', name: 'Old case', open: false }];

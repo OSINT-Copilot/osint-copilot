@@ -55,7 +55,7 @@ interface Tracked {
 	text: string;
 }
 
-export function pageKey(href: string): string {
+function pageKey(href: string): string {
 	const url = new URL(href);
 	url.hash = '';
 	return url.href;

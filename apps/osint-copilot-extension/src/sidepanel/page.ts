@@ -21,7 +21,7 @@ export interface PageInfo {
 	problem: string | null;
 }
 
-export const GRANT_HINT = 'To attach items to this tab, click the OSINT Copilot toolbar button while on it, or select text and right-click "Send to OSINT Copilot as entity". The extension can only see a page after you do.';
+const GRANT_HINT = 'To attach items to this tab, click the OSINT Copilot toolbar button while on it, or select text and right-click "Send to OSINT Copilot as entity". The extension can only see a page after you do.';
 
 export async function currentPage(pending: PendingSelection | null): Promise<PageInfo> {
 	let tab: chrome.tabs.Tab | undefined;
