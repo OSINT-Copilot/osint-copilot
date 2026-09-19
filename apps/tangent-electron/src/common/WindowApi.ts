@@ -9,7 +9,7 @@ import type { UrlData } from './urlData'
 import type { LicenseStatus } from './license'
 import type {
 	BasemapOpenResult, BasemapRange, ExecOptions, ExecResult, ExtensionPairing, ExtensionStatus,
-	HttpRequest, HttpResponse, InboxAppliedBundle, InboxBundle, InboxClaimResult, InboxOutcome, InboxState,
+	HttpRequest, HttpResponse, InboxAppliedBundle, InboxBundle, InboxClaimResult, InboxOutcome, InboxPlacement, InboxState,
 	PlatformInfo, SecretRef, StatDto
 } from '../osint/host/types'
 
@@ -265,6 +265,11 @@ export default interface WindowAPI {
 			 * Needs the window's own investigation, not the lease.
 			 */
 			listApplied(): Promise<InboxAppliedBundle[]>
+			/**
+			 * Copies a pending capture's files into OSINTCopilot/Evidence/ after re-checking
+			 * every MAC and digest; idempotent. Lease holder only.
+			 */
+			placeFiles(bundleId: string): Promise<InboxPlacement>
 			/** Fires when a bundle arrives or is settled. Returns an unsubscribe. */
 			onChanged(callback: () => void): () => void
 		}

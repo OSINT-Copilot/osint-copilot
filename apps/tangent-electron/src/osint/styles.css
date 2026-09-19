@@ -3200,3 +3200,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
   font-size: 0.85em;
   color: var(--text-muted);
 }
+.osint-extension-activity-warning {
+  font-size: 0.85em;
+  color: var(--text-warning, var(--text-muted));
+  overflow-wrap: anywhere;
+}

@@ -101,7 +101,7 @@ describe('the inbox lease', () => {
 	it('registers every inbox channel', () => {
 		expect([...ctx.channels.keys()].sort()).toEqual([
 			'osint:inbox.claim', 'osint:inbox.finish', 'osint:inbox.list', 'osint:inbox.listApplied', 'osint:inbox.markRemoved',
-			'osint:inbox.release', 'osint:inbox.step',
+			'osint:inbox.placeFiles', 'osint:inbox.release', 'osint:inbox.step',
 		])
 	})
 
@@ -142,7 +142,7 @@ describe('the inbox lease', () => {
 		expect(await call(second, 'osint:inbox.claim')).toEqual({ ok: true })
 	})
 
-	it('list, step and finish refuse a window that does not hold the lease', async () => {
+	it('list, step, placeFiles and finish refuse a window that does not hold the lease', async () => {
 		const holder = windowOn(ctx.a)
 		const other = windowOn(ctx.a)
 		const bundleId = await bundleIn(ctx.a)
@@ -150,6 +150,9 @@ describe('the inbox lease', () => {
 		await expect(call(other, 'osint:inbox.list')).rejects.toThrow(/Another window/)
 		await expect(call(other, 'osint:inbox.step', bundleId, 'entity', {})).rejects.toThrow(/Another window/)
 		await expect(call(other, 'osint:inbox.finish', bundleId, 'done')).rejects.toThrow(/Another window/)
+		await expect(call(other, 'osint:inbox.placeFiles', bundleId)).rejects.toThrow(/Another window/)
+		// The holder may ask, but a note has no files to place.
+		await expect(call(holder, 'osint:inbox.placeFiles', bundleId)).rejects.toThrow(/not a capture/)
 		expect((await call(holder, 'osint:inbox.list')).map((b: { bundleId: string }) => b.bundleId)).toEqual([bundleId])
 	})
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createHash } from 'crypto';
 import { parse as parseYaml } from 'yaml';
 import { EntityManager } from '../services/entity-manager';
 import { createTestApp, type TestApp } from '../obsidian-shim/testing/create-test-app';
@@ -8,8 +9,11 @@ import {
     normalizeActivityOutcome, readExtensionActivity, sourceSlug, type ExtensionActivityItem,
 } from '../services/inbox-service';
 import { markdownToTextDocument, parseMarkdown } from '../../common/markdownModel/parser';
-import { activityMergeLabel, activityTypeLabel } from '../modals/extension-activity-modal';
-import type { InboxAppliedBundle, InboxBundle, InboxClaimResult, InboxHost, InboxOutcome, InboxState } from '../host/types';
+import { activityCaptureNotes, activityMergeLabel, activityTypeLabel } from '../modals/extension-activity-modal';
+import type {
+    InboxAppliedBundle, InboxBundle, InboxCaptureDerived, InboxClaimResult, InboxHost, InboxOutcome, InboxPlacedFile,
+    InboxPlacement, InboxState,
+} from '../host/types';
 import type { EntityPayload, Manifest } from '../../main/osint/extension/protocol';
 import type { Entity } from '../entities/types';
 
@@ -36,6 +40,14 @@ class FakeInbox implements InboxHost {
     listeners = new Set<() => void>();
     calls: string[] = [];
     private seq = 0;
+    /** The vault main places capture files into. */
+    app!: TestApp;
+    /** A capture's files as main holds them in its bundle: role, extension, bytes. */
+    readonly captureFiles = new Map<string, { stem: string; files: Array<{ role: InboxPlacedFile['role']; ext: string; body: string }> }>();
+    /** What main recorded as each bundle's own placed files (its `placement` step). */
+    readonly owned = new Map<string, Map<string, string>>();
+    /** The digest of every file main placed, by path; what it hashes a present file to. */
+    readonly placedSha = new Map<string, string>();
 
     add(manifest: { kind: 'note' | 'entity'; page: { url: string; title: string }; note?: { text: string }; entity?: EntityPayload }): string {
         const n = ++this.seq;
@@ -110,9 +122,51 @@ class FakeInbox implements InboxHost {
             .filter((b) => b.where === 'done' || b.where === 'removed')
             .map((b) => ({ ...structuredClone(b.bundle), where: b.where as 'done' | 'removed' }));
     }
+    /**
+     * Main's placeFiles, in memory: the same naming, reuse and ownership rules
+     * (place-files.ts), writing into the test vault.
+     */
+    async placeFiles(bundleId: string): Promise<InboxPlacement> {
+        this.calls.push('placeFiles');
+        if (!this.held) throw new Error('not the holder');
+        const entry = this.bundles.get(bundleId);
+        const held = this.captureFiles.get(bundleId);
+        if (entry?.where !== 'pending' || !held) throw new Error(`No pending bundle ${bundleId}`);
+        const owned = this.owned.get(bundleId) ?? new Map<string, string>();
+        this.owned.set(bundleId, owned);
+        const files: InboxPlacedFile[] = [];
+        for (const f of held.files) {
+            const sha256 = sha(f.body);
+            for (let n = 1; ; n++) {
+                const path = `OSINTCopilot/Evidence/${held.stem}${n === 1 ? '' : `-${n}`}${f.ext}`;
+                if (this.app.vault.getAbstractFileByPath(path)) {
+                    if ((this.placedSha.get(path) ?? sha(getContent(this.app, path) ?? '')) !== sha256) continue;
+                    files.push({ role: f.role, path, sha256, created: owned.get(path) === sha256 });
+                    break;
+                }
+                owned.set(path, sha256);
+                await ensureFolder('OSINTCopilot/Evidence');
+                await this.app.vault.create(path, f.body);
+                this.placedSha.set(path, sha256);
+                files.push({ role: f.role, path, sha256, created: true });
+                break;
+            }
+        }
+        return { bundleId, files };
+    }
     onChanged(callback: () => void) {
         this.listeners.add(callback);
         return () => { this.listeners.delete(callback); };
+    }
+}
+
+const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+
+async function ensureFolder(path: string) {
+    let at = '';
+    for (const part of path.split('/')) {
+        at = at ? `${at}/${part}` : part;
+        if (!app.vault.getAbstractFileByPath(at)) await app.vault.createFolder(at);
     }
 }
 
@@ -178,6 +232,7 @@ beforeEach(async () => {
     manager = newManager();
     await manager.initialize();
     inbox = new FakeInbox();
+    inbox.app = app;
     activity = [];
     allowWayback = false;
     notices = [];
@@ -673,7 +728,7 @@ describe('the lease', () => {
     it('stopped while its claim is in flight, gives the lease straight back', async () => {
         let grant!: () => void;
         const slow: InboxHost = {
-            ...Object.fromEntries((['release', 'list', 'step', 'finish', 'markRemoved', 'listApplied', 'onChanged'] as const)
+            ...Object.fromEntries((['release', 'list', 'step', 'finish', 'markRemoved', 'listApplied', 'placeFiles', 'onChanged'] as const)
                 .map((k) => [k, (inbox[k] as (...args: unknown[]) => unknown).bind(inbox)])) as unknown as InboxHost,
             claim: () => new Promise<InboxClaimResult>((resolve) => {
                 grant = () => { inbox.held = true; resolve({ ok: true }); };
@@ -837,7 +892,7 @@ describe('helpers', () => {
     it('an applied step is read back defensively, and a bundle without one is not in the log', async () => {
         expect(normalizeActivityOutcome('nope')).toBeNull();
         expect(normalizeActivityOutcome({ created: 'yes', addedSourceIds: [1, 'x'] })).toEqual({
-            entityId: null, entityLabel: null, created: false, addedSourceIds: ['x'], sourcesNotePath: null,
+            entityId: null, entityLabel: null, created: false, addedSourceIds: ['x'], sourcesNotePath: null, placedFiles: [],
         });
         const id = inbox.add(noteBundle('half applied'));
         inbox.bundles.get(id)!.where = 'done';
@@ -846,39 +901,291 @@ describe('helpers', () => {
 });
 
 describe('a capture from the extension', () => {
-    /** A committed capture as main lists it once derived: this build cannot place it yet. */
-    function addDerivedCapture(): string {
-        const bundleId = inbox.add(noteBundle('placeholder'));
+    const ARCHIVE = 'MIME-Version: 1.0\r\n\r\n<html>the page</html>';
+    const PAGE_URL = 'https://news.example/story';
+
+    /**
+     * A committed capture as main lists it: sealed files, derived.json, and the bytes main
+     * would place. `derived: null` is one still being derived.
+     */
+    function addCapture(opts: {
+        archive?: string; title?: string; url?: string; derived?: Partial<InboxCaptureDerived> | null;
+        markdown?: string | null; fullpage?: string | null;
+    } = {}): string {
+        const archive = opts.archive ?? ARCHIVE;
+        const url = opts.url ?? PAGE_URL;
+        const bundleId = inbox.add(noteBundle('placeholder', url, opts.title ?? 'Story page'));
         const entry = inbox.bundles.get(bundleId)!;
-        const decl = { size: 10, sha256: 'a'.repeat(64) };
-        entry.bundle.manifest = {
-            ...(entry.bundle.manifest as object),
-            kind: 'capture',
-            capture: { files: { 'page.mhtml': decl } },
-        } as unknown as Manifest;
+        const decl = { size: archive.length, sha256: sha(archive) };
+        entry.bundle.manifest = { ...(entry.bundle.manifest as object), kind: 'capture', capture: { files: { 'page.mhtml': decl } } } as unknown as Manifest;
         delete (entry.bundle.manifest as { note?: unknown }).note;
         entry.bundle.server.files = { 'page.mhtml': decl };
-        entry.bundle.derived = {
-            v: 1, bundleId, status: 'done',
-            markdown: { file: 'page.markdown', sha256: 'b'.repeat(64) },
-            fullpage: { error: 'not rendered' },
-            contentLocation: 'https://example.com/team', urlMismatch: false,
-            title: 'Team page', errors: [], derivedAt: '2026-09-18T10:05:00.000Z',
-        };
+        const markdown = opts.markdown === undefined ? '# The story\n\nText.' : opts.markdown;
+        const fullpage = opts.fullpage === undefined ? 'PNG-full' : opts.fullpage;
+        if (opts.derived !== null) {
+            entry.bundle.derived = {
+                v: 1, bundleId, status: markdown === null ? 'failed' : 'done', archiveSha256: decl.sha256,
+                ...(markdown === null ? {} : { markdown: { file: 'page.markdown', sha256: sha(markdown) } }),
+                fullpage: fullpage === null ? { error: 'not rendered' } : { file: 'fullpage.png', sha256: sha(fullpage) },
+                contentLocation: url, urlMismatch: false,
+                title: 'The story', errors: markdown === null ? ['markdown: the parser failed'] : [], derivedAt: '2026-09-18T10:05:00.000Z',
+                ...opts.derived,
+            };
+        }
+        const stem = `story-page-${decl.sha256.slice(0, 8)}`;
+        inbox.captureFiles.set(bundleId, {
+            stem,
+            files: [
+                { role: 'archive', ext: '.mhtml', body: archive },
+                ...(fullpage === null ? [] : [{ role: 'fullpage' as const, ext: '.png', body: fullpage }]),
+                ...(markdown === null ? [] : [{ role: 'markdown' as const, ext: '.md', body: markdown }]),
+            ],
+        });
         return bundleId;
     }
 
-    it('is left pending, not dropped, while nothing can place it', async () => {
-        const capture = addDerivedCapture();
+    const evidenceFiles = () => snapshotPaths(app).filter((p) => p.startsWith('OSINTCopilot/Evidence/')).sort();
+    const evidenceEntities = () => manager.getAllEntities().filter((e) => String(e.type) === 'Evidence');
+
+    it('places its files and becomes one Evidence entity with the live and archived sources', async () => {
+        const id = addCapture();
+        await newService().start();
+        expect(inbox.where(id)).toBe('done');
+        const stem = `story-page-${sha(ARCHIVE).slice(0, 8)}`;
+        expect(evidenceFiles()).toEqual([`OSINTCopilot/Evidence/${stem}.md`, `OSINTCopilot/Evidence/${stem}.mhtml`, `OSINTCopilot/Evidence/${stem}.png`]);
+
+        const [entity] = evidenceEntities();
+        expect(manager.getAllEntities()).toHaveLength(1);
+        expect(entity.label).toBe('Story page');
+        expect(entity.properties).toMatchObject({
+            name: 'Story page', url: PAGE_URL, sha256: sha(ARCHIVE), filePath: `OSINTCopilot/Evidence/${stem}.md`,
+        });
+        expect(entity.properties.description).toContain('captured by the OSINT Copilot browser extension');
+        expect(entity.properties.description).toContain('DOM after JavaScript ran, with scripts removed: not the bytes the server sent');
+        expect(entity.properties.description).not.toContain('Warning');
+        const [live, archived] = entity.osint_sources!;
+        expect(live).toMatchObject({
+            id: `ext_${id}`, source_url: PAGE_URL, inferred: false, via: 'extension', client_id: CLIENT,
+            received_at: '2026-09-18T10:00:01.000Z', captured_at: '2026-09-18T10:00:01.000Z', archive_status: 'skipped',
+        });
+        expect(archived).toMatchObject({
+            id: `ext_${id}_archive`, source_url: `vault://OSINTCopilot/Evidence/${stem}.mhtml`, sha256: sha(ARCHIVE),
+            inferred: false, via: 'extension', client_id: CLIENT, received_at: '2026-09-18T10:00:01.000Z', archive_status: 'skipped',
+        });
+        expect(archived.rationale).toContain(`sha256 ${sha(ARCHIVE)}`);
+        expect(archived.rationale).toContain('not a record of what the server sent');
+
+        // Keyed by the archive's bytes, and read back the same from the note on disk.
+        const reloaded = newManager();
+        await reloaded.initialize();
+        const again = reloaded.getEntity(entity.id)!;
+        expect(String(again.type)).toBe('Evidence');
+        expect(again.properties.sha256).toBe(sha(ARCHIVE));
+        expect(reloaded.findEntityByIdentifier('Evidence', `evidence:${sha(ARCHIVE)}`)?.id).toBe(entity.id);
+        expect(again.osint_sources!.map((s) => s.id)).toEqual([`ext_${id}`, `ext_${id}_archive`]);
+
+        const text = getContent(app, sourcesNotes()[0])!;
+        expect(text).toContain(`<!-- oc:bundle ${id} -->\n### Capture: \`Story page\`\n`);
+        expect(text).toContain(`New evidence: [[${entity.filePath!.replace(/\.md$/, '')}|Story page]]`);
+        expect(text).toContain(`- Archive (MHTML): [[OSINTCopilot/Evidence/${stem}.mhtml|${stem}.mhtml]], sha256 \`${sha(ARCHIVE)}\``);
+        expect(text).toContain(`- Full-page screenshot: [[OSINTCopilot/Evidence/${stem}.png|${stem}.png]]`);
+        expect(text).toContain(`- Page text: [[OSINTCopilot/Evidence/${stem}.md|${stem}.md]]`);
+
+        const [item] = await refreshActivity();
+        expect(item).toMatchObject({ bundleId: id, kind: 'capture', summary: 'Story page', url: PAGE_URL, removed: false });
+        expect(item.outcome.placedFiles.map((f) => [f.role, f.created])).toEqual([['archive', true], ['fullpage', true], ['markdown', true]]);
+        expect(activityTypeLabel(item)).toBe('Page capture');
+        expect(activityCaptureNotes(item)).toEqual([]);
+        expect(notices).toEqual([1]);
+    });
+
+    it('a second capture of identical bytes merges into the same Evidence and places nothing new', async () => {
+        const first = addCapture();
+        const service = newService();
+        await service.start();
+        const files = evidenceFiles();
+        const second = addCapture({ title: 'Story page, again' });
+        await service.processPending();
+
+        expect(evidenceEntities()).toHaveLength(1);
+        expect(evidenceFiles()).toEqual(files);
+        const log = await refreshActivity();
+        const b = log.find((i) => i.bundleId === second)!;
+        expect(b.outcome).toMatchObject({ entityId: evidenceEntities()[0].id, created: false });
+        expect(b.outcome.placedFiles.every((f) => !f.created)).toBe(true);
+        expect(activityMergeLabel(b)).toBe('merged into existing Story page');
+        // Its own attestation of the live page; the archive's source is already there.
+        expect(evidenceEntities()[0].osint_sources!.map((s) => s.id)).toEqual([`ext_${first}`, `ext_${first}_archive`, `ext_${second}`]);
+        expect(getContent(app, sourcesNotes()[0])).toContain('(already in the investigation from an identical capture)');
+    });
+
+    it('still being derived, stays pending and is not placed', async () => {
+        const id = addCapture({ derived: null });
         const note = inbox.add(noteBundle('Beside it'));
         await newService().start();
-        // Rejecting it would throw the evidence away for good.
-        expect(inbox.where(capture)).toBe('pending');
+        expect(inbox.where(id)).toBe('pending');
+        expect(inbox.calls).not.toContain('placeFiles');
         expect(inbox.calls).not.toContain('finish:rejected');
-        expect(dropped).toEqual([]);
-        // What can be placed still is, and only it is counted.
+        expect(inbox.bundles.get(id)!.bundle.state).toBeNull();
         expect(inbox.where(note)).toBe('done');
         expect(notices).toEqual([1]);
-        expect(inbox.bundles.get(capture)!.bundle.state).toBeNull();
+        expect(evidenceFiles()).toEqual([]);
+    });
+
+    it('whose derivation failed still applies, with the archive as its file, and says so', async () => {
+        const id = addCapture({ markdown: null, fullpage: null });
+        await newService().start();
+        expect(inbox.where(id)).toBe('done');
+        const [entity] = evidenceEntities();
+        expect(entity.properties.filePath).toMatch(/\.mhtml$/);
+        expect(entity.properties.description).toContain('No readable text could be made from the archive (markdown: the parser failed)');
+        expect(evidenceFiles()).toHaveLength(1);
+        const [item] = await refreshActivity();
+        expect(item.derivationFailed).toBe(true);
+        expect(activityCaptureNotes(item)).toEqual(['No readable text could be made from the archive; the archive itself was kept.']);
+        expect(getContent(app, sourcesNotes()[0])).toContain('Warning: `No readable text could be made');
+    });
+
+    it('whose archive is of another page says so on the entity, in the Sources note and in the log', async () => {
+        addCapture({ derived: { urlMismatch: true, contentLocation: 'https://elsewhere.example/other' } });
+        const none = addCapture({ archive: 'another archive', derived: { urlMismatch: true, contentLocation: null } });
+        await newService().start();
+        const byUrl = evidenceEntities().map((e) => String(e.properties.description));
+        expect(byUrl.some((d) => d.includes(`Warning: The archive records its address as https://elsewhere.example/other, not ${PAGE_URL}`))).toBe(true);
+        expect(byUrl.some((d) => d.includes('Warning: The archive does not record its address'))).toBe(true);
+        const text = getContent(app, sourcesNotes()[0])!;
+        expect(text).toContain('Warning: `The archive records its address as https://elsewhere.example/other');
+        const log = await refreshActivity();
+        expect(log.map(activityCaptureNotes)).toEqual([
+            ["The archive's own address differs: https://elsewhere.example/other"],
+            ['The archive does not record its address.'],
+        ]);
+        expect(log.find((i) => i.bundleId === none)!.urlMismatch).toBe(true);
+    });
+
+    for (const crashAt of ['place', 'entity-plan', 'entity', 'sources-note', 'finish'] as const) {
+        it(`a crash before journalling "${crashAt}" and a re-run add nothing twice`, async () => {
+            const id = addCapture();
+            if (crashAt === 'finish') inbox.crashBeforeFinish = true;
+            else inbox.crashBeforeStep = crashAt;
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+            await newService().start();
+            expect(inbox.where(id)).toBe('pending');
+            const placedBefore = evidenceFiles();
+            expect(placedBefore).toHaveLength(3);
+
+            await inbox.release();
+            manager = newManager();
+            await manager.initialize();
+            await newService().start();
+            warn.mockRestore();
+
+            expect(inbox.where(id)).toBe('done');
+            expect(evidenceFiles()).toEqual(placedBefore);
+            expect(evidenceEntities()).toHaveLength(1);
+            expect(evidenceEntities()[0].osint_sources).toHaveLength(2);
+            expect(getContent(app, sourcesNotes()[0])!.split(`<!-- oc:bundle ${id} -->`)).toHaveLength(2);
+            const [item] = await refreshActivity();
+            // Still this item's files and entity, so Remove still takes them back.
+            expect(item.outcome.created).toBe(true);
+            expect(item.outcome.placedFiles.every((f) => f.created)).toBe(true);
+            // Asked again on the re-run, never taken from the journal; it found its own files.
+            expect(inbox.calls.filter((c) => c === 'placeFiles')).toHaveLength(2);
+        });
+    }
+
+    it('Remove trashes only the files this item created, deletes its entity and cuts its section', async () => {
+        const keepNote = inbox.add(noteBundle('keep me', PAGE_URL, 'Story page'));
+        const drop = addCapture();
+        const other = addCapture({ archive: 'a different archive', markdown: '# other', fullpage: 'PNG-other' });
+        const service = newService();
+        await service.start();
+        const dropped = (await refreshActivity()).find((i) => i.bundleId === drop)!;
+        const otherItem = activity.find((i) => i.bundleId === other)!;
+        expect(evidenceFiles()).toHaveLength(6);
+
+        expect(await service.remove(drop)).toBe(true);
+        expect(manager.getEntity(dropped.outcome.entityId!)).toBeUndefined();
+        expect(evidenceFiles()).toEqual(otherItem.outcome.placedFiles.map((f) => f.path).sort());
+        const text = getContent(app, sourcesNotes()[0])!;
+        expect(text).not.toContain(drop);
+        expect(text).toContain(`<!-- oc:bundle ${keepNote} -->`);
+        expect(text).toContain(`<!-- oc:bundle ${other} -->`);
+        expect(inbox.where(drop)).toBe('removed');
+        expect(manager.getEntity(otherItem.outcome.entityId!)).toBeDefined();
+    });
+
+    it('Remove keeps a file it only reused, and files another capture still relies on', async () => {
+        // Already there, same bytes, from before this capture (say, an earlier build).
+        const stem = `story-page-${sha(ARCHIVE).slice(0, 8)}`;
+        await ensureFolder('OSINTCopilot/Evidence');
+        await app.vault.create(`OSINTCopilot/Evidence/${stem}.png`, 'PNG-full');
+        const first = addCapture();
+        const service = newService();
+        await service.start();
+        const [item] = await refreshActivity();
+        expect(item.outcome.placedFiles.map((f) => [f.role, f.created])).toEqual([['archive', true], ['fullpage', false], ['markdown', true]]);
+
+        const second = addCapture();
+        await service.processPending();
+        // The first goes; the second still has the archive and text it reused.
+        await service.remove(first);
+        expect(evidenceFiles()).toEqual([`OSINTCopilot/Evidence/${stem}.md`, `OSINTCopilot/Evidence/${stem}.mhtml`, `OSINTCopilot/Evidence/${stem}.png`]);
+        const [entity] = evidenceEntities();
+        expect(entity.osint_sources!.map((s) => s.id)).toEqual([`ext_${second}`]);
+        // The second created nothing, so removing it trashes nothing either.
+        await service.remove(second);
+        expect(evidenceFiles()).toHaveLength(3);
+    });
+
+    it('a pending capture that reused files a Remove then trashed places them again as its own', async () => {
+        const first = addCapture();
+        const service = newService();
+        await service.start();
+        const files = evidenceFiles();
+        expect(files).toHaveLength(3);
+
+        // The identical capture is placed (reusing every file) and journals it, then dies
+        // before its entity: it stays pending with a placement that owns nothing.
+        const second = addCapture();
+        crashBeforeUpsert = true;
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        await service.processPending();
+        expect(inbox.where(second)).toBe('pending');
+        const journaled = inbox.bundles.get(second)!.bundle.state!.steps.find((s) => s.step === 'place')!.data as InboxPlacement;
+        expect(journaled.files.every((f) => !f.created)).toBe(true);
+
+        // Removing the first trashes the files it made: nothing applied still names them.
+        await service.remove(first);
+        expect(evidenceFiles()).toEqual([]);
+
+        await service.processPending();
+        warn.mockRestore();
+        expect(inbox.where(second)).toBe('done');
+        // Its entity and Sources lines point at files that are really there, and are its own.
+        expect(evidenceFiles()).toEqual(files);
+        const [entity] = evidenceEntities();
+        expect(files).toContain(entity.properties.filePath);
+        for (const s of entity.osint_sources!) {
+            if (s.source_url.startsWith('vault://')) expect(files).toContain(s.source_url.slice('vault://'.length));
+        }
+        const item = (await refreshActivity()).find((i) => i.bundleId === second)!;
+        expect(item.outcome.placedFiles.every((f) => f.created)).toBe(true);
+        await service.remove(second);
+        expect(evidenceFiles()).toEqual([]);
+    });
+
+    it('a hostile title cannot make the Evidence note or the Sources note embed anything', async () => {
+        const title = '![](https://tracker.example/t.gif) !https://tracker.example/u.gif';
+        addCapture({ title });
+        await newService().start();
+        const [entity] = evidenceEntities();
+        for (const path of [entity.filePath!, sourcesNotes()[0]]) {
+            const doc = markdownToTextDocument(getContent(app, path)!.replace(/^---\n[\s\S]*?\n---\n/, ''));
+            const embeds = doc.lines.flatMap((l) => l.content.ops).filter((op) => (op.attributes as { t_embed?: boolean } | undefined)?.t_embed);
+            expect(embeds, path).toEqual([]);
+        }
+        // Still reads as the page's title.
+        expect(String(entity.properties.name).replace(/​/g, '')).toBe(title);
     });
 });

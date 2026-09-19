@@ -356,6 +356,7 @@ const bridge: WindowApi = {
 			finish: (bundleId, outcome) => ipcRenderer.invoke('osint:inbox.finish', bundleId, outcome),
 			markRemoved: bundleId => ipcRenderer.invoke('osint:inbox.markRemoved', bundleId),
 			listApplied: () => ipcRenderer.invoke('osint:inbox.listApplied'),
+			placeFiles: bundleId => ipcRenderer.invoke('osint:inbox.placeFiles', bundleId),
 			onChanged(callback) {
 				// Its own listener, so the returned function removes exactly this one.
 				const listener = () => {

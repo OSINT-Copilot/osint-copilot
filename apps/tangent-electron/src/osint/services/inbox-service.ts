@@ -20,6 +20,11 @@
  *   entity        the upsert's outcome. The upsert itself is idempotent: the source
  *                 carries the id `ext_<bundleId>`, and appendOsintSources skips a source
  *                 whose content the entity already has.
+ *   place         a capture only, first: the files main copied into OSINTCopilot/Evidence/
+ *                 (inbox.placeFiles), each marked created or reused. A record only: every
+ *                 attempt asks main again, which is harmless (main finds its own files by
+ *                 name and digest) and puts back files a Remove of another capture trashed
+ *                 while this one was pending.
  *   sources-note  the page's Sources note, holding this bundle's section between
  *                 `<!-- oc:bundle <id> -->` markers. A section already there is not added
  *                 again, and Remove cuts exactly that section.
@@ -49,8 +54,11 @@ import { normalizeSourceUrl } from './osint-confidence-engine';
 import { ensureFolderExists } from '../utils/vault-bootstrap-fs';
 import { OSINT_COPILOT_VAULT_ROOT } from '../constants/vault-layout';
 import { generateId, isGeneratedId, type Entity, type OsintSourceInput } from '../entities/types';
-import type { InboxAppliedBundle, InboxBundle, InboxHost } from '../host/types';
+import type { InboxAppliedBundle, InboxBundle, InboxHost, InboxPlacedFile, InboxPlacement } from '../host/types';
 import type { EntityPayload, ManifestPage } from '../../main/osint/extension/protocol';
+import {
+    captureName, captureWarnings, evidenceSourcesFor, evidenceTargetFor, normalizePlacedFiles, normalizePlacement,
+} from '../inbox/capture-to-entity';
 
 /** Folder of the per-page notes. Reserved: EntityManager never parses it as entities. */
 export const SOURCES_FOLDER = normalizePath(`${OSINT_COPILOT_VAULT_ROOT}/Sources`);
@@ -69,11 +77,16 @@ export interface ExtensionActivityOutcome {
     /** Sources this item added to the entity; Remove drops exactly these. */
     addedSourceIds: string[];
     sourcesNotePath: string | null;
+    /**
+     * A capture's files in OSINTCopilot/Evidence/. Remove trashes the ones this item
+     * created, unless something still in the investigation relies on them.
+     */
+    placedFiles: InboxPlacedFile[];
 }
 
 export interface ExtensionActivityItem {
     bundleId: string;
-    kind: 'entity' | 'note';
+    kind: 'entity' | 'note' | 'capture';
     /** For an entity: the extension's kind (email, phone, username, ...). */
     entityKind?: string;
     /** The value, or the note's first line, for the list. */
@@ -86,6 +99,12 @@ export interface ExtensionActivityItem {
     outcome: ExtensionActivityOutcome;
     removed: boolean;
     removedAt?: string;
+    /** A capture only: no readable text could be made from the archive. */
+    derivationFailed?: boolean;
+    /** A capture only: the archive's own address is not the page's, or is unknown. */
+    urlMismatch?: boolean;
+    /** A capture only: that address, when the archive records one. */
+    contentLocation?: string | null;
 }
 
 /** The journal step that records what an applied item added. */
@@ -105,6 +124,7 @@ export function normalizeActivityOutcome(raw: unknown): ExtensionActivityOutcome
         created: o.created === true,
         addedSourceIds: Array.isArray(o.addedSourceIds) ? o.addedSourceIds.filter(isString) : [],
         sourcesNotePath: isString(o.sourcesNotePath) ? o.sourcesNotePath : null,
+        placedFiles: normalizePlacedFiles(o.placedFiles),
     };
 }
 
@@ -122,10 +142,22 @@ export function activityItemFor(bundle: InboxAppliedBundle): ExtensionActivityIt
     const applied = steps.find((s) => s.step === APPLIED_STEP);
     const outcome = normalizeActivityOutcome(applied?.data);
     if (!applied || !outcome) return null;
-    let kind: 'entity' | 'note';
+    let kind: ExtensionActivityItem['kind'];
     let summary: string;
     let entityKind: string | undefined;
-    if (manifest.kind === 'entity') {
+    let captureFlags: Pick<ExtensionActivityItem, 'derivationFailed' | 'urlMismatch' | 'contentLocation'> = {};
+    if (manifest.kind === 'capture') {
+        kind = 'capture';
+        const derived = bundle.derived;
+        summary = derived ? captureName({ page: manifest.page, derived }) : manifest.page.title || manifest.page.url;
+        if (derived) {
+            captureFlags = {
+                derivationFailed: derived.status === 'failed',
+                urlMismatch: derived.urlMismatch,
+                contentLocation: derived.contentLocation,
+            };
+        }
+    } else if (manifest.kind === 'entity') {
         kind = 'entity';
         entityKind = manifest.entity.kind;
         summary = manifest.entity.value;
@@ -149,6 +181,7 @@ export function activityItemFor(bundle: InboxAppliedBundle): ExtensionActivityIt
         outcome,
         removed,
         ...(removedAt ? { removedAt } : {}),
+        ...captureFlags,
     };
 }
 
@@ -354,6 +387,25 @@ function entityLink(filePath: string | undefined, label: string, kind: string): 
     const clean = oneLine(label).replace(/[[\]|<>]/g, '');
     const display = clean && !clean.includes('://') ? clean : kind;
     return `[[${filePath.replace(/\.md$/, '')}|${display}]]`;
+}
+
+const PLACED_ROLE_LABELS: Record<InboxPlacedFile['role'], string> = {
+    archive: 'Archive (MHTML)',
+    fullpage: 'Full-page screenshot',
+    viewport: 'What was on screen',
+    pdf: 'Original PDF',
+    markdown: 'Page text',
+};
+
+/**
+ * One placed file as a list item. The path is main's own (`[a-z0-9-]`, a digest, a fixed
+ * extension, checked by normalizePlacement), so it can be a link; a link, not an embed,
+ * so nothing is loaded until it is followed.
+ */
+function placedFileLine(file: InboxPlacedFile): string {
+    const name = file.path.slice(file.path.lastIndexOf('/') + 1);
+    const reused = file.created ? '' : ' (already in the investigation from an identical capture)';
+    return `- ${PLACED_ROLE_LABELS[file.role]}: [[${file.path}|${name}]], sha256 \`${file.sha256}\`${reused}`;
 }
 
 export const sectionOpen = (bundleId: string) => `<!-- oc:bundle ${bundleId} -->`;
@@ -575,10 +627,9 @@ export class InboxService {
     /** Applies one bundle, resuming from its journal. */
     private async apply(bundle: InboxBundle): Promise<'done' | 'rejected' | 'held'> {
         const { bundleId, manifest, server } = bundle;
-        // Main accepts and derives captures, but nothing here places them yet. Rejecting one
-        // would move the evidence to rejected/, which is for good; left pending, the build
-        // that can place it finds it there.
-        if (manifest.kind === 'capture') return 'held';
+        // Main lists a capture only once it is derived; one without derived.json is still
+        // being derived, and is left pending for the pass that sees it done.
+        if (manifest.kind === 'capture' && !bundle.derived) return 'held';
         const journal = new Map((bundle.state?.steps ?? []).map((s) => [s.step, s.data]));
         const step = async (name: string, data: unknown) => {
             await this.deps.inbox.step(bundleId, name, data);
@@ -597,42 +648,8 @@ export class InboxService {
         if (manifest.kind === 'entity') {
             const target = entityTargetFor(manifest.entity, manifest.page.url);
             if (!target) return reject(`no entity type for a ${manifest.entity.kind}`);
-            let done = journal.get('entity');
-            if (!isEntityStep(done)) {
-                let plan = journal.get('entity-plan');
-                if (!isEntityPlan(plan)) {
-                    // Recorded before anything can be created with it (see the header).
-                    plan = { plannedEntityId: generateId() };
-                    await step('entity-plan', plan);
-                }
-                const plannedEntityId = (plan as EntityPlan).plannedEntityId;
-                const em = this.deps.entityManager;
-                const source = await this.sourceFor(bundle, manifest.entity.context);
-                let entity: Entity;
-                if (em.getEntity(plannedEntityId)) {
-                    // An earlier attempt created it, then crashed. Ours, even when an entity
-                    // with the same identifier has appeared since: add to ours, not to that.
-                    const appended = await em.appendOsintSources(plannedEntityId, [source], { captured_at: server.receivedAt });
-                    if (!appended) throw new Error('Entity note is locked');
-                    entity = appended;
-                } else {
-                    ({ entity } = await em.upsertEntityFromExternal(
-                        target.schema, target.properties, [source],
-                        { identifierKey: target.identifierKey, captured_at: server.receivedAt, createId: plannedEntityId },
-                    ));
-                }
-                done = {
-                    entityId: entity.id,
-                    // Only the planned id proves it: a merge keeps the match's own id.
-                    created: entity.id === plannedEntityId,
-                    label: entity.label,
-                    addedSourceIds: (entity.osint_sources ?? [])
-                        .filter((s) => s.id === source.id)
-                        .map((s) => s.id),
-                };
-                await step('entity', done);
-            }
-            const rec = done as EntityStep;
+            const done = await this.upsertJournalled(journal, step, target, async () => [await this.sourceFor(bundle, manifest.entity.context)], server.receivedAt);
+            const rec = done;
             const entity = this.deps.entityManager.getEntity(rec.entityId);
             const kind = entityKindLabel(manifest.entity);
             const lines = [
@@ -647,10 +664,45 @@ export class InboxService {
                 created: rec.created,
                 addedSourceIds: rec.addedSourceIds,
                 sourcesNotePath: null,
+                placedFiles: [],
             };
         } else if (manifest.kind === 'note') {
             section = [`### Note`, `${received}.`, '', blockLiteral(cleanNoteText(manifest.note.text))].join('\n');
-            outcome = { entityId: null, entityLabel: null, created: false, addedSourceIds: [], sourcesNotePath: null };
+            outcome = { entityId: null, entityLabel: null, created: false, addedSourceIds: [], sourcesNotePath: null, placedFiles: [] };
+        } else if (manifest.kind === 'capture') {
+            const derived = bundle.derived!;
+            // Asked of main on every attempt, never taken from the journal: a placement
+            // that reused another capture's files may be journaled while this capture stays
+            // pending, and a Remove of that other capture in the meantime trashes them.
+            // Placing again finds the files still there (same answer), or places them anew
+            // as this capture's own. Main re-checks every MAC and digest first; a refusal
+            // throws and the capture stays pending.
+            const placement = normalizePlacement(await this.deps.inbox.placeFiles(bundleId), bundleId);
+            if (!placement) throw new Error('main placed no archive');
+            await step('place', placement);
+            const facts = { page: manifest.page, derived, placement, receivedAt: server.receivedAt };
+            const target = evidenceTargetFor(facts);
+            if (!target) throw new Error('the placed archive has no usable digest');
+            const rec = await this.upsertJournalled(journal, step, target, async () => evidenceSourcesFor(facts, {
+                bundleId, clientId: server.clientId, allowWayback: await this.deps.allowWayback(),
+            }), server.receivedAt);
+            const entity = this.deps.entityManager.getEntity(rec.entityId);
+            const name = captureName(facts);
+            section = [
+                `### Capture: ${inlineLiteral(name) || 'Untitled page'}`,
+                `${received}. ${rec.created ? 'New evidence' : 'Merged into existing evidence'}: ${entityLink(entity?.filePath, entity?.label ?? rec.label, 'Evidence')}`,
+                ...captureWarnings(facts).map((w) => `Warning: ${inlineLiteral(w)}`),
+                '',
+                ...placement.files.map(placedFileLine),
+            ].join('\n');
+            outcome = {
+                entityId: rec.entityId,
+                entityLabel: entity?.label ?? rec.label,
+                created: rec.created,
+                addedSourceIds: rec.addedSourceIds,
+                sourcesNotePath: null,
+                placedFiles: placement.files,
+            };
         } else {
             // A kind from a later protocol version: main rejects them, so this is a guard.
             return reject('a kind this version does not know');
@@ -669,6 +721,53 @@ export class InboxService {
         if (!journal.has(APPLIED_STEP)) await step(APPLIED_STEP, outcome);
         await this.deps.inbox.finish(bundleId, 'done');
         return 'done';
+    }
+
+    /**
+     * The entity step, journalled: plan an id, upsert, record what happened. Shared by
+     * entities and captures, so both resume the same way after a crash (see the header).
+     */
+    private async upsertJournalled(
+        journal: Map<string, unknown>,
+        step: (name: string, data: unknown) => Promise<void>,
+        target: { schema: string; properties: Record<string, unknown>; identifierKey: string },
+        sources: () => Promise<OsintSourceInput[]>,
+        receivedAt: string,
+    ): Promise<EntityStep> {
+        const done = journal.get('entity');
+        if (isEntityStep(done)) return done;
+        let plan = journal.get('entity-plan');
+        if (!isEntityPlan(plan)) {
+            // Recorded before anything can be created with it (see the header).
+            plan = { plannedEntityId: generateId() };
+            await step('entity-plan', plan);
+        }
+        const plannedEntityId = (plan as EntityPlan).plannedEntityId;
+        const em = this.deps.entityManager;
+        const ours = await sources();
+        let entity: Entity;
+        if (em.getEntity(plannedEntityId)) {
+            // An earlier attempt created it, then crashed. Ours, even when an entity
+            // with the same identifier has appeared since: add to ours, not to that.
+            const appended = await em.appendOsintSources(plannedEntityId, ours, { captured_at: receivedAt });
+            if (!appended) throw new Error('Entity note is locked');
+            entity = appended;
+        } else {
+            ({ entity } = await em.upsertEntityFromExternal(
+                target.schema, target.properties, ours,
+                { identifierKey: target.identifierKey, captured_at: receivedAt, createId: plannedEntityId },
+            ));
+        }
+        const ids = new Set(ours.map((s) => s.id));
+        const rec: EntityStep = {
+            entityId: entity.id,
+            // Only the planned id proves it: a merge keeps the match's own id.
+            created: entity.id === plannedEntityId,
+            label: entity.label,
+            addedSourceIds: (entity.osint_sources ?? []).filter((s) => ids.has(s.id)).map((s) => s.id),
+        };
+        await step('entity', rec);
+        return rec;
     }
 
     private async sourceFor(bundle: InboxBundle, context: string | undefined): Promise<OsintSourceInput> {
@@ -758,14 +857,16 @@ export class InboxService {
     /**
      * Reverses exactly what one applied item added: the entity it created (unless other
      * items have since added sources to it, in which case only its own source goes), or
-     * the source it appended to an existing one; then its section of the Sources note.
+     * the source it appended to an existing one; for a capture, the Evidence files it
+     * placed (see removePlacedFiles); then its section of the Sources note.
      * The item is marked removed and its bundle moved to removed/. Every part is safe to
      * repeat, so a Remove that failed half way can simply be clicked again.
      */
     remove(bundleId: string): Promise<boolean> {
         return this.enqueue(async () => {
             // Fresh from main every time: another window may have removed it already.
-            const item = (await readExtensionActivity(this.deps.inbox)).find((i) => i.bundleId === bundleId);
+            const log = await readExtensionActivity(this.deps.inbox);
+            const item = log.find((i) => i.bundleId === bundleId);
             if (!item || item.removed) return false;
             const { outcome } = item;
             const em = this.deps.entityManager;
@@ -783,6 +884,7 @@ export class InboxService {
                     }
                 }
             }
+            await this.removePlacedFiles(item, log);
             if (outcome.sourcesNotePath) {
                 const file = this.deps.app.vault.getAbstractFileByPath(outcome.sourcesNotePath);
                 if (file instanceof TFile) {
@@ -797,5 +899,35 @@ export class InboxService {
             await this.deps.inbox.markRemoved(bundleId);
             return true;
         });
+    }
+
+    /**
+     * Trashes the Evidence files this capture created. Not one it reused: that file came
+     * with an earlier capture of the identical page. And not one something still in the
+     * investigation relies on: another applied capture that placed or reused it, or the
+     * Evidence entity, when it survives this Remove (others have added to it) and still
+     * points at the file. OS trash, not delete, so a mistake is recoverable.
+     */
+    private async removePlacedFiles(item: ExtensionActivityItem, log: ExtensionActivityItem[]): Promise<void> {
+        const created = item.outcome.placedFiles.filter((f) => f.created).map((f) => f.path);
+        if (created.length === 0) return;
+        const keep = new Set<string>();
+        for (const other of log) {
+            if (other.removed || other.bundleId === item.bundleId) continue;
+            for (const f of other.outcome.placedFiles) keep.add(f.path);
+        }
+        const survivor = item.outcome.entityId ? this.deps.entityManager.getEntity(item.outcome.entityId) : undefined;
+        if (survivor) {
+            if (typeof survivor.properties.filePath === 'string') keep.add(survivor.properties.filePath);
+            for (const s of survivor.osint_sources ?? []) {
+                if (s.source_url.startsWith('vault://')) keep.add(s.source_url.slice('vault://'.length));
+            }
+        }
+        const { app } = this.deps;
+        for (const path of created) {
+            if (keep.has(path)) continue;
+            const file = app.vault.getAbstractFileByPath(path);
+            if (file instanceof TFile) await app.fileManager.trashFile(file);
+        }
     }
 }

@@ -1,7 +1,7 @@
 /**
  * Normalised identifier keys for entities: `email:<addr>`, `phone:<digits>`, `domain:<host>`,
  * `wallet:<chain>:<address>`, `username:<name>` or `username:<platform>:<name>`, `url:<url>`,
- * `ip:<addr>`.
+ * `ip:<addr>`, `evidence:<sha256>`.
  *
  * Labels are not identity. Two people can share a name, and the same email address arrives
  * as "Alice@Example.com" from one page and "alice@example.com" from another. External
@@ -13,9 +13,9 @@
 
 import type { Entity } from '../entities/types';
 
-export type IdentifierKind = 'email' | 'phone' | 'domain' | 'wallet' | 'username' | 'url' | 'ip';
+export type IdentifierKind = 'email' | 'phone' | 'domain' | 'wallet' | 'username' | 'url' | 'ip' | 'evidence';
 
-const KINDS: readonly IdentifierKind[] = ['email', 'phone', 'domain', 'wallet', 'username', 'url', 'ip'];
+const KINDS: readonly IdentifierKind[] = ['email', 'phone', 'domain', 'wallet', 'username', 'url', 'ip', 'evidence'];
 
 function isKind(value: string): value is IdentifierKind {
     return (KINDS as readonly string[]).includes(value);
@@ -190,6 +190,15 @@ function normalizeWallet(raw: string): string | null {
     return `${chain}:${address}`;
 }
 
+/**
+ * A captured page is identified by its archive's bytes: the same archive captured twice is
+ * one piece of evidence, whatever it was titled. Only a whole SHA-256 in hex is a key.
+ */
+function normalizeSha256(raw: string): string | null {
+    const v = raw.trim().toLowerCase();
+    return /^[0-9a-f]{64}$/.test(v) ? v : null;
+}
+
 const NORMALIZERS: Record<IdentifierKind, (raw: string) => string | null> = {
     email: normalizeEmail,
     phone: normalizePhone,
@@ -198,6 +207,7 @@ const NORMALIZERS: Record<IdentifierKind, (raw: string) => string | null> = {
     username: normalizeUsername,
     url: normalizeUrl,
     ip: normalizeIp,
+    evidence: normalizeSha256,
 };
 
 /**
@@ -293,6 +303,14 @@ export function identifierKeysForEntity(
     for (const [prop, kind] of identifierFieldsFor(entity)) {
         for (const v of valuesOf(props[prop])) {
             const key = identifierKey(kind, v, platform);
+            if (key) keys.add(key);
+        }
+    }
+    // Evidence is a legacy type stored under the FTM schema Document, which Website, Image
+    // and Text share: only the type says which Documents are captures.
+    if (String(entity.type) === 'Evidence') {
+        for (const v of valuesOf(props.sha256)) {
+            const key = identifierKey('evidence', v);
             if (key) keys.add(key);
         }
     }

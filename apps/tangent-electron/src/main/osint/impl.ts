@@ -260,6 +260,7 @@ export const host: Host = {
         finish: async () => { throw new Error(NO_WINDOW); },
         markRemoved: async () => { throw new Error(NO_WINDOW); },
         listApplied: async () => { throw new Error(NO_WINDOW); },
+        placeFiles: async () => { throw new Error(NO_WINDOW); },
         onChanged: () => () => undefined,
     },
     extension: {

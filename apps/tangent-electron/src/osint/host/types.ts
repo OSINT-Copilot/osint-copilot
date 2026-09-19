@@ -267,6 +267,30 @@ export interface InboxAppliedBundle extends InboxBundle {
 
 export type InboxOutcome = 'done' | 'rejected' | 'removed';
 
+/** What each placed file of a capture is. */
+export type InboxPlacedRole = 'archive' | 'fullpage' | 'viewport' | 'pdf' | 'markdown';
+
+/** One file of a capture, copied by main into `OSINTCopilot/Evidence/`. */
+export interface InboxPlacedFile {
+    role: InboxPlacedRole;
+    /** Vault-relative, `OSINTCopilot/Evidence/<slug>-<sha8>[-n].<ext>`. Named by main only. */
+    path: string;
+    /** Of the placed bytes, as main hashed them. */
+    sha256: string;
+    /**
+     * True when this capture's placement made the file. False when a file with the same
+     * name and the same bytes was already there (an earlier capture of the identical
+     * page), which belongs to whoever made it: Remove leaves it.
+     */
+    created: boolean;
+}
+
+/** placeFiles' answer: the capture's files in the investigation, archive first. */
+export interface InboxPlacement {
+    bundleId: string;
+    files: InboxPlacedFile[];
+}
+
 /** One window applies a workspace's inbox at a time; the others are told no. */
 export type InboxClaimResult = { ok: true } | { ok: false; reason: 'held' };
 
@@ -322,6 +346,13 @@ export interface InboxHost {
      * window on the investigation may ask, not only the lease holder.
      */
     listApplied(): Promise<InboxAppliedBundle[]>;
+    /**
+     * Copies a pending, derived capture's files into `OSINTCopilot/Evidence/`, after main
+     * re-verifies the manifest's and derived.json's MACs and every file's digest. The
+     * bundle keeps its own copies. Idempotent: calling it again returns the same files,
+     * with `created` still true for the ones this capture made. Lease holder only.
+     */
+    placeFiles(bundleId: string): Promise<InboxPlacement>;
     /** Fires when a bundle arrives or is settled. Returns an unsubscribe. */
     onChanged(callback: () => void): () => void;
 }

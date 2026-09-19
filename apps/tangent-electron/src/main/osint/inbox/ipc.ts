@@ -22,6 +22,7 @@ import type {
     InboxBundle,
     InboxClaimResult,
     InboxOutcome,
+    InboxPlacement,
     InboxState,
 } from '../../../osint/host/types';
 
@@ -42,7 +43,7 @@ export type InboxHandle = (
 ) => void;
 
 /** The inbox operations the channels need; InboxWriter in the app. */
-export type InboxStore = Pick<InboxWriter, 'investigationRootFor' | 'listPending' | 'recordStep' | 'finish' | 'markRemoved' | 'listApplied'>;
+export type InboxStore = Pick<InboxWriter, 'investigationRootFor' | 'listPending' | 'recordStep' | 'finish' | 'markRemoved' | 'listApplied' | 'placeFiles'>;
 
 export interface InboxIpcDeps {
     handle: InboxHandle;
@@ -137,7 +138,15 @@ export function registerInboxHandlers({ handle, inbox, workspacePathOf }: InboxI
         await (await inbox()).finish(root, bundleId, outcome);
     });
 
-    // Not lease-bound, unlike the three above. Remove is the user acting on an item they
+    // Lease-bound like step and finish: placing is part of applying. The destination is
+    // the sender's own investigation, and every name in it is main's.
+    handle('osint:inbox.placeFiles', async (e, bundleId: string): Promise<InboxPlacement> => {
+        if (typeof bundleId !== 'string') throw new Error('placeFiles takes a bundle id');
+        const root = await requireHolder(e);
+        return (await inbox()).placeFiles(root, bundleId);
+    });
+
+    // Not lease-bound, unlike the four above. Remove is the user acting on an item they
     // are looking at, in whichever window shows it; the bundle is already applied, so no
     // two windows can race to apply it, and main serialises the move per workspace. Only
     // done/ to removed/: a pending bundle cannot be dropped through here.

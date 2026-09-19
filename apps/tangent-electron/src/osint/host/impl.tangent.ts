@@ -162,6 +162,7 @@ export const host: Host = {
         finish: (bundleId, outcome) => api().inbox.finish(bundleId, outcome),
         markRemoved: (bundleId) => api().inbox.markRemoved(bundleId),
         listApplied: () => api().inbox.listApplied(),
+        placeFiles: (bundleId) => api().inbox.placeFiles(bundleId),
         onChanged: (callback) => api().inbox.onChanged(callback),
     },
     extension: {

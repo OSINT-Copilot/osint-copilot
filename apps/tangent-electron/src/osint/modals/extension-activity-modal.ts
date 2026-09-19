@@ -19,13 +19,30 @@ export interface ExtensionActivityModalHost {
 
 export function activityTypeLabel(item: ExtensionActivityItem): string {
     if (item.kind === 'note') return 'Note';
+    if (item.kind === 'capture') return 'Page capture';
     return item.entityKind ? entityKindLabel({ kind: item.entityKind as EntityPayload['kind'] }) : 'Entity';
 }
 
 /** "merged into existing <label>", or null when the item made something new. */
 export function activityMergeLabel(item: ExtensionActivityItem): string | null {
-    if (item.kind !== 'entity' || item.outcome.created || !item.outcome.entityId) return null;
+    if (item.kind === 'note' || item.outcome.created || !item.outcome.entityId) return null;
     return `merged into existing ${item.outcome.entityLabel ?? 'entity'}`;
+}
+
+/**
+ * What a reader of the log must know about a capture before relying on it: the archive
+ * is not of the page the extension named, or no text could be read from it.
+ */
+export function activityCaptureNotes(item: ExtensionActivityItem): string[] {
+    if (item.kind !== 'capture') return [];
+    const notes: string[] = [];
+    if (item.urlMismatch) {
+        notes.push(item.contentLocation
+            ? `The archive's own address differs: ${item.contentLocation}`
+            : 'The archive does not record its address.');
+    }
+    if (item.derivationFailed) notes.push('No readable text could be made from the archive; the archive itself was kept.');
+    return notes;
 }
 
 function formatTime(iso: string): string {
@@ -83,6 +100,9 @@ export class ExtensionActivityModal extends Modal {
             head.createSpan({ cls: 'osint-extension-activity-summary', text: item.summary || '(empty)' });
             const merged = activityMergeLabel(item);
             if (merged) main.createDiv({ cls: 'osint-extension-activity-merged', text: merged });
+            for (const note of activityCaptureNotes(item)) {
+                main.createDiv({ cls: 'osint-extension-activity-warning', text: note });
+            }
             main.createDiv({ cls: 'osint-extension-activity-url', text: item.url, attr: { title: item.title || item.url } });
             main.createDiv({
                 cls: 'osint-extension-activity-time',

@@ -53,6 +53,19 @@ import type {
 import { INBOX_FOLDER } from '../node/vault';
 import type { DeriveResults, DeriveStore, DeriveTarget } from '../capture/deriver';
 import { hashFile, receiveToFile } from './capture-files';
+import { evidenceStem } from '../capture/slug';
+import {
+    DigestMismatchError,
+    EVIDENCE_FOLDER,
+    PLACED_EXTENSIONS,
+    PlacementError,
+    copyVerified,
+    evidenceDir,
+    placeOne,
+    sweepPlacementTemps,
+    unplace,
+    type PlaceContext,
+} from './place-files';
 import {
     canonicalJson,
     sealDerived,
@@ -66,6 +79,9 @@ import type {
     InboxBundle,
     InboxCaptureDerived,
     InboxOutcome,
+    InboxPlacedFile,
+    InboxPlacedRole,
+    InboxPlacement,
     InboxServerStamp,
     InboxState,
     InboxStepRecord,
@@ -80,6 +96,12 @@ export const REMOVED = 'removed';
 const SETTLED = [DONE, REJECTED, REMOVED] as const;
 /** The journal step markRemoved writes: when the item was removed. */
 export const REMOVED_STEP = 'removed';
+/**
+ * The journal step placeFiles writes, before creating each file: the Evidence names this
+ * bundle made, with their digests. Main's own, so a placement resumed after a crash knows
+ * which files it made rather than taking them for someone else's.
+ */
+export const PLACEMENT_STEP = 'placement';
 /** How many applied bundles listApplied returns, newest by receive time. */
 export const APPLIED_LIST_LIMIT = 500;
 
@@ -953,7 +975,7 @@ export class InboxWriter implements InboxBackend, DeriveStore {
 
     /**
      * `requireFiles`: a pending capture must still hold every file its manifest names, at
-     * the size main stored. An applied one need not: placing it moves them out.
+     * the size main stored. An applied one is only listed, so it is not held to that.
      */
     private async checkBundle(dir: string, name: string, opts: { requireFiles?: boolean } = {}): Promise<Checked> {
         if (!UUID_V4.test(name)) return { ok: false, reason: 'folder name is not a bundle id' };
@@ -1052,6 +1074,9 @@ export class InboxWriter implements InboxBackend, DeriveStore {
      */
     async recordStep(root: string, bundleId: string, step: string, data: unknown): Promise<InboxState> {
         if (typeof step !== 'string' || !STEP_NAME.test(step)) throw new InboxError('Not a step name');
+        // Main's own record of the Evidence files a capture made: a renderer that could
+        // write it could have placeFiles call a reused file its own, and Remove trash it.
+        if (step === PLACEMENT_STEP) throw new InboxError('Not a step name');
         let dataJson: string | undefined;
         try {
             dataJson = JSON.stringify(data ?? null);
@@ -1098,6 +1123,131 @@ export class InboxWriter implements InboxBackend, DeriveStore {
             await fsp.rm(tmp, { force: true }).catch(() => undefined);
             throw err;
         }
+    }
+
+    /**
+     * Copies a pending capture's files into `OSINTCopilot/Evidence/` (see place-files.ts),
+     * for the renderer that holds the lease. Everything is checked again first: the
+     * manifest's MAC, derived.json's MAC and its binding to this archive, and each file's
+     * bytes against its sealed digest, all of them before any is placed. A capture that
+     * fails places nothing: it stays pending, or is set aside when what the extension sent
+     * has changed since commit. Idempotent: run again, it finds its own files by name
+     * and digest and reports the same answer.
+     */
+    async placeFiles(root: string, bundleId: string): Promise<InboxPlacement> {
+        if (typeof bundleId !== 'string' || !UUID_V4.test(bundleId)) throw new InboxError('Not a bundle id');
+        return this.serialized(root, async () => {
+            const inbox = await this.ensureLayout(root);
+            const { dir } = await this.bundleDir(inbox, bundleId, [PENDING]);
+            const checked = await this.checkBundle(dir, bundleId, { requireFiles: true });
+            if (checked.ok !== true) {
+                throw new InboxError(checked.ok === false ? `Not placed: ${checked.reason}` : 'Not placed: the bundle cannot be read just now');
+            }
+            const { manifest, server } = checked.bundle;
+            if (manifest.kind !== 'capture' || !server.files) throw new InboxError('Not placed: not a capture');
+            const derived = await this.readDerived(dir, bundleId);
+            if (!derived) throw new InboxError('Not placed: derived.json is missing or does not verify');
+            const archive = server.files['page.mhtml'];
+            if (derived.archiveSha256 !== archive.sha256) {
+                throw new InboxError('Not placed: derived.json was made from another archive');
+            }
+
+            const wanted: Array<{ role: InboxPlacedRole; file: string; sha256: string }> = [
+                { role: 'archive', file: 'page.mhtml', sha256: archive.sha256 },
+            ];
+            const fullpage = derived.fullpage;
+            if (fullpage && 'file' in fullpage && fullpage.file === FULLPAGE_FILE) {
+                wanted.push({ role: 'fullpage', file: FULLPAGE_FILE, sha256: fullpage.sha256 });
+            }
+            const viewport = server.files['viewport.png'];
+            if (viewport) wanted.push({ role: 'viewport', file: 'viewport.png', sha256: viewport.sha256 });
+            const pdf = server.files['page.pdf'];
+            if (pdf) wanted.push({ role: 'pdf', file: 'page.pdf', sha256: pdf.sha256 });
+            if (derived.markdown?.file === MARKDOWN_FILE) {
+                wanted.push({ role: 'markdown', file: MARKDOWN_FILE, sha256: derived.markdown.sha256 });
+            }
+
+            let target: string;
+            try {
+                target = await evidenceDir(root, inbox);
+            } catch (err) {
+                throw err instanceof PlacementError ? new InboxError(`Not placed: ${err.message}`) : err;
+            }
+            await sweepPlacementTemps(dir);
+            const state: InboxState = (await this.readState(dir)) ?? { v: 1, steps: [] };
+            let record = state.steps.find(s => s.step === PLACEMENT_STEP);
+            const owned: Record<string, string> = {};
+            if (record && isPlainObject(record.data)) {
+                for (const [name, sha] of Object.entries(record.data)) if (typeof sha === 'string') owned[name] = sha;
+            }
+            const stem = evidenceStem(manifest.page.title || derived.title, manifest.page.url, archive.sha256);
+            const persist = async () => {
+                if (!record) {
+                    record = { step: PLACEMENT_STEP, at: '', data: null };
+                    state.steps.push(record);
+                }
+                record.data = { ...owned };
+                record.at = new Date(this.now()).toISOString();
+                await this.writeState(dir, state);
+            };
+            const place: PlaceContext = {
+                dir: target,
+                stem,
+                owned,
+                claim: async (name, sha256) => {
+                    owned[name] = sha256;
+                    await persist();
+                },
+                unclaim: async (name) => {
+                    if (!(name in owned)) return;
+                    delete owned[name];
+                    await persist();
+                },
+            };
+
+            // Every file is checked against its sealed digest before any is placed: one
+            // that fails part way would otherwise leave the ones before it in Evidence/,
+            // owned by no activity item, where Remove could never take them back.
+            const temps: string[] = [];
+            try {
+                for (const want of wanted) {
+                    try {
+                        temps.push(await copyVerified(nodePath.join(dir, want.file), dir, want.sha256));
+                    } catch (err) {
+                        if (err instanceof DigestMismatchError) {
+                            if (want.role === 'archive' || want.role === 'viewport' || want.role === 'pdf') {
+                                // What the extension sent has changed since commit: like an
+                                // archive swapped before derivation, it is not this capture.
+                                await this.quarantine(inbox, bundleId, `${want.file} changed after commit`);
+                                this.notifyInboxChanged(root);
+                            } else {
+                                // Only what main made from it: made again from the archive.
+                                await fsp.rm(nodePath.join(dir, DERIVED_FILE), { force: true });
+                                this.requestDerive(root, bundleId);
+                            }
+                        }
+                        throw err instanceof PlacementError ? new InboxError(`Not placed: ${err.message}`) : err;
+                    }
+                }
+                const files: InboxPlacedFile[] = [];
+                const linkedNow: string[] = [];
+                try {
+                    for (const [i, want] of wanted.entries()) {
+                        const placed = await placeOne(place, { temp: temps[i], sha256: want.sha256, ext: PLACED_EXTENSIONS[want.role] });
+                        if (placed.linkedNow) linkedNow.push(placed.name);
+                        files.push({ role: want.role, path: `${EVIDENCE_FOLDER}/${placed.name}`, sha256: want.sha256, created: placed.created });
+                    }
+                } catch (err) {
+                    // A disk that filled, a name that never came free: what this call
+                    // placed goes again, so a capture is placed whole or not at all.
+                    await unplace(place, linkedNow).catch(() => undefined);
+                    throw err instanceof PlacementError ? new InboxError(`Not placed: ${err.message}`) : err;
+                }
+                return { bundleId, files };
+            } finally {
+                for (const temp of temps) await fsp.rm(temp, { force: true }).catch(() => undefined);
+            }
+        });
     }
 
     /**
