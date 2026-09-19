@@ -69,7 +69,7 @@ export function vaultRelativePath(path: string): string {
  * shadow tree inside the vault (`<vault>/home/b/Documents/...`). Anything that touches
  * the filesystem uses this one, so a not-ready runtime fails loudly instead.
  */
-export function requireVaultRelativePath(path: string): string {
+function requireVaultRelativePath(path: string): string {
     const root = runtime()?.vaultRoot;
     if (!root) throw new Error('The vault is not available yet.');
     const relative = vaultRelativePath(path);
@@ -203,7 +203,7 @@ export function openEntityNote(entityId: string): void {
  * and mixing them into the evidence tree would make that folder untrustworthy as a record
  * of what the analyst actually collected.
  */
-export const CANVAS_ASSETS_FOLDER = 'OSINTCopilot/boards/assets';
+const CANVAS_ASSETS_FOLDER = 'OSINTCopilot/boards/assets';
 
 /**
  * A filename safe to join onto a vault path.

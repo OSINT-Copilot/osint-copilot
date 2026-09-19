@@ -7,7 +7,7 @@
  */
 
 import { Vault } from '../vault/vault';
-import { MemoryStorage } from '../vault/storage';
+import { MemoryStorage } from './memory-storage';
 import { TAbstractFile, TFile } from '../vault/tfile';
 
 export interface TestApp {
@@ -15,11 +15,9 @@ export interface TestApp {
     /** The in-memory backend, for synchronous assertions. */
     storage: MemoryStorage;
     fileManager: { trashFile(file: TAbstractFile): Promise<void> };
-    metadataCache: { getFileCache(file: TFile): Record<string, unknown> | null };
     workspace: {
         getLeaf(): { openFile(file: TFile): Promise<void> };
         getLeavesOfType(): unknown[];
-        openedFiles: string[];
     };
 }
 
@@ -36,23 +34,7 @@ export async function createTestAppAsync(options: TestAppOptions = {}): Promise<
 
     const vault = new Vault(storage);
     await vault.open();
-
-    const openedFiles: string[] = [];
-    return {
-        vault,
-        storage,
-        fileManager: {
-            async trashFile(file: TAbstractFile) { await vault.trash(file); },
-        },
-        metadataCache: { getFileCache: () => null },
-        workspace: {
-            getLeaf: () => ({
-                async openFile(file: TFile) { openedFiles.push(file.path); },
-            }),
-            getLeavesOfType: () => [],
-            openedFiles,
-        },
-    };
+    return buildTestApp(storage, vault);
 }
 
 /**
@@ -63,7 +45,6 @@ export async function createTestAppAsync(options: TestAppOptions = {}): Promise<
 export function createTestApp(options: TestAppOptions = {}): TestApp {
     const storage = new MemoryStorage();
     const vault = new Vault(storage);
-    const openedFiles: string[] = [];
 
     const ready = (async () => {
         for (const [path, contents] of Object.entries(options.files ?? {})) {
@@ -72,23 +53,24 @@ export function createTestApp(options: TestAppOptions = {}): TestApp {
         await vault.open();
     })();
 
-    const app: TestApp & { __ready: Promise<void> } = {
+    const app: TestApp & { __ready: Promise<void> } = { ...buildTestApp(storage, vault), __ready: ready };
+    return app;
+}
+
+function buildTestApp(storage: MemoryStorage, vault: Vault): TestApp {
+    return {
         vault,
         storage,
         fileManager: {
             async trashFile(file: TAbstractFile) { await vault.trash(file); },
         },
-        metadataCache: { getFileCache: () => null },
         workspace: {
             getLeaf: () => ({
-                async openFile(file: TFile) { openedFiles.push(file.path); },
+                async openFile(_file: TFile) { /* no editor in tests */ },
             }),
             getLeavesOfType: () => [],
-            openedFiles,
         },
-        __ready: ready,
     };
-    return app;
 }
 
 /** Awaits the seeding started by createTestApp. */

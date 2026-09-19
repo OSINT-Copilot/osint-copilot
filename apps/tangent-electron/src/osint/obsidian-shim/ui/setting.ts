@@ -4,15 +4,15 @@
  *
  * The surface is far narrower than the raw count suggests. Measured across every
  * call site, the only builder methods used are setName, setDesc, setHeading,
- * addText, addTextArea, addToggle, addDropdown, addButton, addColorPicker and
- * setTooltip -- no addSlider, addSearch, addExtraButton, addMomentFormat or setClass.
+ * addText, addTextArea, addToggle, addDropdown, addButton and addColorPicker -- no
+ * addSlider, addSearch, addExtraButton, addMomentFormat, setTooltip or setClass.
  * Components use onChange, setValue, setPlaceholder, setButtonText, onClick,
- * addOption, setCta, setWarning, setIcon, setDisabled and .inputEl.
+ * addOption, setCta, setWarning, .then and .inputEl, and setDisabled on text inputs
+ * and buttons only.
  *
  * styles.css contains NO .setting-item rules -- Obsidian supplied all of them -- so
  * the layout CSS for these lives in theme/tokens.css, authored fresh.
  */
-import { setIcon } from './set-icon';
 
 /**
  * Base for the value-bearing components. Non-generic on purpose: every builder method
@@ -27,11 +27,6 @@ abstract class ValueComponent<T> {
 
     onChange(callback: (value: T) => unknown): this {
         this.changeCallback = callback;
-        return this;
-    }
-
-    setDisabled(disabled: boolean): this {
-        this.disabled = disabled;
         return this;
     }
 
@@ -73,7 +68,6 @@ export class TextAreaComponent extends ValueComponent<string> {
     getValue(): string { return this.inputEl.value; }
     setValue(value: string): this { this.inputEl.value = value ?? ''; return this; }
     setPlaceholder(placeholder: string): this { this.inputEl.placeholder = placeholder; return this; }
-    setDisabled(disabled: boolean): this { this.inputEl.disabled = disabled; this.disabled = disabled; return this; }
 }
 
 export class ToggleComponent extends ValueComponent<boolean> {
@@ -96,7 +90,6 @@ export class ToggleComponent extends ValueComponent<boolean> {
         this.toggleEl.toggleAttribute('data-checked', this.input.checked);
         return this;
     }
-    setDisabled(disabled: boolean): this { this.input.disabled = disabled; this.disabled = disabled; return this; }
 }
 
 export class DropdownComponent extends ValueComponent<string> {
@@ -113,14 +106,8 @@ export class DropdownComponent extends ValueComponent<string> {
         return this;
     }
 
-    addOptions(options: Record<string, string>): this {
-        for (const [value, display] of Object.entries(options)) this.addOption(value, display);
-        return this;
-    }
-
     getValue(): string { return this.selectEl.value; }
     setValue(value: string): this { this.selectEl.value = value; return this; }
-    setDisabled(disabled: boolean): this { this.selectEl.disabled = disabled; this.disabled = disabled; return this; }
 }
 
 export class ButtonComponent {
@@ -134,8 +121,6 @@ export class ButtonComponent {
     /** `mod-cta` is the one Obsidian theme class that appears in styles.css. */
     setCta(): this { this.buttonEl.addClass('mod-cta'); return this; }
     setWarning(): this { this.buttonEl.addClass('mod-warning'); return this; }
-    setTooltip(tooltip: string): this { this.buttonEl.setAttribute('aria-label', tooltip); return this; }
-    setIcon(icon: string): this { setIcon(this.buttonEl, icon); return this; }
     setDisabled(disabled: boolean): this { this.buttonEl.disabled = disabled; return this; }
     onClick(callback: (event: MouseEvent) => unknown): this {
         this.buttonEl.addEventListener('click', callback);
@@ -187,21 +172,6 @@ export class Setting {
         return this;
     }
 
-    setTooltip(tooltip: string): this {
-        this.settingEl.setAttribute('aria-label', tooltip);
-        return this;
-    }
-
-    setClass(cls: string): this {
-        this.settingEl.addClass(cls);
-        return this;
-    }
-
-    setDisabled(disabled: boolean): this {
-        this.settingEl.toggleAttribute('data-disabled', disabled);
-        return this;
-    }
-
     addText(callback: (component: TextComponent) => unknown): this {
         callback(new TextComponent(this.controlEl));
         return this;
@@ -229,12 +199,6 @@ export class Setting {
 
     addColorPicker(callback: (component: ColorComponent) => unknown): this {
         callback(new ColorComponent(this.controlEl));
-        return this;
-    }
-
-    /** Obsidian allows chaining arbitrary work; used in a couple of places. */
-    then(callback: (setting: this) => unknown): this {
-        callback(this);
         return this;
     }
 }

@@ -15,15 +15,13 @@
  */
 import type { StatDto, WatchEvent } from '../../host/types';
 import { normalizePath } from './normalize-path';
-import { TAbstractFile, TFile, TFolder, makeFile, makeFolder } from './tfile';
+import { TAbstractFile, TFile, TFolder, makeFile, makeFolder, splitName } from './tfile';
 import type { VaultStorage } from './storage';
 
 export type VaultEventName = 'create' | 'modify' | 'delete' | 'rename';
 type Handler = (file: TAbstractFile, oldPath: string) => void;
 
 export interface EventRef {
-    name: VaultEventName;
-    handler: Handler;
     /** Component.registerEvent(ref) calls this on unload. */
     detach(): void;
 }
@@ -64,20 +62,12 @@ export class Vault {
         this.storage.onChange((events) => this.applyWatchEvents(events));
     }
 
-    getBasePath(): string {
-        return this.storage.basePath();
-    }
-
     // ------------------------------------------------------------------ events
 
     on(name: VaultEventName, handler: Handler): EventRef {
         if (!this.handlers.has(name)) this.handlers.set(name, new Set());
         this.handlers.get(name)!.add(handler);
-        return { name, handler, detach: () => this.handlers.get(name)?.delete(handler) };
-    }
-
-    offref(ref: EventRef | null | undefined): void {
-        if (ref) this.handlers.get(ref.name)?.delete(ref.handler);
+        return { detach: () => this.handlers.get(name)?.delete(handler) };
     }
 
     private emit(name: VaultEventName, file: TAbstractFile, oldPath = ''): void {
@@ -101,10 +91,6 @@ export class Vault {
 
     getMarkdownFiles(): TFile[] {
         return this.getFiles().filter((f) => f.extension === 'md');
-    }
-
-    getAllLoadedFiles(): TAbstractFile[] {
-        return [...this.index.values()];
     }
 
     // ---------------------------------------------------------------- mutation
@@ -343,11 +329,7 @@ export class Vault {
         this.detach(file);
         file.path = newPath;
         file.name = newPath.slice(newPath.lastIndexOf('/') + 1);
-        if (file instanceof TFile) {
-            const dot = file.name.lastIndexOf('.');
-            file.basename = dot > 0 ? file.name.slice(0, dot) : file.name;
-            file.extension = dot > 0 ? file.name.slice(dot + 1) : '';
-        }
+        if (file instanceof TFile) Object.assign(file, splitName(file.name));
         const parent = this.ensureFolder(parentPathOf(newPath));
         file.parent = parent;
         parent.children.push(file);

@@ -47,7 +47,7 @@ describe('custom vault operations', () => {
 			graph_operations: [],
 			custom_vault_operations: [{ action: 'delete_skill', id: 'old-one' }],
 		});
-		const r = parseAgentTurnResult(raw, 'claude-code');
+		const r = parseAgentTurnResult(raw);
 		expect(r.custom_vault_operations).toHaveLength(1);
 		expect(r.custom_vault_operations[0]).toMatchObject({ action: 'delete_skill', id: 'old-one' });
 		expect(r.enricher_invocations).toEqual([]);

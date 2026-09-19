@@ -53,7 +53,7 @@ export class HermesAgentProvider implements AgentProvider {
         const args = splitCliArgsLine(this.cfg.extraArgs);
         const stdout = await this.invokeHermes(fullPrompt, args, signal, logOptions);
         onProgress?.('Parsing agent response...', 85);
-        return parseAgentTurnResult(stdout, this.cfg.displayName);
+        return parseAgentTurnResult(stdout);
     }
 
     private async invokeHermes(

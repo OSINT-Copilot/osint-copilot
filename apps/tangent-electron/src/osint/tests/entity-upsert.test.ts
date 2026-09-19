@@ -8,7 +8,7 @@ import {
     usernameIdentifierKey,
 } from '../services/entity-identifiers';
 import { Vault } from '../obsidian-shim/vault/vault';
-import { MemoryStorage } from '../obsidian-shim/vault/storage';
+import { MemoryStorage } from '../obsidian-shim/testing/memory-storage';
 import type { OsintSourceInput } from '../entities/types';
 import { OrchestrationService } from '../services/orchestration-service';
 
@@ -591,8 +591,7 @@ async function caseInsensitiveApp(): Promise<TestApp> {
         vault,
         storage,
         fileManager: { async trashFile(file) { await vault.trash(file); } },
-        metadataCache: { getFileCache: () => null },
-        workspace: { getLeaf: () => ({ async openFile() { /* unused */ } }), getLeavesOfType: () => [], openedFiles: [] },
+        workspace: { getLeaf: () => ({ async openFile() { /* unused */ } }), getLeavesOfType: () => [] },
     };
 }
 

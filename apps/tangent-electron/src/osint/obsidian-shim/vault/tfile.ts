@@ -6,7 +6,7 @@
  *
  * Only the fields actually read anywhere in src/ are modelled:
  *   TFile   -> path, name, basename, extension, parent, stat.{mtime,ctime,size}
- *   TFolder -> path, name, parent, children, isRoot()
+ *   TFolder -> path, name, parent, children
  */
 
 export interface FileStats {
@@ -29,10 +29,6 @@ export class TFile extends TAbstractFile {
 
 export class TFolder extends TAbstractFile {
     children: TAbstractFile[] = [];
-
-    isRoot(): boolean {
-        return this.path === '/';
-    }
 }
 
 /** Split "a/b/c.md" into basename "c" and extension "md" (extension "" when absent). */

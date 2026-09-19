@@ -1,5 +1,5 @@
 /**
- * The layout tree: splits, tab groups, and leaves.
+ * The layout tree: the root, its tab groups, and leaves.
  *
  * This IS the app's tab manager, not a façade over one. osint-workspace-controller
  * compares `leaf.getRoot() === workspace.rootSplit` (line 21) and reads
@@ -9,20 +9,14 @@
  * every pane. The shell renders this tree; it does not own a second one.
  */
 
-export type SplitDirection = 'horizontal' | 'vertical';
-
 export abstract class WorkspaceItem {
     parent: WorkspaceParent | null = null;
 
-    /** Walks up to the containing root (rootSplit, leftSplit or rightSplit). */
+    /** Walks up to the containing root (rootSplit). */
     getRoot(): WorkspaceItem {
         let node: WorkspaceItem = this;
         while (node.parent && !(node.parent instanceof WorkspaceRoot)) node = node.parent;
         return node.parent ?? node;
-    }
-
-    getContainer(): WorkspaceItem {
-        return this.getRoot();
     }
 }
 
@@ -42,33 +36,11 @@ export abstract class WorkspaceParent extends WorkspaceItem {
     }
 }
 
-/** A horizontal or vertical split containing other splits or tab groups. */
-export class WorkspaceSplit extends WorkspaceParent {
-    constructor(public direction: SplitDirection = 'vertical') {
-        super();
-    }
-}
-
 /** A group of leaves sharing one tab strip. */
-export class WorkspaceTabs extends WorkspaceParent {
-    activeIndex = 0;
+export class WorkspaceTabs extends WorkspaceParent {}
 
-    get activeLeaf(): WorkspaceLeaf | null {
-        return (this.children[this.activeIndex] as WorkspaceLeaf) ?? null;
-    }
-
-    setActive(leaf: WorkspaceLeaf): void {
-        const at = this.children.indexOf(leaf);
-        if (at >= 0) this.activeIndex = at;
-    }
-}
-
-/** A top-level container: the editor area, or a sidebar. */
+/** The top-level container: the editor area. */
 export class WorkspaceRoot extends WorkspaceParent {
-    constructor(readonly kind: 'root' | 'left' | 'right') {
-        super();
-    }
-
     /** Roots terminate the walk. */
     getRoot(): WorkspaceItem {
         return this;
@@ -81,8 +53,6 @@ export class WorkspaceRoot extends WorkspaceParent {
  */
 export class WorkspaceLeaf extends WorkspaceItem {
     view: import('./view').View;
-    /** Set by the workspace so the leaf can notify on view/state changes. */
-    onStateChange: (() => void) | null = null;
 
     constructor(view: import('./view').View) {
         super();
@@ -93,13 +63,8 @@ export class WorkspaceLeaf extends WorkspaceItem {
         return { type: this.view.getViewType(), state: this.view.getState() };
     }
 
-    getDisplayText(): string {
-        return this.view.getDisplayText();
-    }
-
     detach(): void {
         this.view.unload();
         (this.parent as WorkspaceParent | null)?.removeChild(this);
-        this.onStateChange?.();
     }
 }

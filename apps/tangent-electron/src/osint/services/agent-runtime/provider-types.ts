@@ -17,13 +17,6 @@ export interface AgentEnricherInvocation {
     query: string;
 }
 
-export interface AgentTurnDiagnostics {
-    provider: AgentRuntimeId;
-    /** Short excerpt of raw model stdout for debugging (never full vault). */
-    raw_excerpt?: string;
-    notes?: string;
-}
-
 /**
  * Strict JSON contract returned by supported local agent CLIs for one chat turn.
  */
@@ -40,7 +33,6 @@ export interface AgentTurnResult {
     custom_vault_operations: CustomVaultOperation[];
     /** Run after parse: plugin executes via Node HTTP (see enricher specs). */
     enricher_invocations: AgentEnricherInvocation[];
-    diagnostics?: AgentTurnDiagnostics;
 }
 
 export interface AgentTurnContext {

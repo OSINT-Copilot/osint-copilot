@@ -16,7 +16,6 @@ import {
   EntityType,
   type Entity,
   type ProcessTextResponse,
-  validateEntityName,
   getEntityLabel,
   type GraphWriteContext,
 } from '../entities/types';
@@ -25,7 +24,6 @@ import type { ExtractionLogEvent } from '../services/claude-code-service';
 import { ensureFolderExists } from '../utils/vault-bootstrap-fs';
 import {
   type Conversation,
-  type ConversationMetadata,
   type ConversationMessage,
   type CopilotChatMode,
   legacyFlagsForChatMode,
@@ -41,7 +39,6 @@ import {
   CODEX_RUNTIME_ID,
   getConfiguredRuntimeOptions,
 } from '../services/agent-runtime/runtime-registry';
-import type { CustomVaultOperation } from '../services/custom-vault-operations';
 import { normalizeCustomVaultOperations, summarizeCustomVaultOperation } from '../services/custom-vault-operations';
 import { applyCustomVaultOperations } from '../services/custom-vault-writer';
 import { isTaskAgentRunnable } from '../task-agents/task-agent-settings';
@@ -63,17 +60,10 @@ export class ChatView extends ItemView {
   messagesContainer!: HTMLDivElement;
   sidebarContainer!: HTMLDivElement;
   conversationListEl!: HTMLDivElement;
-  /** Tri-mode chat: general (orchestration), graph (entity extract only), local (vault Q&A). */
+  /** Always 'general' now; saved on conversations with the legacy flags `legacyFlagsForChatMode` derives from it. */
   chatMode: CopilotChatMode = 'general';
-  // Legacy flags — kept in sync with `chatMode` via `legacyFlagsForChatMode` for YAML and older code paths
-  localSearchMode: boolean = false;
-  customChatMode: boolean = false;
-  activeCheckpointId: string | undefined;
-  orchestrationMode: boolean = true;
-  vaultGraphIngestMode: boolean = false;
   /** Legacy: persisted on conversations; task agents are configured in settings only. */
   selectedTaskAgentId: string = "";
-  graphGenerationMode: boolean = false;
   currentConversation: Conversation | null = null;
   sidebarVisible: boolean = true;
   uploadButtonEl!: HTMLElement;
@@ -191,27 +181,8 @@ export class ChatView extends ItemView {
     return CHAT_VIEW_TYPE;
   }
 
-  getDisplayText(): string {
-    return "OSINT Copilot";
-  }
-
-  getIcon(): string {
-    return "message-square";
-  }
-
   private applyChatMode(mode: CopilotChatMode) {
     this.chatMode = mode;
-    const f = legacyFlagsForChatMode(mode);
-    this.localSearchMode = f.localSearchMode;
-    this.graphGenerationMode = f.graphGenerationMode;
-    this.orchestrationMode = f.orchestrationMode;
-    this.vaultGraphIngestMode = f.vaultGraphIngestMode;
-    this.customChatMode = false;
-    this.activeCheckpointId = undefined;
-  }
-
-  private syncModesFromConversation(_conv: ConversationMetadata) {
-    this.applyChatMode("general");
   }
 
   private runtimeDisplayName(runtimeId: string): string {
@@ -220,7 +191,7 @@ export class ChatView extends ItemView {
   }
 
   /** Keep a removed runtime id valid, but never fail over a valid user selection. */
-  private async syncRuntimeSelectionToAvailability(_av: ChatRuntimeAvailability): Promise<void> {
+  private async syncRuntimeSelectionToAvailability(): Promise<void> {
     const configured = getConfiguredRuntimeOptions(this.plugin).map((r) => r.id);
     const cur = this.plugin.settings.agentRuntimeProvider;
     if (!configured.includes(cur)) {
@@ -326,7 +297,7 @@ export class ChatView extends ItemView {
     if (conversation) {
       this.currentConversation = conversation;
       this.chatHistory = this.conversationMessagesToHistory(conversation.messages);
-      this.syncModesFromConversation(conversation);
+      this.applyChatMode("general");
       this.selectedTaskAgentId =
         conversation.taskAgentId ?? this.plugin.settings.preferredTaskAgentId ?? "";
     } else {
@@ -497,7 +468,7 @@ export class ChatView extends ItemView {
     });
     const runtimeReady = (async () => {
       const availability = await getChatRuntimeAvailability(this.plugin);
-      await this.syncRuntimeSelectionToAvailability(availability);
+      await this.syncRuntimeSelectionToAvailability();
       runtimeRow.empty();
       this.buildRuntimeHeaderRow(runtimeRow, availability);
       this.applyRuntimeAvailabilityToSendButton(availability);
@@ -662,47 +633,7 @@ export class ChatView extends ItemView {
 
       let handled = false;
 
-      // 1) Internal Obsidian drag manager (check first — takes priority over dataTransfer)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const dragManager = (this.app as any).dragManager;
-      if (dragManager?.draggable) {
-        const draggable = dragManager.draggable;
-
-        // Single item: .file can be TFile or TFolder regardless of .type string
-        if (draggable.file instanceof TFolder) {
-          await this.handleDroppedFolder(draggable.file);
-          handled = true;
-        } else if (draggable.file instanceof TFile) {
-          await this.handleDroppedAbstractFile(draggable.file);
-          handled = true;
-        }
-
-        // Multi-select: .files array
-        if (!handled && Array.isArray(draggable.files) && draggable.files.length > 0) {
-          for (const f of draggable.files) {
-            if (f instanceof TFolder) await this.handleDroppedFolder(f);
-            else if (f instanceof TFile) await this.handleDroppedAbstractFile(f);
-          }
-          handled = true;
-        }
-
-        // Some Obsidian versions put folder info under .info
-        if (!handled && draggable.info) {
-          const info = draggable.info;
-          if (typeof info === 'string') {
-            const resolved = this.app.vault.getAbstractFileByPath(info);
-            if (resolved instanceof TFolder) {
-              await this.handleDroppedFolder(resolved);
-              handled = true;
-            } else if (resolved instanceof TFile) {
-              await this.handleDroppedAbstractFile(resolved);
-              handled = true;
-            }
-          }
-        }
-      }
-
-      // 2) text/plain data (Obsidian often puts the vault path here)
+      // 1) text/plain data (Obsidian often puts the vault path here)
       if (!handled && e.dataTransfer) {
         const data = e.dataTransfer.getData("text/plain");
         if (data) {
@@ -717,7 +648,7 @@ export class ChatView extends ItemView {
         }
       }
 
-      // 3) External OS files (only if nothing internal matched)
+      // 2) External OS files (only if nothing internal matched)
       if (!handled && e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
         for (let i = 0; i < e.dataTransfer.files.length; i++) {
           this.handleDroppedFile(e.dataTransfer.files[i]);
@@ -1425,7 +1356,7 @@ export class ChatView extends ItemView {
       this.abortAllActiveOperations();
       this.currentConversation = conversation;
       this.chatHistory = this.conversationMessagesToHistory(conversation.messages);
-      this.syncModesFromConversation(conversation);
+      this.applyChatMode("general");
       this.selectedTaskAgentId =
         conversation.taskAgentId ?? this.plugin.settings.preferredTaskAgentId ?? "";
       this.plugin.conversationService.setCurrentConversationId(id);
@@ -1569,7 +1500,7 @@ export class ChatView extends ItemView {
         this // component for lifecycle management
       );
 
-      // Show progress bar and intermediate results for report generation
+      // Show the progress bar while a request is running
       if (item.role === "assistant" && item.progress && typeof item.progress === "object" && "percent" in item.progress) {
         const progressContainer = messageDiv.createDiv("vault-ai-progress-container");
         this.renderSingleProgress(progressContainer, i, item.progress);
@@ -1596,16 +1527,6 @@ export class ChatView extends ItemView {
           row.style.cssText =
             "margin: 0; white-space: pre-wrap; font-size: 11px; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 4px; padding: 6px;";
         }
-      }
-
-      // Show intermediate results for report generation
-      if (item.role === "assistant" && item.intermediateResults && item.intermediateResults.length > 0) {
-        const resultsContainer = messageDiv.createDiv("vault-ai-intermediate-results-container");
-        resultsContainer.createEl("strong", { text: "Intermediate results:" });
-        const resultsList = resultsContainer.createEl("ul", { cls: "vault-ai-intermediate-results" });
-        item.intermediateResults.forEach((result) => {
-          resultsList.createEl("li", { text: result });
-        });
       }
 
       // Show matching notes for assistant responses
@@ -1690,110 +1611,6 @@ export class ChatView extends ItemView {
             }
           });
         }
-      }
-
-      // Show created entities with clickable graph view links
-      if (item.role === "assistant" && item.createdEntities && item.createdEntities.length > 0) {
-        const entitiesDiv = messageDiv.createDiv("vault-ai-created-entities");
-        entitiesDiv.style.cssText = `
-          margin-top: 10px;
-          padding: 10px;
-          background: var(--background-secondary);
-          border-radius: 6px;
-          border-left: 3px solid var(--interactive-accent);
-        `;
-
-        for (const entity of item.createdEntities) {
-          const entityRow = entitiesDiv.createDiv("vault-ai-entity-row");
-          entityRow.style.cssText = `
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 6px;
-            flex-wrap: wrap;
-          `;
-
-          // Entity type badge
-          const typeBadge = entityRow.createEl("span", {
-            text: entity.type,
-            cls: "vault-ai-entity-type-badge",
-          });
-          typeBadge.style.cssText = `
-            background: var(--interactive-accent);
-            color: var(--text-on-accent);
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 500;
-          `;
-
-          // Entity label
-          const labelSpan = entityRow.createEl("span", {
-            text: entity.label,
-            cls: "vault-ai-entity-label",
-          });
-          labelSpan.style.cssText = `
-            font-weight: 500;
-            flex: 1;
-            min-width: 100px;
-          `;
-
-          // Open Note button
-          const noteBtn = entityRow.createEl("button", {
-            text: "📄 note",
-            cls: "vault-ai-entity-note-btn",
-          });
-          noteBtn.style.cssText = `
-            padding: 3px 8px;
-            font-size: 11px;
-            background: var(--background-modifier-border);
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-          `;
-          noteBtn.title = "Open entity note";
-          noteBtn.addEventListener("click", (e) => {
-            e.preventDefault();
-            void (async () => {
-              const file = this.app.vault.getAbstractFileByPath(entity.filePath);
-              if (file instanceof TFile) {
-                await this.app.workspace.getLeaf().openFile(file);
-              }
-            })();
-          });
-
-          // Open in Graph View button
-          const graphBtn = entityRow.createEl("button", {
-            text: "🔗 graph",
-            cls: "vault-ai-entity-graph-btn",
-          });
-          graphBtn.style.cssText = `
-            padding: 3px 8px;
-            font-size: 11px;
-            background: var(--interactive-accent);
-            color: var(--text-on-accent);
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-          `;
-          graphBtn.title = "View in graph";
-          graphBtn.addEventListener("click", (e) => {
-            e.preventDefault();
-            void this.plugin.openGraphViewWithEntity(entity.id);
-          });
-        }
-
-        // Add hint text
-        const hintText = entitiesDiv.createEl("small", {
-          text: "Click 'graph' to view entity in the graph, or 'note' to open its file.",
-          cls: "vault-ai-entity-hint",
-        });
-        hintText.style.cssText = `
-          display: block;
-          margin-top: 8px;
-          color: var(--text-muted);
-          font-style: italic;
-        `;
       }
 
       // Round 4: Show proposed graph modifications (persistent box)
@@ -2035,7 +1852,7 @@ export class ChatView extends ItemView {
     this.messagesContainer.scrollTop = wasAtBottom ? this.messagesContainer.scrollHeight : previousTop;
   }
 
-  updateProgressBar(messageIndex: number, progress?: { message: string; percent: number }, intermediateResults?: string[]) {
+  updateProgressBar(messageIndex: number, progress?: { message: string; percent: number }) {
     // Find the message element by data attribute
     const messageDiv = this.messagesContainer.querySelector(
       `.vault-ai-chat-message[data-message-index="${messageIndex}"]`
@@ -2069,58 +1886,6 @@ export class ChatView extends ItemView {
         }
       }
       this.renderSingleProgress(progressContainer, messageIndex, currentProgress);
-
-      const vaultLive = this.chatHistory[messageIndex]?.vaultIngestLiveLog;
-      const vaultPreviewCmds = this.chatHistory[messageIndex]?.vaultIngestPreviewCommands;
-      const existingIngestPreview = messageDiv.querySelector(".vault-ai-vault-ingest-preview") as HTMLElement;
-      if (vaultLive && vaultLive.length > 0) {
-        const ingestPreview = existingIngestPreview || (() => {
-          const el = document.createElement("div");
-          el.className = "vault-ai-vault-ingest-preview";
-          progressContainer.insertAdjacentElement("afterend", el);
-          return el;
-        })();
-        ingestPreview.empty();
-        ingestPreview.style.marginTop = "10px";
-        ingestPreview.style.padding = "10px 12px";
-        ingestPreview.style.border = "1px solid var(--background-modifier-border)";
-        ingestPreview.style.borderRadius = "8px";
-        ingestPreview.style.background = "var(--background-secondary)";
-        ingestPreview.style.maxHeight = "240px";
-        ingestPreview.style.overflowY = "auto";
-        ingestPreview.style.fontSize = "12px";
-        ingestPreview.createEl("div", {
-          text: `Applied to graph (${vaultLive.length}) — one line per entity or link`,
-        }).style.marginBottom = "8px";
-        const mdBox = ingestPreview.createDiv();
-        void MarkdownRenderer.render(this.app, vaultLive.join("\n\n"), mdBox, "", this);
-      } else if (vaultPreviewCmds && vaultPreviewCmds.length > 0) {
-        const ingestPreview = existingIngestPreview || (() => {
-          const el = document.createElement("div");
-          el.className = "vault-ai-vault-ingest-preview";
-          progressContainer.insertAdjacentElement("afterend", el);
-          return el;
-        })();
-        ingestPreview.empty();
-        ingestPreview.style.marginTop = "10px";
-        ingestPreview.style.padding = "10px 12px";
-        ingestPreview.style.border = "1px solid var(--background-modifier-border)";
-        ingestPreview.style.borderRadius = "8px";
-        ingestPreview.style.background = "var(--background-secondary)";
-        ingestPreview.style.maxHeight = "240px";
-        ingestPreview.style.overflowY = "auto";
-        ingestPreview.style.fontSize = "12px";
-        ingestPreview.createEl("div", {
-          text: `Proposed graph commands (${vaultPreviewCmds.length}) — grows as each file/chunk is processed`,
-        }).style.marginBottom = "8px";
-        const pre = ingestPreview.createEl("pre");
-        pre.style.whiteSpace = "pre-wrap";
-        pre.style.wordBreak = "break-word";
-        pre.style.margin = "0";
-        pre.textContent = vaultPreviewCmds.join("\n");
-      } else if (existingIngestPreview) {
-        existingIngestPreview.remove();
-      }
     }
     // Don't remove progress container if progress is not available - keep the last known progress
 
@@ -2137,34 +1902,6 @@ export class ChatView extends ItemView {
         }
       }
     }
-
-    // Use intermediate results from parameter, or fallback to saved results in chatHistory
-    const currentIntermediateResults = intermediateResults ||
-      (messageIndex < this.chatHistory.length &&
-        this.chatHistory[messageIndex].intermediateResults &&
-        this.chatHistory[messageIndex].intermediateResults!.length > 0
-        ? this.chatHistory[messageIndex].intermediateResults
-        : undefined);
-
-    // Update intermediate results
-    let resultsContainer = messageDiv.querySelector(".vault-ai-intermediate-results-container") as HTMLElement;
-
-    if (currentIntermediateResults && currentIntermediateResults.length > 0) {
-      if (!resultsContainer) {
-        // Create results container if it doesn't exist
-        resultsContainer = messageDiv.createDiv("vault-ai-intermediate-results-container");
-      } else {
-        // Clear existing content
-        resultsContainer.empty();
-      }
-
-      resultsContainer.createEl("strong", { text: "Intermediate results:" });
-      const resultsList = resultsContainer.createEl("ul", { cls: "vault-ai-intermediate-results" });
-      currentIntermediateResults.forEach((result) => {
-        resultsList.createEl("li", { text: result });
-      });
-    }
-    // Don't remove results container if no new results - keep the last known results
   }
 
 
@@ -2675,8 +2412,8 @@ export class ChatView extends ItemView {
   }
 
   /**
-   * Handle Graph only Mode: Extract entities from user input text without sending to AI.
-   * This mode is active when graphGenerationMode is ON and all main modes are OFF.
+   * Extract entities from text straight into the graph, bypassing the chat agent.
+   * Used by URL extraction.
    */
   async handleGraphOnlyMode(inputText: string) {
     const messageIndex = this.chatHistory.length;
@@ -2835,21 +2572,6 @@ export class ChatView extends ItemView {
       new Notice(`Graph generation failed: ${errorMsg}`);
     }
   }
-
-  /**
-   * Case-insensitively resolve a raw AI-provided type string to its canonical
-   * PascalCase EntityType, or null if no such entity type exists.
-   * Local models (e.g. Ollama) are less reliable than cloud models at
-   * preserving exact enum casing/whitespace, so this tolerates that.
-   */
-  private static canonicalEntityType(rawType: unknown): EntityType | null {
-    if (typeof rawType !== 'string') return null;
-    const normalized = rawType.trim().toLowerCase();
-    const match = Object.values(EntityType).find((t) => t.toLowerCase() === normalized);
-    return match ?? null;
-  }
-
-
 
   async onClose() {
     this.abortAllActiveOperations();

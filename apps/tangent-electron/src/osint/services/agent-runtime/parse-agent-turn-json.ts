@@ -4,9 +4,7 @@ import {
     AGENT_TURN_SCHEMA_VERSION,
     type AgentEnricherInvocation,
     type AgentRetrievalHit,
-    type AgentTurnDiagnostics,
     type AgentTurnResult,
-    type AgentRuntimeId,
 } from './provider-types';
 import { normalizeEnricherInvocationId } from '../enrichers/enricher-schema';
 
@@ -145,7 +143,7 @@ function normalizeHits(raw: unknown): AgentRetrievalHit[] {
 /**
  * Parse stdout from Claude/Hermes into AgentTurnResult; never throws — returns fallback object.
  */
-export function parseAgentTurnResult(raw: string, provider: AgentRuntimeId): AgentTurnResult {
+export function parseAgentTurnResult(raw: string): AgentTurnResult {
     const excerpt = raw.length > 2000 ? raw.slice(0, 2000) + '…' : raw;
     const jsonStr = extractJsonObject(raw);
     if (!jsonStr) {
@@ -157,13 +155,10 @@ export function parseAgentTurnResult(raw: string, provider: AgentRuntimeId): Age
             graph_operations: [],
             custom_vault_operations: [],
             enricher_invocations: [],
-            diagnostics: { provider, raw_excerpt: excerpt, notes: 'no_json_object' },
         };
     }
     try {
         const data = JSON.parse(jsonStr) as Record<string, unknown>;
-        const version =
-            data.version === AGENT_TURN_SCHEMA_VERSION ? AGENT_TURN_SCHEMA_VERSION : AGENT_TURN_SCHEMA_VERSION;
         const answer =
             typeof data.answer_markdown === 'string'
                 ? data.answer_markdown
@@ -180,21 +175,13 @@ export function parseAgentTurnResult(raw: string, provider: AgentRuntimeId): Age
         const enricherInvocations = normalizeEnricherInvocations(
             data.enricher_invocations ?? data.enricherInvocations,
         );
-        const diag: AgentTurnDiagnostics = {
-            provider,
-            raw_excerpt: excerpt,
-            notes: typeof data.diagnostics === 'object' && data.diagnostics !== null
-                ? JSON.stringify(data.diagnostics).slice(0, 500)
-                : undefined,
-        };
         return {
-            version,
+            version: AGENT_TURN_SCHEMA_VERSION,
             answer_markdown: answer || '_Empty answer from model._',
             retrieval_hits: hits,
             graph_operations: graphOps,
             custom_vault_operations: customVaultOps,
             enricher_invocations: enricherInvocations,
-            diagnostics: diag,
         };
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -205,7 +192,6 @@ export function parseAgentTurnResult(raw: string, provider: AgentRuntimeId): Age
             graph_operations: [],
             custom_vault_operations: [],
             enricher_invocations: [],
-            diagnostics: { provider, raw_excerpt: excerpt, notes: 'json_parse_error' },
         };
     }
 }

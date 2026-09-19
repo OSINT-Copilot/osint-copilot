@@ -7,6 +7,3 @@
  * with the main process, whose tsconfig cannot resolve `osint/*`.
  */
 export const CANVAS_FILE_TYPE = '.canvas';
-
-/** Where new boards are created. Visible analyst content, like graph-yaml and MiroBoards. */
-export const CANVAS_FOLDER_NAME = 'boards';

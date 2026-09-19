@@ -28,7 +28,7 @@ export class OsintWorkspaceController {
     );
 
     const noteEditorLeaves = mainLeaves.filter((leaf) =>
-      leaf.view?.getViewType() === 'markdown' || leaf.view?.getViewType() === 'empty',
+      leaf.view?.getViewType() === 'empty',
     );
 
     if (existingOsintLeaves.length > 0) {
@@ -42,7 +42,7 @@ export class OsintWorkspaceController {
         anchor = activeLeaf;
       }
       try {
-        return await this.plugin.app.workspace.duplicateLeaf(anchor, 'tab');
+        return await this.plugin.app.workspace.duplicateLeaf(anchor);
       } catch (e) {
         console.warn('[VaultAIPlugin] duplicateLeaf(tab) failed; falling back to new root tab', e);
         return this.plugin.app.workspace.getLeaf('tab');
@@ -82,23 +82,6 @@ export class OsintWorkspaceController {
       return leaf;
     }
     return null;
-  }
-
-  /**
-   * Open the graph view and focus on a specific entity.
-   * This is used by clickable links in chat to navigate to entities in the graph.
-   */
-  async openGraphViewWithEntity(entityId: string) {
-    const leaf = await this.openGraphView();
-    if (leaf) {
-      // Wait a bit for the graph to render, then highlight the entity
-      setTimeout(() => {
-        const graphView = leaf.view as GraphView;
-        if (graphView && typeof graphView.highlightEntity === 'function') {
-          graphView.highlightEntity(entityId);
-        }
-      }, 300);
-    }
   }
 
   /**

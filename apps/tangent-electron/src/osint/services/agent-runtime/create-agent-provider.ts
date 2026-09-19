@@ -1,6 +1,5 @@
 import type VaultAIPlugin from '../../plugin/vault-ai-plugin';
-import { ClaudeAgentProvider } from './claude-agent-provider';
-import { CodexAgentProvider } from './codex-agent-provider';
+import { LocalCliAgentProvider } from './local-cli-agent-provider';
 import { HermesAgentProvider } from './hermes-agent-provider';
 import type { AgentProvider } from './provider-types';
 import { CLAUDE_RUNTIME_ID, CODEX_RUNTIME_ID, HERMES_RUNTIME_ID, findCustomRuntime } from './runtime-registry';
@@ -19,7 +18,7 @@ export function createAgentProvider(plugin: VaultAIPlugin, runtimeId?: string): 
     const s = plugin.settings;
     const selected = runtimeId || s.agentRuntimeProvider;
     if (selected === CODEX_RUNTIME_ID) {
-        return new CodexAgentProvider(plugin.graphApiService);
+        return new LocalCliAgentProvider(plugin.graphApiService, CODEX_RUNTIME_ID, 'Codex', 'Codex CLI');
     }
     if (selected === HERMES_RUNTIME_ID) {
         return new HermesAgentProvider({
@@ -46,5 +45,5 @@ export function createAgentProvider(plugin: VaultAIPlugin, runtimeId?: string): 
             });
         }
     }
-    return new ClaudeAgentProvider(plugin.graphApiService);
+    return new LocalCliAgentProvider(plugin.graphApiService, CLAUDE_RUNTIME_ID, 'Claude Code', 'Claude Code');
 }

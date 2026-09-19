@@ -9,9 +9,9 @@ import {
 } from "./vault-script-side-diff";
 
 /** Max chars for enricher/skill preview under proposed vault changes (DOM). */
-export const VAULT_OP_PREVIEW_MAX_CHARS = 90_000;
+const VAULT_OP_PREVIEW_MAX_CHARS = 90_000;
 
-export function truncateVaultOpPreviewText(raw: string): string {
+function truncateVaultOpPreviewText(raw: string): string {
 	if (raw.length <= VAULT_OP_PREVIEW_MAX_CHARS) return raw;
 	const overflow = raw.length - VAULT_OP_PREVIEW_MAX_CHARS;
 	return `${raw.slice(0, VAULT_OP_PREVIEW_MAX_CHARS)}\n\n… [preview truncated: ${overflow} more character(s)]`;

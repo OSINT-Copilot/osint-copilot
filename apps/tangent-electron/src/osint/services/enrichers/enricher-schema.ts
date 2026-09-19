@@ -43,10 +43,6 @@ export interface EnricherSpec {
   auth: EnricherAuthConfig;
   request: EnricherRequestConfig;
   inputHints: string[];
-  outputMapping?: {
-    summaryPath?: string;
-    listPath?: string;
-  };
   skillInstructions: string;
   limits: EnricherLimits;
   updatedAt: string;
@@ -149,19 +145,6 @@ export function normalizeEnricherSpec(raw: unknown): EnricherSpec | null {
       bodyTemplate: typeof (r.request as any)?.bodyTemplate === "string" ? String((r.request as any).bodyTemplate) : undefined,
     },
     inputHints: Array.isArray(r.inputHints) ? r.inputHints.map((v) => String(v)) : [],
-    outputMapping:
-      r.outputMapping && typeof r.outputMapping === "object"
-        ? {
-            summaryPath:
-              typeof (r.outputMapping as any).summaryPath === "string"
-                ? String((r.outputMapping as any).summaryPath)
-                : undefined,
-            listPath:
-              typeof (r.outputMapping as any).listPath === "string"
-                ? String((r.outputMapping as any).listPath)
-                : undefined,
-          }
-        : undefined,
     skillInstructions: String(r.skillInstructions || "").trim(),
     limits: {
       timeoutMs: Number.isFinite(timeoutMs) && timeoutMs >= 2000 ? timeoutMs : 15_000,

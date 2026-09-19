@@ -3,10 +3,7 @@
  * glyphs for the names already in the code (map-pin, pencil, crosshair, chevron-down,
  * file-text, lock, message-square, layout-list, git-fork, calendar).
  */
-import * as lucide from 'lucide-static';
 import { hasLucideIcon, lucideSvg } from '../../integration/lucide-svg';
-
-const icons = lucide as unknown as Record<string, string>;
 
 export function setIcon(el: HTMLElement, iconName: string): void {
     // One mapping, shared with the toolbar pill, which cannot call this function because
@@ -20,8 +17,4 @@ export function setIcon(el: HTMLElement, iconName: string): void {
     // so a typo'd icon name is visible during development.
     el.textContent = '';
     el.setAttribute('data-missing-icon', iconName);
-}
-
-export function getIconIds(): string[] {
-    return Object.keys(icons);
 }

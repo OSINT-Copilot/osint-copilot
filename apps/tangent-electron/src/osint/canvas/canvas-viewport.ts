@@ -125,11 +125,6 @@ export function panBy(viewport: Viewport, screenDx: number, screenDy: number): V
     };
 }
 
-export function rectContains(rect: Rect, point: Point): boolean {
-    return point.x >= rect.x && point.x <= rect.x + rect.width
-        && point.y >= rect.y && point.y <= rect.y + rect.height;
-}
-
 export function rectsIntersect(a: Rect, b: Rect): boolean {
     return a.x < b.x + b.width && a.x + a.width > b.x
         && a.y < b.y + b.height && a.y + a.height > b.y;

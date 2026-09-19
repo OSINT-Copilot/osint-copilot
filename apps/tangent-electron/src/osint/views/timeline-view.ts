@@ -3,7 +3,8 @@
  * Timeline View for visualizing Event entities with dates.
  */
 
-import { App, ItemView, TFile, WorkspaceLeaf, Menu, Notice, normalizePath, setIcon } from 'obsidian';
+import { ItemView, TFile, WorkspaceLeaf, Menu, Notice, normalizePath } from 'obsidian';
+import { iconButton, setButtonLabel } from './toolbar-button';
 import { type Entity, EntityType, ENTITY_CONFIGS } from '../entities/types';
 import { EntityManager } from '../services/entity-manager';
 import { EntityCreationModal } from '../modals/entity-modal';
@@ -24,7 +25,7 @@ function isExplicitlyOffTimeline(value: unknown): boolean {
     return false;
 }
 
-export function pickFirstTimelineDateProperty(properties: Record<string, unknown>): string | undefined {
+function pickFirstTimelineDateProperty(properties: Record<string, unknown>): string | undefined {
     const keys = ['start_date', 'first_seen', 'first_seen_precise', 'date', 'published', 'first_observed', 'modified'];
     for (const k of keys) {
         const v = properties[k];
@@ -56,26 +57,11 @@ export function sortTimelineEventsForDisplay(events: TimelineEvent[]): TimelineE
     return [...undated, ...dated];
 }
 
-/**
- * A toolbar button with a lucide glyph and a text label, in place of the emoji that used
- * to stand in for icons. The label is a span of its own so a busy state can relabel the
- * button without discarding the icon.
- */
-function iconButton(parent: HTMLElement, icon: string, label: string): HTMLButtonElement {
-    const btn = parent.createEl('button');
-    setIcon(btn.createSpan({ cls: 'graph_copilot-timeline-btn-icon' }), icon);
-    btn.createSpan({ cls: 'graph_copilot-timeline-btn-label', text: label });
-    return btn;
-}
-
-function setButtonLabel(btn: HTMLButtonElement, label: string): void {
-    const labelEl = btn.querySelector('.graph_copilot-timeline-btn-label');
-    if (labelEl) labelEl.textContent = label;
-}
+/** Class stem for the toolbar buttons; see iconButton. */
+const BTN = 'graph_copilot-timeline-btn';
 
 export class TimelineView extends ItemView {
     private entityManager: EntityManager;
-    private container: HTMLElement | null = null;
     private timelineContainer: HTMLElement | null = null;
     private events: TimelineEvent[] = [];
     private onEventClick: ((entityId: string) => void) | null = null;
@@ -94,16 +80,6 @@ export class TimelineView extends ItemView {
 
     getViewType(): string {
         return TIMELINE_VIEW_TYPE;
-    }
-
-    getDisplayText(): string {
-        return 'OSINTCopilot timeline';
-    }
-
-    getIcon(): string {
-        // The name OSINT_VIEWS gives this view (integration/osint-view-types.ts), so the
-        // pane header and the toolbar pill show one glyph rather than two.
-        return 'calendar';
     }
 
     async onOpen(): Promise<void> {
@@ -183,24 +159,24 @@ export class TimelineView extends ItemView {
      * could take effect.
      */
     private createToolbar(toolbar: HTMLElement): void {
-        const addBtn = iconButton(toolbar, 'plus', 'Add event');
+        const addBtn = iconButton(toolbar, 'plus', 'Add event', BTN);
         addBtn.addClass('graph_copilot-add-entity-btn');
         addBtn.onclick = () => this.openEventCreator();
 
         toolbar.createDiv({ cls: 'graph_copilot-toolbar-separator' });
 
         const trailing = toolbar.createDiv({ cls: 'graph_copilot-timeline-toolbar-trailing' });
-        const refreshBtn = iconButton(trailing, 'refresh-cw', 'Refresh');
+        const refreshBtn = iconButton(trailing, 'refresh-cw', 'Refresh', BTN);
         refreshBtn.onclick = () => {
             void (async () => {
                 if (refreshBtn.disabled) return;
                 refreshBtn.disabled = true;
-                setButtonLabel(refreshBtn, 'Refreshing\u2026');
+                setButtonLabel(refreshBtn, 'Refreshing\u2026', BTN);
                 try {
                     await this.refresh();
                 } finally {
                     refreshBtn.disabled = false;
-                    setButtonLabel(refreshBtn, 'Refresh');
+                    setButtonLabel(refreshBtn, 'Refresh', BTN);
                 }
             })();
         };
@@ -547,22 +523,6 @@ export class TimelineView extends ItemView {
             minute: '2-digit'
         };
         return date.toLocaleTimeString(undefined, options);
-    }
-
-    /**
-     * Add an event to the timeline.
-     */
-    addEvent(entity: Entity): void {
-        if (entity.type !== EntityType.Event) return;
-        this.refresh();
-    }
-
-    /**
-     * Remove an event from the timeline.
-     */
-    removeEvent(entityId: string): void {
-        this.events = this.events.filter(e => e.id !== entityId);
-        this.renderTimeline();
     }
 }
 

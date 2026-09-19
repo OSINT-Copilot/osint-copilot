@@ -39,16 +39,6 @@ export class MenuItem {
         return this;
     }
 
-    setDisabled(disabled: boolean): this {
-        this.dom.toggleAttribute('data-disabled', disabled);
-        (this.dom as HTMLButtonElement).disabled = disabled;
-        return this;
-    }
-
-    setSection(_section: string): this {
-        return this;
-    }
-
     onClick(callback: (event: MouseEvent) => unknown): this {
         this.clickCallback = callback;
         return this;
@@ -73,15 +63,6 @@ export class Menu {
         return this;
     }
 
-    addSeparator(): this {
-        this.dom.createDiv({ cls: 'menu-separator' });
-        return this;
-    }
-
-    showAtMouseEvent(event: MouseEvent): this {
-        return this.showAtPosition({ x: event.clientX, y: event.clientY });
-    }
-
     showAtPosition(position: { x: number; y: number }): this {
         this.dom.setCssProps({ position: 'fixed', left: `${position.x}px`, top: `${position.y}px` });
         document.body.appendChild(this.dom);
@@ -102,7 +83,7 @@ export class Menu {
                 return;
             }
             if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                const items = Array.from(this.dom.querySelectorAll<HTMLButtonElement>('button.menu-item:not([disabled])'));
+                const items = Array.from(this.dom.querySelectorAll<HTMLButtonElement>('button.menu-item'));
                 if (items.length === 0) return;
                 event.preventDefault();
                 const at = items.indexOf(document.activeElement as HTMLButtonElement);

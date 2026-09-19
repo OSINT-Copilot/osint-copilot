@@ -1,5 +1,5 @@
 /**
- * Workspace -- leaf placement, view registration and layout events.
+ * Workspace -- leaf placement and view registration.
  *
  * The API surface here is exactly what osint-workspace-controller.ts (33 of the 43
  * workspace call sites) and the five views actually use. Nothing speculative.
@@ -10,27 +10,9 @@
  * osint-workspace-controller.ts:130 casts a leaf's view to GraphView and calls a
  * method on it. Views are constructed eagerly.
  */
-import { WorkspaceLeaf, WorkspaceRoot, WorkspaceSplit, WorkspaceTabs, type WorkspaceItem } from './layout';
+import { WorkspaceLeaf, WorkspaceRoot, WorkspaceTabs, type WorkspaceItem } from './layout';
 import { EmptyView, View } from './view';
 import type { TFile } from '../vault/tfile';
-
-export type WorkspaceEventName = 'active-leaf-change' | 'layout-change' | 'file-open' | 'quit';
-
-/** Argument shape per event, so handlers are typed at the call site. */
-export interface WorkspaceEventMap {
-    'active-leaf-change': [WorkspaceLeaf | null];
-    'layout-change': [];
-    'file-open': [TFile | null];
-    quit: [];
-}
-
-type Handler = (...args: never[]) => void;
-
-export interface WorkspaceEventRef {
-    name: WorkspaceEventName;
-    handler: Handler;
-    detach(): void;
-}
 
 export interface ViewState {
     type: string;
@@ -40,22 +22,18 @@ export interface ViewState {
 
 export type ViewFactory = (leaf: WorkspaceLeaf) => View;
 
-/** 'tab' = new tab in the active group; 'split' = new pane; false = reuse active. */
-export type LeafTarget = boolean | 'tab' | 'split' | 'window';
+/** 'tab' = new tab in the active group; false = reuse active. */
+export type LeafTarget = boolean | 'tab';
 
 export class Workspace {
     /** Set by App so constructed views can expose `this.app`. */
     app: import('../app').App | null = null;
 
-    readonly rootSplit = new WorkspaceRoot('root');
-    readonly leftSplit = new WorkspaceRoot('left');
-    readonly rightSplit = new WorkspaceRoot('right');
+    readonly rootSplit = new WorkspaceRoot();
 
     activeLeaf: WorkspaceLeaf | null = null;
 
     private readonly factories = new Map<string, ViewFactory>();
-    private readonly handlers = new Map<WorkspaceEventName, Set<Handler>>();
-    private recentLeaves: WorkspaceLeaf[] = [];
 
     constructor() {
         // The editor area always has at least one tab group to place leaves into.
@@ -72,33 +50,10 @@ export class Workspace {
         this.factories.delete(type);
     }
 
-    // ------------------------------------------------------------------- events
-
-    on<K extends WorkspaceEventName>(
-        name: K,
-        handler: (...args: WorkspaceEventMap[K]) => unknown,
-    ): WorkspaceEventRef {
-        if (!this.handlers.has(name)) this.handlers.set(name, new Set());
-        this.handlers.get(name)!.add(handler as Handler);
-        return { name, handler: handler as Handler, detach: () => this.handlers.get(name)?.delete(handler as Handler) };
-    }
-
-    offref(ref: WorkspaceEventRef | null | undefined): void {
-        ref?.detach();
-    }
-
-    trigger<K extends WorkspaceEventName>(name: K, ...args: WorkspaceEventMap[K]): void {
-        for (const handler of [...(this.handlers.get(name) ?? [])]) {
-            (handler as (...a: unknown[]) => void)(...args);
-        }
-    }
-
     // ----------------------------------------------------------------- querying
 
     iterateAllLeaves(callback: (leaf: WorkspaceLeaf) => void): void {
-        for (const root of [this.rootSplit, this.leftSplit, this.rightSplit]) {
-            this.walk(root, callback);
-        }
+        this.walk(this.rootSplit, callback);
     }
 
     getLeavesOfType(type: string): WorkspaceLeaf[] {
@@ -111,14 +66,6 @@ export class Workspace {
 
     detachLeavesOfType(type: string): void {
         for (const leaf of this.getLeavesOfType(type)) leaf.detach();
-        this.trigger('layout-change');
-    }
-
-    getMostRecentLeaf(): WorkspaceLeaf | null {
-        for (const leaf of this.recentLeaves) {
-            if (this.isAttached(leaf)) return leaf;
-        }
-        return this.activeLeaf;
     }
 
     // ---------------------------------------------------------------- placement
@@ -127,31 +74,14 @@ export class Workspace {
         if (target === false && this.activeLeaf && this.isAttached(this.activeLeaf)) {
             return this.activeLeaf;
         }
-        if (target === 'split') {
-            const split = new WorkspaceSplit('vertical');
-            const tabs = new WorkspaceTabs();
-            split.addChild(tabs);
-            this.rootSplit.addChild(split);
-            return this.createLeafIn(tabs);
-        }
         return this.createLeafIn(this.activeTabGroup());
-    }
-
-    getRightLeaf(_split: boolean): WorkspaceLeaf {
-        const tabs = this.tabGroupOf(this.rightSplit);
-        return this.createLeafIn(tabs);
-    }
-
-    getLeftLeaf(_split: boolean): WorkspaceLeaf {
-        const tabs = this.tabGroupOf(this.leftSplit);
-        return this.createLeafIn(tabs);
     }
 
     /**
      * Opens a new tab immediately after `anchor`, in the same group.
      * This is the mechanism behind Ctrl/Cmd-click on all five ribbon icons.
      */
-    async duplicateLeaf(anchor: WorkspaceLeaf, _target: LeafTarget = 'tab'): Promise<WorkspaceLeaf> {
+    async duplicateLeaf(anchor: WorkspaceLeaf): Promise<WorkspaceLeaf> {
         const group = anchor.parent as WorkspaceTabs | null;
         if (!(group instanceof WorkspaceTabs)) return this.getLeaf('tab');
 
@@ -168,22 +98,16 @@ export class Workspace {
      */
     onRevealLeaf: ((leaf: WorkspaceLeaf) => void) | null = null;
 
-    /** Set by the host to open a markdown note in its own editor instead of the shim's. */
+    /** Set by the host to open a markdown note in its own editor; the shim has none. */
     openMarkdownFile: ((file: TFile) => void | Promise<void>) | null = null;
 
     async revealLeaf(leaf: WorkspaceLeaf): Promise<void> {
-        const group = leaf.parent;
-        if (group instanceof WorkspaceTabs) group.setActive(leaf);
         this.setActiveLeaf(leaf);
         this.onRevealLeaf?.(leaf);
     }
 
     setActiveLeaf(leaf: WorkspaceLeaf | null, _focus = true): void {
         this.activeLeaf = leaf;
-        if (leaf) {
-            this.recentLeaves = [leaf, ...this.recentLeaves.filter((l) => l !== leaf)].slice(0, 20);
-        }
-        this.trigger('active-leaf-change', leaf);
     }
 
     // ------------------------------------------------------------------ private
@@ -236,11 +160,8 @@ export class Workspace {
 
     private attachLeaf(leaf: WorkspaceLeaf, group: WorkspaceTabs, index?: number): void {
         group.addChild(leaf, index);
-        group.setActive(leaf);
-        leaf.onStateChange = () => this.trigger('layout-change');
         this.bindSetViewState(leaf);
         this.setActiveLeaf(leaf);
-        this.trigger('layout-change');
     }
 
     /**
@@ -260,19 +181,12 @@ export class Workspace {
             next.load();
 
             if (state.active !== false) await this.revealLeaf(leaf);
-            this.trigger('layout-change');
         };
 
         leaf.openFile = async (file: TFile): Promise<void> => {
-            if (this.openMarkdownFile) {
-                // The host owns note editing. Eight call sites reach here -- clicking an
-                // entity in the graph, a citation in chat, a skill in the registry.
-                await this.openMarkdownFile(file);
-            }
-            else {
-                await leaf.setViewState({ type: 'markdown', active: true, state: { file: file.path } });
-            }
-            this.trigger('file-open', file);
+            // The host owns note editing. Eight call sites reach here -- clicking an
+            // entity in the graph, a citation in chat, a skill in the registry.
+            await this.openMarkdownFile?.(file);
         };
     }
 }

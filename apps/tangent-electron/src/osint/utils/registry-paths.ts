@@ -10,7 +10,7 @@ export function skillMarkdownPathFromId(skillsFolder: string, rawId: string): st
 	return normalizePath(`${root}/${id}.md`);
 }
 
-/** Vault path for `{enrichersFolder}/{id}.json` (null if id invalid). Matches custom-vault-writer slug rules. */
+/** Vault path for `{enrichersFolder}/{id}.json` (null if id invalid). custom-vault-writer resolves through these too. */
 export function enricherJsonPathFromId(enrichersFolder: string, rawId: string): string | null {
 	const id = parseSkillIdForVault(rawId);
 	if (!id) return null;

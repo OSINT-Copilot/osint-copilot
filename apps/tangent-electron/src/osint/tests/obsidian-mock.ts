@@ -3,7 +3,6 @@ import { vi } from 'vitest';
 export class App {
     workspace: any;
     vault: any;
-    metadataCache: any;
 
     constructor() {
         this.workspace = {
@@ -24,9 +23,6 @@ export class App {
             },
             getAbstractFileByPath: vi.fn(),
         };
-        this.metadataCache = {
-            getFileCache: vi.fn().mockReturnValue({}),
-        };
     }
 }
 
@@ -41,8 +37,6 @@ export class Plugin {
     }
     loadData = vi.fn().mockResolvedValue({});
     saveData = vi.fn().mockResolvedValue(undefined);
-    addRibbonIcon = vi.fn();
-    addStatusBarItem = vi.fn().mockReturnValue({ setText: vi.fn() });
     addCommand = vi.fn();
     addSettingTab = vi.fn();
     registerView = vi.fn();
@@ -79,11 +73,8 @@ export class ItemView {
         this.containerEl.appendChild(this.contentEl);
     }
     getViewType() { return ''; }
-    getDisplayText() { return ''; }
-    getIcon() { return ''; }
     onOpen() { return Promise.resolve(); }
     onClose() { return Promise.resolve(); }
-    addAction() { }
 }
 
 export class WorkspaceLeaf {
@@ -110,7 +101,6 @@ export { normalizePath } from '../obsidian-shim/vault/normalize-path';
 export const requestUrl = vi.fn();
 
 export const MarkdownRenderer = {
-    renderMarkdown: vi.fn(),
     render: vi.fn(async (_app: App, markdown: string, el: HTMLElement) => {
         el.textContent = markdown;
     }),
@@ -118,7 +108,6 @@ export const MarkdownRenderer = {
 
 export class Menu {
     addItem = vi.fn().mockReturnThis();
-    showAtMouseEvent = vi.fn();
     showAtPosition = vi.fn();
 }
 
@@ -127,8 +116,6 @@ export class Component {
     onload() { }
     unload() { }
     onunload() { }
-    addChild() { }
-    removeChild() { }
 }
 
 export class ButtonComponent {
@@ -147,14 +134,4 @@ export class Modal {
     constructor(app: App) { }
     open() { }
     close() { }
-}
-
-export class Editor {
-    constructor() { }
-}
-
-export class MarkdownView extends ItemView {
-    constructor(leaf: WorkspaceLeaf) {
-        super(leaf);
-    }
 }

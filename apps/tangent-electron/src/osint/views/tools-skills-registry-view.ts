@@ -224,14 +224,6 @@ export class ToolsSkillsRegistryView extends ItemView {
 		return TOOLS_SKILLS_REGISTRY_VIEW_TYPE;
 	}
 
-	getDisplayText(): string {
-		return "OSINT Copilot tools & skills";
-	}
-
-	getIcon(): string {
-		return "layout-list";
-	}
-
 	async onOpen(): Promise<void> {
 		const root = this.containerEl.children[1];
 		root.empty();

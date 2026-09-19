@@ -11,7 +11,6 @@ vi.mock('../services/agent-runtime/chat-runtime-availability', () => ({
 import VaultAIPlugin from '../plugin/vault-ai-plugin';
 import { ChatView } from '../views/chat-view';
 import { App } from 'obsidian';
-import { legacyFlagsForChatMode } from '../services/conversation-service';
 import {
   DEFAULT_CONVERSATION_FOLDER,
   DEFAULT_CREDENTIALS_FOLDER,
@@ -26,19 +25,8 @@ import {
   DEFAULT_OIDSF_MODAL_LAYERS,
 } from '../services/schema-catalog-types';
 
-function applyModeToView(view: ChatView, mode: 'general' | 'graph' | 'local') {
-  view.chatMode = mode;
-  const f = legacyFlagsForChatMode(mode);
-  view.localSearchMode = f.localSearchMode;
-  view.graphGenerationMode = f.graphGenerationMode;
-  view.orchestrationMode = f.orchestrationMode;
-  view.vaultGraphIngestMode = f.vaultGraphIngestMode;
-  view.customChatMode = false;
-  view.activeCheckpointId = undefined;
-}
-
 /**
- * Send routing: orchestration (handleOrchestrationAgent) except vault graph ingest mode.
+ * Send routing: orchestration (handleOrchestrationAgent), or the selected task agent.
  */
 describe('ChatView send routing', () => {
   let plugin: VaultAIPlugin;
@@ -204,17 +192,7 @@ describe('ChatView send routing', () => {
     view.saveCurrentConversation = vi.fn();
   });
 
-  it('routes local mode to orchestration (legacy mode ignored)', async () => {
-    applyModeToView(view, 'local');
-    view.inputEl.value = 'What is in my vault?';
-
-    await view.handleSend();
-
-    expect(plugin.orchestrationService.processRequest).toHaveBeenCalled();
-  });
-
   it('routes general mode to orchestration (processRequest)', async () => {
-    applyModeToView(view, 'general');
     view.inputEl.value = 'Investigate ACME';
 
     await view.handleSend();
@@ -223,7 +201,6 @@ describe('ChatView send routing', () => {
   });
 
   it('passes extracted attachment text as context instead of query URLs', async () => {
-    applyModeToView(view, 'general');
     view.inputEl.value = 'Extract entities';
     view.attachedFiles = [{
       file: new File([''], 'brief.pdf', { type: 'application/pdf' }),
@@ -264,16 +241,4 @@ describe('ChatView send routing', () => {
     expect(plugin.settings.agentRuntimeProvider).toBe('codex');
     expect(plugin.orchestrationService.processRequest).not.toHaveBeenCalled();
     expect(view.inputEl.value).toBe('Keep this prompt with Codex');
-  });
-
-  it('routes graph mode to orchestration (legacy graph-only path removed)', async () => {
-    applyModeToView(view, 'graph');
-
-    const text = 'Apple Inc. CEO Tim Cook announced new iPhone.';
-    view.inputEl.value = text;
-
-    await view.handleSend();
-
-    expect(plugin.orchestrationService.processRequest).toHaveBeenCalled();
-  });
-});
+  });});

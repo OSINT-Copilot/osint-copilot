@@ -106,14 +106,4 @@ export const MarkdownRenderer = {
         el.innerHTML = DOMPurify.sanitize(html, SANITIZE_OPTIONS);
         linkifyWikilinks(el);
     },
-
-    /** Pre-1.0 name; kept because the mock exposed it. */
-    async renderMarkdown(
-        markdown: string,
-        el: HTMLElement,
-        sourcePath: string,
-        component: Component | unknown,
-    ): Promise<void> {
-        return MarkdownRenderer.render(null, markdown, el, sourcePath, component);
-    },
 };

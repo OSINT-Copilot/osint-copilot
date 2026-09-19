@@ -621,34 +621,6 @@
   margin-top: 5px;
 }
 
-/* Intermediate Results Styles */
-.vault-ai-intermediate-results-container {
-  margin-top: 10px;
-  margin-bottom: 10px;
-  padding: 8px;
-  background-color: var(--background-secondary);
-  border-radius: 4px;
-}
-
-.vault-ai-intermediate-results-container strong {
-  display: block;
-  margin-bottom: 5px;
-  font-size: 0.9em;
-  color: var(--text-normal);
-}
-
-.vault-ai-intermediate-results {
-  margin: 0;
-  padding-left: 20px;
-  list-style-type: disc;
-}
-
-.vault-ai-intermediate-results li {
-  margin: 3px 0;
-  font-size: 0.85em;
-  color: var(--text-muted);
-}
-
 /* ============================================================================
    OSINTCopilot Graph Plugin Styles
    ============================================================================ */
@@ -720,10 +692,6 @@
 .graph_copilot-graph-label {
   font-size: 12px;
   color: var(--text-muted);
-}
-
-.osint-copilot-vault-unlock-btn {
-  color: var(--text-accent);
 }
 
 /* Timeline View */

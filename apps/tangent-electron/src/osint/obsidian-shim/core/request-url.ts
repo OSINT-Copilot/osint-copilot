@@ -36,8 +36,7 @@ export interface RequestUrlResponse {
     readonly json: any;
 }
 
-export async function requestUrl(param: RequestUrlParam | string): Promise<RequestUrlResponse> {
-    const request = typeof param === 'string' ? { url: param } : param;
+export async function requestUrl(request: RequestUrlParam): Promise<RequestUrlResponse> {
     const response = await host.net.request(request);
 
     return {

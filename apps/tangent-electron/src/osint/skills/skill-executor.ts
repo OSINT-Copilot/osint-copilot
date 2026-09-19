@@ -26,7 +26,6 @@ export async function executeEnricherTool(
 		query,
 		attachmentsContext,
 		signal,
-		plugin.app.vault,
 		plugin.settings.credentialsFolder,
 	);
 }

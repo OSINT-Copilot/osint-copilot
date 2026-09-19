@@ -107,7 +107,7 @@ export class SchemaCatalogService {
 		try {
 			if (!(await this.app.vault.adapter.exists(path))) return;
 			const content = await this.app.vault.adapter.read(path);
-			const parsed = parseEntityYaml(content, path);
+			const parsed = parseEntityYaml(content);
 			if (parsed.family !== expectedFamily) {
 				console.warn(`[SchemaCatalog] ${path}: family mismatch`);
 				return;
@@ -125,7 +125,7 @@ export class SchemaCatalogService {
 		try {
 			if (!(await this.app.vault.adapter.exists(path))) return;
 			const content = await this.app.vault.adapter.read(path);
-			const parsed = parseRelationshipYaml(content, path);
+			const parsed = parseRelationshipYaml(content);
 			if (parsed.family !== expectedFamily) {
 				console.warn(`[SchemaCatalog] ${path}: family mismatch`);
 				return;
@@ -174,7 +174,7 @@ export class SchemaCatalogService {
 		} catch {
 			// try entity-only or relationship-only
 			try {
-				const ent = parseEntityYaml(content, path);
+				const ent = parseEntityYaml(content);
 				if (ent.family !== 'user') return;
 				for (const raw of ent.entityTypes) {
 					const cat = yamlEntityToCatalog(raw, 'user');
@@ -182,7 +182,7 @@ export class SchemaCatalogService {
 				}
 			} catch {
 				try {
-					const rel = parseRelationshipYaml(content, path);
+					const rel = parseRelationshipYaml(content);
 					if (rel.family !== 'user') return;
 					for (const raw of rel.relationshipTypes) {
 						const cat = yamlRelationshipToCatalog(raw, 'user');

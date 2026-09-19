@@ -32,12 +32,14 @@ async function unusedPath(vault: MinimalVault, base: string): Promise<string> {
     return `${DEFAULT_CANVAS_FOLDER}/${base} ${Date.now()}${CANVAS_FILE_TYPE}`;
 }
 
+const OPEN_TIMEOUT_MS = 5000;
+
 /**
  * Tangent indexes the vault by watching the filesystem, so a file we just wrote is not
  * immediately a node it can navigate to. Poll briefly rather than guessing a delay.
  */
-async function openWhenIndexed(path: string, timeoutMs = 5000): Promise<boolean> {
-    const deadline = Date.now() + timeoutMs;
+async function openWhenIndexed(path: string): Promise<boolean> {
+    const deadline = Date.now() + OPEN_TIMEOUT_MS;
     while (Date.now() < deadline) {
         if (openIndexedVaultNode(path)) return true;
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -51,10 +53,8 @@ export interface CreateCanvasResult {
 }
 
 /** Writes an empty board and navigates to it. */
-export async function createCanvas(
-    vault: MinimalVault, name = 'Board',
-): Promise<CreateCanvasResult> {
-    const path = await unusedPath(vault, name);
+export async function createCanvas(vault: MinimalVault): Promise<CreateCanvasResult> {
+    const path = await unusedPath(vault, 'Board');
     await vaultFileStore().write(path, serializeCanvas(emptyCanvas()));
     return { path, opened: await openWhenIndexed(path) };
 }

@@ -3,7 +3,8 @@
  * Map View for visualizing Location entities using Leaflet.
  */
 
-import { App, ItemView, WorkspaceLeaf, Notice, Modal, Menu, TFile, normalizePath, requestUrl, setIcon } from 'obsidian';
+import { App, ItemView, WorkspaceLeaf, Notice, Modal, Menu, TFile, normalizePath, requestUrl } from 'obsidian';
+import { iconButton, setButtonLabel } from './toolbar-button';
 import { type Entity, EntityType, ENTITY_CONFIGS } from '../entities/types';
 import { EntityManager } from '../services/entity-manager';
 import { EntityCreationModal } from '../modals/entity-modal';
@@ -104,22 +105,8 @@ export function geocodeResultUpdates(
     return updates;
 }
 
-/**
- * A toolbar button with a lucide glyph and a text label, in place of the emoji that used
- * to stand in for icons. The label is a span of its own so a busy state can relabel the
- * button without discarding the icon.
- */
-function iconButton(parent: HTMLElement, icon: string, label: string): HTMLButtonElement {
-    const btn = parent.createEl('button');
-    setIcon(btn.createSpan({ cls: 'graph_copilot-map-btn-icon' }), icon);
-    btn.createSpan({ cls: 'graph_copilot-map-btn-label', text: label });
-    return btn;
-}
-
-function setButtonLabel(btn: HTMLButtonElement, label: string): void {
-    const labelEl = btn.querySelector('.graph_copilot-map-btn-label');
-    if (labelEl) labelEl.textContent = label;
-}
+/** Class stem for the toolbar buttons; see iconButton. */
+const BTN = 'graph_copilot-map-btn';
 
 // Leaflet CSS inlined to avoid CSP issues with external stylesheets
 // Leaflet CSS moved to styles.css
@@ -156,7 +143,7 @@ const LOADING_BASEMAP_HINT = 'Loading basemap\u2026';
  * same every time: an offline archive beats an online provider because it is the one that
  * leaks nothing, and anything with imagery beats the bare grid.
  */
-export const BASE_LAYER_RANK: Record<string, number> = {
+const BASE_LAYER_RANK: Record<string, number> = {
     [GRID_LAYER_NAME]: 0,
     [CUSTOM_LAYER_NAME]: 1,
     [ONLINE_LAYER_NAME]: 1,
@@ -293,7 +280,6 @@ export class MapView extends ItemView {
     /** A *configured* offline archive that failed. Always surfaced, whatever else loads. */
     private offlineBasemapProblem = '';
     private basemapStatusEl: HTMLElement | null = null;
-    private offlineHandleId: string | null = null;
     private refreshBtn: HTMLButtonElement | null = null;
     /** The "nothing has coordinates yet" overlay, present only while that is true. */
     private emptyStateEl: HTMLElement | null = null;
@@ -313,14 +299,6 @@ export class MapView extends ItemView {
 
     getViewType(): string {
         return MAP_VIEW_TYPE;
-    }
-
-    getDisplayText(): string {
-        return 'OSINTCopilot map';
-    }
-
-    getIcon(): string {
-        return 'map-pin';
     }
 
     async onOpen(): Promise<void> {
@@ -639,7 +617,6 @@ export class MapView extends ItemView {
             return;
         }
 
-        this.offlineHandleId = result.archive.handleId;
         try {
             const { PMTiles } = await import('pmtiles');
             const archive = new PMTiles(new IpcPMTilesSource(result.archive, host.basemap));
@@ -857,13 +834,13 @@ export class MapView extends ItemView {
      * take effect, and any pane under ~700px grew a horizontal scrollbar.
      */
     private createToolbar(toolbar: HTMLElement): void {
-        const addBtn = iconButton(toolbar, 'plus', 'Add location');
+        const addBtn = iconButton(toolbar, 'plus', 'Add location', BTN);
         addBtn.addClass('graph_copilot-add-entity-btn');
         addBtn.onclick = () => this.openLocationCreator();
 
         toolbar.createDiv({ cls: 'graph_copilot-toolbar-separator' });
 
-        const geolocateBtn = iconButton(toolbar, 'map-pin', 'Geolocate missing');
+        const geolocateBtn = iconButton(toolbar, 'map-pin', 'Geolocate missing', BTN);
         geolocateBtn.onclick = () => this.showGeolocateMissingDialog();
 
         // A persistent strip, not a toast: a missing basemap is a state the analyst needs
@@ -875,10 +852,10 @@ export class MapView extends ItemView {
         this.basemapStatusEl.style.display = 'none';
 
         const trailing = toolbar.createDiv({ cls: 'graph_copilot-map-toolbar-trailing' });
-        this.refreshBtn = iconButton(trailing, 'refresh-cw', 'Refresh');
+        this.refreshBtn = iconButton(trailing, 'refresh-cw', 'Refresh', BTN);
         this.refreshBtn.onclick = () => { void this.refreshFromToolbar(); };
 
-        const fitBtn = iconButton(trailing, 'maximize', 'Fit all');
+        const fitBtn = iconButton(trailing, 'maximize', 'Fit all', BTN);
         fitBtn.onclick = () => this.fitAllMarkers();
     }
 
@@ -891,12 +868,12 @@ export class MapView extends ItemView {
         const btn = this.refreshBtn;
         if (!btn || btn.disabled) return;
         btn.disabled = true;
-        setButtonLabel(btn, 'Refreshing\u2026');
+        setButtonLabel(btn, 'Refreshing\u2026', BTN);
         try {
             await this.refresh();
         } finally {
             btn.disabled = false;
-            setButtonLabel(btn, 'Refresh');
+            setButtonLabel(btn, 'Refresh', BTN);
         }
     }
 
@@ -1289,53 +1266,6 @@ export class MapView extends ItemView {
             padding: [50, 50],
             maxZoom: this.markers.size === 1 ? 13 : undefined,
         });
-    }
-
-    /**
-     * Add a location to the map.
-     */
-    addLocation(entity: Entity): void {
-        if (entity.type !== EntityType.Location) return;
-
-        const lat = parseCoordinate(entity.properties.latitude as string | number | undefined, 'lat');
-        const lng = parseCoordinate(entity.properties.longitude as string | number | undefined, 'lng');
-
-        if (lat !== null && lng !== null) {
-            this.addMarker({
-                id: entity.id,
-                label: entity.label,
-                lat,
-                lng,
-                address: entity.properties.address as string,
-                city: entity.properties.city as string,
-                country: entity.properties.country as string
-            });
-        }
-    }
-
-    /**
-     * Remove a location from the map.
-     */
-    removeLocation(entityId: string): void {
-        const marker = this.markers.get(entityId);
-        if (marker) {
-            marker.remove();
-            this.markers.delete(entityId);
-        }
-    }
-
-    /**
-     * Highlight a specific location.
-     */
-    highlightLocation(entityId: string): void {
-        const entity = this.entityManager.getEntity(entityId);
-        if (!entity || !this.map) return;
-
-        const marker = this.markers.get(entity.id);
-        if (marker) {
-            marker.openPopup();
-            this.map.setView(marker.getLatLng(), 15);
-        }
     }
 
     /**

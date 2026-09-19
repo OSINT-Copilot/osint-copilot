@@ -4,16 +4,15 @@ import {
 	DEFAULT_CREDENTIALS_FOLDER,
 	DEFAULT_ENRICHERS_FOLDER,
 	DEFAULT_SCRIPTS_FOLDER,
-	DEFAULT_SKILLS_FOLDER,
 	OSINT_COPILOT_CUSTOM_ROOT,
 } from '../constants/vault-layout';
 import type { CustomVaultOperation } from './custom-vault-operations';
 import {
 	normalizeCredentialsRelativePath,
-	parseSkillIdForVault,
 	relativePathHasAllowedScriptExtension,
 } from './custom-vault-operations';
 import { ensureFolderExists, ensureFolderChainForFile } from '../utils/vault-bootstrap-fs';
+import { enricherJsonPathFromId, skillMarkdownPathFromId } from '../utils/registry-paths';
 
 function pathIsUnderPrefix(path: string, prefix: string): boolean {
 	const p = normalizePath(path);
@@ -27,10 +26,6 @@ function assertPathUnderCustomRoot(resolvedPath: string, purpose: string): void 
 	if (!pathIsUnderPrefix(p, root)) {
 		throw new Error(`${purpose}: path must stay under ${root}`);
 	}
-}
-
-function skillsRoot(plugin: VaultAIPlugin): string {
-	return normalizePath(plugin.settings.skillsFolder.trim() || DEFAULT_SKILLS_FOLDER);
 }
 
 function credentialsRoot(plugin: VaultAIPlugin): string {
@@ -47,9 +42,8 @@ function scriptsRoot(plugin: VaultAIPlugin): string {
 
 /** Re-validate op paths against current settings (defense in depth). */
 function resolveSkillMarkdownPath(plugin: VaultAIPlugin, skillId: string): string {
-	const id = parseSkillIdForVault(skillId);
-	if (!id || id === 'readme') throw new Error('Invalid skill id');
-	const file = normalizePath(`${skillsRoot(plugin)}/${id}.md`);
+	const file = skillMarkdownPathFromId(plugin.settings.skillsFolder, skillId);
+	if (!file) throw new Error('Invalid skill id');
 	assertPathUnderCustomRoot(file, 'Skill file');
 	return file;
 }
@@ -66,13 +60,12 @@ function resolveCredentialFilePath(plugin: VaultAIPlugin, relativePath: string):
 	return file;
 }
 
-/** `{enrichersRoot}/{id}.json` — id already normalized slug. */
+/** `{enrichersRoot}/{id}.json`, the path rule shared with the registry view. */
 function resolveEnricherJsonPath(plugin: VaultAIPlugin, enricherId: string): string {
-	const id = parseSkillIdForVault(enricherId);
-	if (!id) throw new Error('Invalid enricher id');
+	const file = enricherJsonPathFromId(plugin.settings.enrichersFolder, enricherId);
+	if (!file) throw new Error('Invalid enricher id');
 	const root = enrichersRoot(plugin);
 	assertPathUnderCustomRoot(root, 'Enrichers root');
-	const file = normalizePath(`${root}/${id}.json`);
 	assertPathUnderCustomRoot(file, 'Enricher file');
 	if (!pathIsUnderPrefix(file, root)) {
 		throw new Error('Enricher path escapes enrichers folder');

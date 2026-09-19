@@ -29,14 +29,6 @@ export class DocsView extends ItemView {
         return DOCS_VIEW_TYPE;
     }
 
-    getDisplayText(): string {
-        return 'OSINT Copilot guide';
-    }
-
-    getIcon(): string {
-        return 'book-open';
-    }
-
     async onOpen(): Promise<void> {
         const root = this.containerEl.children[1] as HTMLElement;
         root.empty();

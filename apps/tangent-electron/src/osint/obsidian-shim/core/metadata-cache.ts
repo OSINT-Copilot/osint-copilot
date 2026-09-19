@@ -1,17 +1,15 @@
 /**
- * MetadataCache -- deliberately minimal.
+ * Note metadata -- deliberately minimal, and stateless.
  *
- * There is exactly ONE call site in the entire codebase (vault-ai-plugin.ts:1307,
- * getFileCache), consuming only frontmatter, tags and links. The app parses its own
- * frontmatter with `yaml` everywhere else and has zero dependency on Obsidian's link
- * graph, so reimplementing that graph here would be weeks of work for nothing.
+ * The one caller (the plugin's indexFile) parses each note as it reads it and keeps
+ * only frontmatter, tags and links. The app parses its own frontmatter with `yaml`
+ * everywhere else and has zero dependency on Obsidian's link graph, so there is no
+ * MetadataCache: reimplementing that graph here would be weeks of work for nothing.
  *
  * Backlinks and link resolution belong to the shell (Phase 5), which owns them for
  * the whole app rather than hiding them behind a compatibility surface.
  */
 import { parse as parseYaml } from 'yaml';
-import type { TFile } from '../vault/tfile';
-import type { Vault } from '../vault/vault';
 
 export interface CachedMetadata {
     frontmatter?: Record<string, unknown>;
@@ -51,36 +49,4 @@ export function parseMetadata(content: string): CachedMetadata {
     if (links.length) cache.links = links;
 
     return cache;
-}
-
-export class MetadataCache {
-    private cache = new Map<string, { key: string; data: CachedMetadata }>();
-
-    constructor(private readonly vault: Vault) {}
-
-    /**
-     * Synchronous, like Obsidian's. Returns null until the file has been read once;
-     * the single caller (indexFile) reads the file itself immediately before calling.
-     */
-    getFileCache(file: TFile): CachedMetadata | null {
-        return this.cache.get(file.path)?.data ?? null;
-    }
-
-    /** Called by the indexer with content it has already read, so this costs no I/O. */
-    setFileCache(file: TFile, content: string): CachedMetadata {
-        const data = parseMetadata(content);
-        this.cache.set(file.path, { key: `${file.stat.mtime}:${file.stat.size}`, data });
-        return data;
-    }
-
-    async getOrLoad(file: TFile): Promise<CachedMetadata> {
-        const key = `${file.stat.mtime}:${file.stat.size}`;
-        const hit = this.cache.get(file.path);
-        if (hit && hit.key === key) return hit.data;
-        return this.setFileCache(file, await this.vault.cachedRead(file));
-    }
-
-    invalidate(path: string): void {
-        this.cache.delete(path);
-    }
 }

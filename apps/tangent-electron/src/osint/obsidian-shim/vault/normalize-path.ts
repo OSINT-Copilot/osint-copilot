@@ -13,7 +13,8 @@
  *        null, entity-manager takes its `create` branch, and you get EEXIST.
  *  5. empty result becomes "/" so it resolves to the vault root folder
  *
- * The mock in tests/obsidian-mock.ts had none of 2-5; see tests/normalize-path.test.ts.
+ * The mock in tests/obsidian-mock.ts had none of 2-5; it now re-exports this function,
+ * so every test that touches a path runs the real normalizer.
  */
 export function normalizePath(path: string): string {
     const normalized = path

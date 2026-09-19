@@ -33,14 +33,6 @@ export abstract class View extends Component {
 
     abstract getViewType(): string;
 
-    getDisplayText(): string {
-        return this.getViewType();
-    }
-
-    getIcon(): string {
-        return 'document';
-    }
-
     getState(): Record<string, unknown> {
         return {};
     }
@@ -67,11 +59,6 @@ export abstract class View extends Component {
     // give every view the one signal it actually needs.
 
     private attached = false;
-
-    /** True while containerEl is in the document. */
-    isAttached(): boolean {
-        return this.attached;
-    }
 
     /**
      * Called by the host once containerEl is in the document and has been laid out.
@@ -124,14 +111,6 @@ export abstract class View extends Component {
         }
         void this.onClose();
     }
-
-    /** Obsidian adds a header action button; the shell renders these. */
-    addAction(icon: string, title: string, callback: (event: MouseEvent) => unknown): HTMLElement {
-        const button = this.headerEl.createEl('button', { cls: 'view-action', attr: { 'aria-label': title } });
-        button.dataset.icon = icon;
-        button.addEventListener('click', callback);
-        return button;
-    }
 }
 
 export abstract class ItemView extends View {}
@@ -141,17 +120,4 @@ export class EmptyView extends ItemView {
     getViewType(): string {
         return 'empty';
     }
-
-    getDisplayText(): string {
-        return 'New tab';
-    }
-}
-
-/**
- * Editor -- imported by vault-ai-plugin.ts:3 but never used. Kept as a real (empty)
- * class so the import resolves; Phase 5 replaces it with the CodeMirror surface.
- */
-export class Editor {
-    getValue(): string { return ''; }
-    setValue(_value: string): void { /* replaced in Phase 5 */ }
 }

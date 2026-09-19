@@ -14,7 +14,7 @@
 export const GRAPH_NODE_SIZE = 84;
 
 /** The type-coloured frame around every tile. */
-export const GRAPH_BORDER_WIDTH = 3;
+const GRAPH_BORDER_WIDTH = 3;
 
 /**
  * Extensions we are willing to paint into a node.
@@ -23,7 +23,7 @@ export const GRAPH_BORDER_WIDTH = 3;
  * already inside the vault, which the analyst put there -- unlike a DOWNLOADED image,
  * where SVG stays refused because it is XML that can carry script.
  */
-export const GRAPH_IMAGE_EXTENSIONS = new Set([
+const GRAPH_IMAGE_EXTENSIONS = new Set([
     'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico',
 ]);
 

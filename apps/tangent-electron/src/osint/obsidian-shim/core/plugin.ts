@@ -1,10 +1,10 @@
 /**
  * Plugin base class.
  *
- * Everything the plugin registers -- 5 views, 20 commands, 5 ribbon icons, 26
- * events, 1 setting tab -- lands in registries the app shell reads back. In Obsidian
- * these were fire-and-forget because the host owned the registry; here we own it, so
- * the shell renders the command palette and ribbon straight from these maps.
+ * Everything the plugin registers -- views, commands, events, 1 setting tab -- is
+ * owned here and torn down on unload. In Obsidian these were fire-and-forget because
+ * the host owned the registry; here we own it, so the shell registers `commands` with
+ * Tangent and renders `settingTab`, and views go to the workspace's factory registry.
  */
 import { Notice } from '../ui/notice';
 import { Component } from './component';
@@ -17,12 +17,6 @@ export interface Command {
     checkCallback?: (checking: boolean) => boolean | void;
     icon?: string;
     hotkeys?: { modifiers: string[]; key: string }[];
-}
-
-export interface RibbonAction {
-    icon: string;
-    title: string;
-    callback: (event: MouseEvent) => unknown;
 }
 
 export interface ViewCreator {
@@ -38,8 +32,6 @@ export interface PluginManifest {
 
 export abstract class Plugin extends Component {
     readonly commands = new Map<string, Command>();
-    readonly ribbonActions: RibbonAction[] = [];
-    readonly viewCreators = new Map<string, ViewCreator>();
     settingTab: { display(): void; hide?(): void } | null = null;
 
     constructor(readonly app: App, readonly manifest: PluginManifest) {
@@ -52,33 +44,15 @@ export abstract class Plugin extends Component {
         return command;
     }
 
-    addRibbonIcon(icon: string, title: string, callback: (event: MouseEvent) => unknown): HTMLElement {
-        const action: RibbonAction = { icon, title, callback };
-        this.ribbonActions.push(action);
-        this.register(() => {
-            const at = this.ribbonActions.indexOf(action);
-            if (at >= 0) this.ribbonActions.splice(at, 1);
-        });
-        // Obsidian returns the created element. Nothing in this shell renders ribbon
-        // actions any more (the OSINT views are a toolbar button group driven by Tangent
-        // commands), so this is a detached stand-in kept for API compatibility.
-        return document.createElement('div');
-    }
-
-    addStatusBarItem(): HTMLElement {
-        return document.createElement('div');
-    }
-
     /**
      * Registers a view type.
      *
-     * The workspace needs the factory too, not just this registry: setViewState looks the
-     * type up there, and without it every view silently becomes an EmptyView. Doing it
-     * here rather than leaving it to the host is what makes registerView() mean the same
-     * thing it does in Obsidian.
+     * The factory goes to the workspace: setViewState looks the type up there, and
+     * without it every view silently becomes an EmptyView. Doing it here rather than
+     * leaving it to the host is what makes registerView() mean the same thing it does in
+     * Obsidian.
      */
     registerView(type: string, creator: ViewCreator): void {
-        this.viewCreators.set(type, creator);
         this.app.workspace.registerViewFactory(type, creator);
         this.register(() => {
             // Unload the views this factory created, not just the factory: leaf.detach()
@@ -86,7 +60,6 @@ export abstract class Plugin extends Component {
             // its document listeners and destroys cytoscape/leaflet. Without it those
             // outlived the plugin.
             this.app.workspace.detachLeavesOfType(type);
-            this.viewCreators.delete(type);
             this.app.workspace.unregisterViewFactory(type);
         });
     }

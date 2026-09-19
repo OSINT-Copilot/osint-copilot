@@ -37,7 +37,7 @@ export const LINK_FETCHED_KEY = 'osintLinkFetchedAt';
  * because requestUrl materialises the whole body before returning -- a real limitation
  * worth knowing, and the reason the HTML cap is generous rather than tight.
  */
-export const MAX_HTML_BYTES = 4 * 1024 * 1024;
+const MAX_HTML_BYTES = 4 * 1024 * 1024;
 export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 export const MAX_TEXT_LENGTH = 400;
 

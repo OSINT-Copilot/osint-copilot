@@ -2,13 +2,6 @@ import type { CustomVaultOperation } from "../services/custom-vault-operations";
 import type { ExtractionLogEvent } from "../services/claude-code-service";
 import type { IndexedNote } from "./indexed-note";
 
-export interface CreatedEntityInfo {
-	id: string;
-	type: string;
-	label: string;
-	filePath: string;
-}
-
 export interface ChatHistoryItem {
 	role: "user" | "assistant";
 	content: string;
@@ -19,16 +12,11 @@ export interface ChatHistoryItem {
 	status?: string;
 	progress?: { message: string; percent: number };
 	query?: string;
-	intermediateResults?: string[];
-	createdEntities?: CreatedEntityInfo[];
-	connectionsCreated?: number;
 	reportFilePath?: string;
 	usedEntities?: { id: string; label: string; type: string }[];
 	proposedModifications?: string[];
 	proposedCustomVaultOps?: CustomVaultOperation[];
 	savedQuery?: string;
-	vaultIngestPreviewCommands?: string[];
-	vaultIngestLiveLog?: string[];
 	extractionLogs?: ExtractionLogEvent[];
 	extractionLogsExpanded?: boolean;
 }

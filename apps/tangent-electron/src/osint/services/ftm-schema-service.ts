@@ -1,7 +1,7 @@
 /**
  * Schema registry for the bundled **OIDSF unified ontology** (FollowTheMoney-shaped YAML).
- * Source: `oidsf/spec/schemata/*.yaml` compiled into `src/generated/oidsfBundledSchemas.ts`
- * via `npm run generate:schemas`.
+ * Source: the vendored snapshot in `generated/oidsfBundledSchemas.ts`; its generator is not
+ * in this repo.
  */
 
 import { OIDSF_BUNDLED_SCHEMAS } from '../generated/oidsfBundledSchemas';

@@ -1,4 +1,4 @@
-import { CLAUDE_RUNTIME_ID, CODEX_RUNTIME_ID, HERMES_RUNTIME_ID } from "../services/agent-runtime/runtime-registry";
+import { CLAUDE_RUNTIME_ID, CODEX_RUNTIME_ID, HERMES_RUNTIME_ID, isCustomRuntimeId } from "../services/agent-runtime/runtime-registry";
 
 export interface RuntimeSettingsVisibility {
 	showClaudeRuntimeHint: boolean;
@@ -8,11 +8,10 @@ export interface RuntimeSettingsVisibility {
 }
 
 export function runtimeSettingsVisibility(selectedRuntimeId: string): RuntimeSettingsVisibility {
-	const isCustom = typeof selectedRuntimeId === "string" && selectedRuntimeId.startsWith("custom:");
 	return {
 		showClaudeRuntimeHint: selectedRuntimeId === CLAUDE_RUNTIME_ID,
 		showCodexRuntimeHint: selectedRuntimeId === CODEX_RUNTIME_ID,
 		showHermesSettings: selectedRuntimeId === HERMES_RUNTIME_ID,
-		showSelectedCustomSettings: isCustom,
+		showSelectedCustomSettings: isCustomRuntimeId(selectedRuntimeId),
 	};
 }

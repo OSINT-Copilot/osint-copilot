@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Notice } from 'obsidian';
-import { OSINT_VIEWS } from '../integration/osint-view-types';
-import { TimelineView, TIMELINE_VIEW_TYPE } from '../views/timeline-view';
+import { TimelineView } from '../views/timeline-view';
 
 // The mock has no setIcon, and its Notice is an empty class. The real setIcon so the
 // toolbar renders its glyphs; a spy Notice so the tests can see what the view said.
@@ -45,12 +44,6 @@ afterEach(() => {
 });
 
 describe('TimelineView', () => {
-    it('reports the icon its descriptor advertises', () => {
-        const { view } = makeView();
-        const descriptor = OSINT_VIEWS.find((v) => v.viewType === TIMELINE_VIEW_TYPE)!;
-        expect(view.getIcon()).toBe(descriptor.icon);
-    });
-
     it('builds a toolbar of icon buttons with sentence-case labels, and no emoji', async () => {
         const { view, root } = makeView();
         await view.onOpen();

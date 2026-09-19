@@ -5,14 +5,15 @@
  * codebase uses them 1,055 times -- far too many to hand-edit, and mechanical enough
  * that a faithful shim is strictly cheaper than a rewrite.
  *
- * Only the 11 members actually used are implemented. Everything else Obsidian patches
+ * Only the 10 members actually used are implemented. Everything else Obsidian patches
  * on (toggleClass, setAttr, detach, onClickEvent, hide, show, setCssStyles,
- * createFragment, insertAfter, findAll, matchParent) has zero occurrences repo-wide.
+ * createFragment, insertAfter, findAll, matchParent, appendText) has zero occurrences
+ * repo-wide.
  *
  * Call-site counts, and the exact option keys and call forms they use, were measured
  * rather than guessed:
  *   createEl 427 | createDiv 274 | setCssProps 139 | addClass 77 | empty 61
- *   createSpan 29 | removeClass 25 | setText 10 | appendText 3 | hasClass 2
+ *   createSpan 29 | removeClass 25 | setText 10 | hasClass 2
  * Option keys: text 355, cls 319, type 50, placeholder 37, attr 9, value 7, title 4.
  * createDiv is called in three forms: object (174), bare class string (64), no-arg (35).
  */
@@ -26,11 +27,8 @@ export interface DomElementInfo {
     type?: string;
     placeholder?: string;
     value?: string;
-    href?: string;
     /** Arbitrary attributes; null/false removes. */
     attr?: Record<string, string | number | boolean | null>;
-    /** Insert as the first child rather than appending. */
-    prepend?: boolean;
 }
 
 declare global {
@@ -46,7 +44,6 @@ declare global {
         createSpan(o?: DomElementInfo | string, callback?: (el: HTMLSpanElement) => void): HTMLSpanElement;
         empty(): void;
         setText(text: string | DocumentFragment): void;
-        appendText(text: string): void;
         addClass(...classes: string[]): void;
         removeClass(...classes: string[]): void;
         hasClass(cls: string): boolean;
@@ -90,7 +87,6 @@ function applyInfo(el: HTMLElement, o?: DomElementInfo | string): void {
         (el as HTMLInputElement).value = o.value;
         el.setAttribute('value', o.value);
     }
-    if (o.href !== undefined) el.setAttribute('href', o.href);
     if (o.attr) {
         for (const [key, value] of Object.entries(o.attr)) {
             if (value === null || value === false) el.removeAttribute(key);
@@ -103,8 +99,7 @@ function makeCreateEl(parent: Node) {
     return function createEl(tag: string, o?: DomElementInfo | string, callback?: (el: HTMLElement) => void): HTMLElement {
         const el = document.createElement(tag);
         applyInfo(el, o);
-        if (typeof o === 'object' && o?.prepend && parent.firstChild) parent.insertBefore(el, parent.firstChild);
-        else parent.appendChild(el);
+        parent.appendChild(el);
         callback?.(el);
         return el;
     };
@@ -146,10 +141,6 @@ export function installDomExtensions(): void {
             this.textContent = '';
             this.appendChild(text);
         }
-    };
-
-    proto.appendText = function (this: HTMLElement, text: string) {
-        this.appendChild(document.createTextNode(text));
     };
 
     proto.addClass = function (this: HTMLElement, ...classes: string[]) {

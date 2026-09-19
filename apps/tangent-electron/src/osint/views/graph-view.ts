@@ -3,11 +3,10 @@
  * Custom Graph View using Cytoscape.js for interactive graph visualization.
  */
 
-import { App, ItemView, WorkspaceLeaf, Notice, TFile, normalizePath } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, TFile, normalizePath } from 'obsidian';
 import {
     type Entity,
     type Connection,
-    ENTITY_CONFIGS,
     EntityType,
 } from '../entities/types';
 import { EntityManager } from '../services/entity-manager';
@@ -128,7 +127,6 @@ export class GraphView extends ItemView {
     // Connection mode state
     private connectionMode: boolean = false;
     private sourceNodeId: string | null = null;
-    private sourceNodeLabel: string | null = null;
     private connectBtn: HTMLButtonElement | null = null;
     private statusIndicator: HTMLElement | null = null;
 
@@ -322,14 +320,6 @@ export class GraphView extends ItemView {
         return GRAPH_VIEW_TYPE;
     }
 
-    getDisplayText(): string {
-        return 'OSINTCopilot graph';
-    }
-
-    getIcon(): string {
-        return 'git-fork';
-    }
-
     async onOpen(): Promise<void> {
         const container = this.containerEl.children[1];
         container.empty();
@@ -458,14 +448,7 @@ export class GraphView extends ItemView {
                 const onEntity = this.entityIdAt(position);
                 if (onEntity && await this.attachDroppedImage(onEntity, evt)) return;
 
-                // Method 1: Internal vault drag via Obsidian dragManager
-                const dragManager = (this.app as any).dragManager;
-                if (dragManager?.draggable?.type === 'file' && dragManager.draggable.file instanceof TFile) {
-                    await this.handleGraphFileDrop([dragManager.draggable.file], position);
-                    return;
-                }
-
-                // Method 2: Internal vault file via text/plain path
+                // Method 1: Internal vault file via text/plain path
                 const internalPath = evt.dataTransfer.getData('text/plain');
                 if (internalPath) {
                     const tfile = this.app.vault.getAbstractFileByPath(internalPath);
@@ -475,7 +458,7 @@ export class GraphView extends ItemView {
                     }
                 }
 
-                // Method 3: External OS file drops
+                // Method 2: External OS file drops
                 if (evt.dataTransfer.files && evt.dataTransfer.files.length > 0) {
                     await this.handleExternalFileDrop(evt.dataTransfer.files, position);
                 }
@@ -1074,7 +1057,6 @@ export class GraphView extends ItemView {
     private enterConnectionMode(): void {
         this.connectionMode = true;
         this.sourceNodeId = null;
-        this.sourceNodeLabel = null;
 
         if (this.connectBtn) {
             this.connectBtn.addClass('graph_copilot-connect-btn-active');
@@ -1100,7 +1082,6 @@ export class GraphView extends ItemView {
     private exitConnectionMode(): void {
         this.connectionMode = false;
         this.sourceNodeId = null;
-        this.sourceNodeLabel = null;
 
         if (this.connectBtn) {
             this.connectBtn.removeClass('graph_copilot-connect-btn-active');
@@ -1279,7 +1260,6 @@ export class GraphView extends ItemView {
         if (!this.sourceNodeId) {
             // First click - select source node
             this.sourceNodeId = nodeId;
-            this.sourceNodeLabel = nodeLabel;
 
             // Highlight the source node
             if (this.cy) {
@@ -2750,25 +2730,6 @@ export class GraphView extends ItemView {
         return allEntities.filter((e) => members.has(e.id));
     }
 
-    /** Adds entities to the active workspace. No-op on the default graph, which holds everything. */
-    addToActiveWorkspace(entityIds: string[]): void {
-        const activeId = this.graphHost.getActiveGraphId();
-        if (activeId === 'default') return;
-        const members = this.allGraphMembers[activeId] ?? new Set<string>();
-        for (const id of entityIds) members.add(id);
-        this.allGraphMembers[activeId] = members;
-        void this.savePositions();
-    }
-
-    removeFromActiveWorkspace(entityIds: string[]): void {
-        const activeId = this.graphHost.getActiveGraphId();
-        if (activeId === 'default') return;
-        const members = this.allGraphMembers[activeId];
-        if (!members) return;
-        for (const id of entityIds) members.delete(id);
-        void this.savePositions();
-    }
-
     /**
      * Refresh the graph with current data.
      * Reloads entities from disk to ensure persistence across Obsidian restarts.
@@ -3437,71 +3398,6 @@ export class GraphView extends ItemView {
             // to the viewport. The toolbar's Fit button remains available when needed.
             fit: !spacious,
         }).run();
-    }
-
-    /**
-     * Add a single entity to the graph.
-     */
-    addEntity(entity: Entity): void {
-        if (!this.cy) return;
-
-        const existingNode = this.cy.getElementById(entity.id);
-        if (existingNode.length > 0) return;
-
-        const pos = { x: 400, y: 300 };
-        this.cy.add({
-            data: this.buildNodeData(entity),
-            classes: this.entityNodeClasses(this.entityHasCoordinates(entity)),
-            position: pos,
-        });
-
-        this.nodePositionsCache.set(entity.id, pos);
-        this.savePositionsDebounced();
-        this.runLayout();
-    }
-
-    /**
-     * Add a connection to the graph.
-     */
-    addConnection(connection: Connection): void {
-        if (!this.cy) return;
-
-        const existingEdge = this.cy.getElementById(connection.id);
-        if (existingEdge.length > 0) return;
-
-        this.cy.add({
-            data: {
-                id: connection.id,
-                source: connection.fromEntityId,
-                target: connection.toEntityId,
-                label: connection.relationship
-            }
-        });
-    }
-
-    /**
-     * Remove an entity from the graph.
-     */
-    removeEntity(entityId: string): void {
-        if (!this.cy) return;
-        this.cy.getElementById(entityId).remove();
-    }
-
-    /**
-     * Highlight an entity in the graph.
-     */
-    highlightEntity(entityId: string): void {
-        if (!this.cy) return;
-
-        this.cy.elements().unselect();
-        const node = this.cy.getElementById(entityId);
-        if (node.length > 0) {
-            node.select();
-            this.cy.animate({
-                center: { eles: node },
-                zoom: 1.5
-            }, { duration: 300 });
-        }
     }
 
     /**

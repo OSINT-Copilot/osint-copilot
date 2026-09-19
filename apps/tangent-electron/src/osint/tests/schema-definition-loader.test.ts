@@ -17,7 +17,7 @@ entityTypes:
     properties:
       name: { label: Name }
 `;
-		const doc = parseEntityYaml(yaml, 'virtual');
+		const doc = parseEntityYaml(yaml);
 		expect(doc.family).toBe('stix2');
 		expect(doc.entityTypes).toHaveLength(1);
 		expect(doc.entityTypes[0].name).toBe('threat-actor');

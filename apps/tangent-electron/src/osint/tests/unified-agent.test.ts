@@ -16,14 +16,13 @@ import type { AIOperation } from '../entities/types';
 describe('parseAgentTurnResult', () => {
     it('parses fenced JSON', () => {
         const raw = `Here you go:\n\`\`\`json\n{"version":"${AGENT_TURN_SCHEMA_VERSION}","answer_markdown":"Hi","retrieval_hits":[],"graph_operations":[]}\n\`\`\`\n`;
-        const r = parseAgentTurnResult(raw, 'claude-code');
+        const r = parseAgentTurnResult(raw);
         expect(r.answer_markdown).toBe('Hi');
         expect(r.graph_operations).toEqual([]);
-        expect(r.diagnostics?.provider).toBe('claude-code');
     });
 
     it('returns fallback when not JSON', () => {
-        const r = parseAgentTurnResult('not json at all', 'hermes-agent');
+        const r = parseAgentTurnResult('not json at all');
         expect(r.answer_markdown).toContain('could not be parsed');
         expect(r.graph_operations).toEqual([]);
         expect(r.enricher_invocations).toEqual([]);
@@ -42,7 +41,7 @@ describe('parseAgentTurnResult', () => {
                 { enricher_id: '', query: 'nope' },
             ],
         });
-        const r = parseAgentTurnResult(raw, 'claude-code');
+        const r = parseAgentTurnResult(raw);
         expect(r.enricher_invocations).toHaveLength(1);
         expect(r.enricher_invocations[0]).toEqual({ enricher_id: 'leakcheck', query: 'user@example.com' });
     });

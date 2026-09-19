@@ -1,13 +1,11 @@
 import {
-  MarkdownView,
   Notice,
   Plugin,
   TFile,
-  WorkspaceLeaf,
   type CachedMetadata,
   normalizePath,
-  setIcon,
 } from "obsidian";
+import { parseMetadata } from '../obsidian-shim/core/metadata-cache';
 
 // Graph plugin imports
 import {
@@ -57,7 +55,6 @@ import {
 import { ensureCredentialsFolder } from '../services/custom-vault-writer';
 import { ensureFolderExists, ensureFolderChainForFile } from '../utils/vault-bootstrap-fs';
 import { VaultLockService } from '../services/vault-lock-service';
-import { VaultUnlockModal } from '../modals/vault-unlock-modal';
 import { SchemaBootstrapService } from '../services/schema-bootstrap-service';
 import { SchemaCatalogService, mergeEnabledFamilies } from '../services/schema-catalog-service';
 import type { EnabledSchemaFamilies } from '../services/schema-catalog-types';
@@ -374,7 +371,7 @@ export default class VaultAIPlugin extends Plugin {
     // No ribbon icons: the shell renders the OSINT views as a button group in Tangent's
     // top bar (integration/OsintViewsPill.svelte), driven by the Tangent-side commands in
     // app/model/commands/OsintViewCommands.ts, and "New canvas board" lives in the New Note
-    // menu. addRibbonIcon still exists on the shim for API compatibility; nothing draws it.
+    // menu.
 
     // Build initial index
     await this.buildIndex();
@@ -583,7 +580,11 @@ export default class VaultAIPlugin extends Plugin {
       },
     });
 
-    this.registerVaultLockEditorHooks();
+    this.registerEvent(
+      this.app.vault.on('rename', (file, oldPath) => {
+        this.vaultLockService.onVaultRename(file, oldPath);
+      }),
+    );
 
     // Add settings tab
     this.addSettingTab(new VaultAISettingTab(this.app, this));
@@ -1160,114 +1161,11 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
     await this.saveSettings();
   }
 
-  private registerVaultLockEditorHooks(): void {
-    const update = (leaf: WorkspaceLeaf | null) => this.updateVaultLockLeafMode(leaf);
-
-    this.registerEvent(this.app.workspace.on('active-leaf-change', (leaf) => update(leaf)));
-    this.registerEvent(
-      this.app.workspace.on('layout-change', () => {
-        this.app.workspace.iterateAllLeaves((leaf) => {
-          if (leaf.view instanceof MarkdownView) update(leaf);
-        });
-      }),
-    );
-    this.registerEvent(
-      this.app.workspace.on('file-open', () => {
-        const leaf = this.app.workspace.getMostRecentLeaf();
-        update(leaf);
-      }),
-    );
-    this.registerEvent(
-      this.app.vault.on('rename', (file, oldPath) => {
-        this.vaultLockService.onVaultRename(file, oldPath);
-      }),
-    );
-
-    this.app.workspace.iterateAllLeaves((leaf) => {
-      if (leaf.view instanceof MarkdownView) update(leaf);
-    });
-  }
-
-  private updateVaultLockLeafMode(leaf: WorkspaceLeaf | null): void {
-    if (!leaf || !(leaf.view instanceof MarkdownView)) return;
-    const path = leaf.view.file?.path;
-    if (!path || path.endsWith('.canvas')) return;
-
-    const locked = this.vaultLockService.isPathLocked(path);
-    const view = leaf.view;
-    if (locked) {
-      const state = leaf.getViewState();
-      if (state.state && 'mode' in state.state && (state.state as { mode?: string }).mode === 'source') {
-        void leaf.setViewState({
-          ...state,
-          state: { ...state.state, mode: 'preview' },
-        });
-      }
-      this.hideVaultLockEditButtons(view);
-      this.addVaultUnlockButton(view, path);
-    } else {
-      this.showVaultLockEditButtons(view);
-      this.removeVaultUnlockButton(view);
-    }
-  }
-
-  private hideVaultLockEditButtons(view: MarkdownView): void {
-    const container = view.containerEl;
-    container.querySelectorAll('.view-action').forEach((btn) => {
-      if (!(btn instanceof HTMLElement)) return;
-      const aria = btn.getAttribute('aria-label') || '';
-      const hasPencil = !!btn.querySelector('.lucide-pencil');
-      if (hasPencil || aria.includes('Edit') || aria.includes('edit') || aria.includes('Switch to editing')) {
-        btn.style.display = 'none';
-      }
-    });
-  }
-
-  private showVaultLockEditButtons(view: MarkdownView): void {
-    const container = view.containerEl;
-    container.querySelectorAll('.view-action').forEach((btn) => {
-      if (!(btn instanceof HTMLElement)) return;
-      const aria = btn.getAttribute('aria-label') || '';
-      if (aria.includes('Edit') || aria.includes('edit') || btn.querySelector('.lucide-pencil')) {
-        btn.style.display = '';
-      }
-    });
-  }
-
-  private addVaultUnlockButton(view: MarkdownView, path: string): void {
-    this.removeVaultUnlockButton(view);
-    const container = view.containerEl;
-    const btn = document.createElement('div');
-    btn.addClass('view-action', 'clickable-icon', 'osint-copilot-vault-unlock-btn');
-    btn.setAttribute('aria-label', 'Locked — click to unlock');
-    setIcon(btn, 'lock');
-    btn.addEventListener('click', () => {
-      new VaultUnlockModal(this.app, () => {
-        this.vaultLockService.unlockPath(path);
-        this.app.workspace.iterateAllLeaves((leaf) => {
-          if (leaf.view instanceof MarkdownView && leaf.view.file?.path === path) {
-            this.updateVaultLockLeafMode(leaf);
-          }
-        });
-      }).open();
-    });
-    const actions = container.querySelector('.view-actions');
-    if (actions) actions.prepend(btn);
-  }
-
-  private removeVaultUnlockButton(view: MarkdownView): void {
-    view.containerEl.querySelector('.osint-copilot-vault-unlock-btn')?.remove();
-  }
-
   // ============================================================================
   // GRAPH VIEW METHODS (workspace / OSINT panes)
   // ============================================================================
 
   private readonly osintWorkspace = new OsintWorkspaceController(this);
-
-  async openGraphViewWithEntity(entityId: string) {
-    return this.osintWorkspace.openGraphViewWithEntity(entityId);
-  }
 
   async refreshOpenInsightViews(options?: { skipGraph?: boolean }): Promise<void> {
     return this.osintWorkspace.refreshOpenInsightViews(options);
@@ -1342,10 +1240,9 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
   async indexFile(file: TFile) {
     try {
       const content = await this.app.vault.read(file);
-      // Populate, do not just read: nothing else ever called setFileCache, so every note
-      // indexed with no tags, no links and no frontmatter, and the tag-match branch of
-      // retrieveNotes could never score.
-      const cache = this.app.metadataCache.setFileCache(file, content);
+      // Parsed from the content just read: the tag-match branch of retrieveNotes scores
+      // on these tags, links and frontmatter.
+      const cache = parseMetadata(content);
 
       const tags = this.extractTags(cache);
       const links = this.extractLinks(cache);

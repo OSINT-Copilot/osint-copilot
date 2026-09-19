@@ -18,7 +18,7 @@ export interface MemoryBudget {
     maxTotalChars: number;
 }
 
-export const DEFAULT_MEMORY_BUDGET: MemoryBudget = {
+const DEFAULT_MEMORY_BUDGET: MemoryBudget = {
     maxMessages: 20,
     maxCharsPerMessage: 6_000,
     maxTotalChars: 48_000,

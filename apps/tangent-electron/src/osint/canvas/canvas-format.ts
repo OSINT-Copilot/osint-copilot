@@ -20,7 +20,7 @@
 /** Spec: a hex string like "#FF0000", or a preset "1".."6". */
 export type CanvasColor = string;
 
-export const CANVAS_PRESET_COLORS = ['1', '2', '3', '4', '5', '6'] as const;
+const CANVAS_PRESET_COLORS = ['1', '2', '3', '4', '5', '6'] as const;
 
 export type CanvasNodeType = 'text' | 'file' | 'link' | 'group';
 export type CanvasSide = 'top' | 'right' | 'bottom' | 'left';
@@ -106,7 +106,7 @@ export interface CanvasParseResult {
  * cosmetic -- Obsidian and this renderer would disagree about it, and a board is meant to
  * look the same in both.
  */
-export function normalizeCanvasColor(value: unknown): CanvasColor | undefined {
+function normalizeCanvasColor(value: unknown): CanvasColor | undefined {
     if (typeof value !== 'string') return undefined;
     const text = value.trim();
     if (!text) return undefined;

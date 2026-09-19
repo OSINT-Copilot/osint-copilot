@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { requestUrl, TFile } from 'obsidian';
+import { requestUrl } from 'obsidian';
 import { executeEnricherHttp } from '../services/enrichers/enricher-executor';
 import type { EnricherSpec } from '../services/enrichers/enricher-schema';
 
@@ -39,7 +39,7 @@ describe('executeEnricherHttp', () => {
 			arrayBuffer: new ArrayBuffer(0),
 		} as any);
 
-		const out = await executeEnricherHttp(minimalSpec(), 'x@y.com', '', undefined, undefined, undefined);
+		const out = await executeEnricherHttp(minimalSpec(), 'x@y.com', '', undefined, undefined);
 		expect(out).toContain('Enricher Test succeeded');
 		expect(out).toContain('"hits": 1');
 		expect(requestUrl).toHaveBeenCalledWith(
@@ -68,7 +68,7 @@ describe('executeEnricherHttp', () => {
 			},
 		});
 
-		await executeEnricherHttp(spec, 'Paolo De Lellis', '', undefined, undefined, undefined);
+		await executeEnricherHttp(spec, 'Paolo De Lellis', '', undefined, undefined);
 
 		expect(requestUrl).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -88,7 +88,7 @@ describe('executeEnricherHttp', () => {
 			arrayBuffer: new ArrayBuffer(0),
 		} as any);
 
-		await expect(executeEnricherHttp(minimalSpec(), 'q', '', undefined, undefined, undefined)).rejects.toThrow(
+		await expect(executeEnricherHttp(minimalSpec(), 'q', '', undefined, undefined)).rejects.toThrow(
 			/status=403/,
 		);
 	});
@@ -111,7 +111,7 @@ describe('executeEnricherHttp', () => {
 			},
 		});
 
-		await executeEnricherHttp(spec, 'u@d.com', '', undefined, undefined, undefined);
+		await executeEnricherHttp(spec, 'u@d.com', '', undefined, undefined);
 
 		expect(requestUrl).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -132,13 +132,6 @@ describe('executeEnricherHttp', () => {
 			arrayBuffer: new ArrayBuffer(0),
 		} as any);
 
-		const credFile = new TFile() as any;
-		const vaultPath = 'OSINTCopilot/custom/credentials/leakcheck/api-key.txt';
-		const mockVault = {
-			getAbstractFileByPath: (p: string) => (p === vaultPath ? credFile : null),
-			read: async () => 'mysecretkey',
-		};
-
 		const spec = minimalSpec({
 			auth: {
 				type: 'query_vault',
@@ -152,7 +145,6 @@ describe('executeEnricherHttp', () => {
 			'test@example.com',
 			'',
 			undefined,
-			mockVault as any,
 			'OSINTCopilot/custom/credentials',
 		);
 
@@ -169,6 +161,5 @@ describe('executeEnricherHttp', () => {
 			},
 		});
 		expect(call.allowedDomains).toEqual(spec.allowedDomains);
-		expect(JSON.stringify(call)).not.toContain('mysecretkey');
 	});
 });

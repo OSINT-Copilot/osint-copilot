@@ -1,15 +1,6 @@
 import { parseMarkdownWithFrontmatter } from "../services/vault-prompt-loader";
-import { normalizeVaultPath } from "./normalize-vault-path";
+import { normalizeRootList } from "./path-allowlist";
 import type { TaskAgentManifest, TaskAgentOutputSchema } from "./types";
-
-function splitList(raw: string | undefined): string[] {
-	if (!raw || !raw.trim()) return [];
-	return raw
-		.split(/[,\n]/)
-		.map((s) => s.trim())
-		.filter(Boolean)
-		.map((p) => normalizeVaultPath(p.replace(/^["']|["']$/g, "")));
-}
 
 function parseBool(raw: string | undefined, defaultVal: boolean): boolean {
 	if (raw === undefined || raw === "") return defaultVal;
@@ -42,7 +33,7 @@ export function parseTaskAgentMarkdown(
 	const outputSchema = (data.output_schema || "").trim() as TaskAgentOutputSchema;
 	if (outputSchema !== "vault_files_v1") return null;
 
-	const outputRoots = splitList(data.output_roots);
+	const outputRoots = normalizeRootList(data.output_roots ?? "");
 	if (outputRoots.length === 0) return null;
 
 	const name = (data.name || id).trim();
@@ -55,7 +46,7 @@ export function parseTaskAgentMarkdown(
 		description,
 		outputSchema,
 		outputRoots,
-		contextRoots: splitList(data.context_roots),
+		contextRoots: normalizeRootList(data.context_roots ?? ""),
 		maxNotes: parseIntSafe(data.max_notes, 20),
 		maxContextChars: parseIntSafe(data.max_context_chars, 120_000),
 		enabledDefault: parseBool(data.enabled_default, true),

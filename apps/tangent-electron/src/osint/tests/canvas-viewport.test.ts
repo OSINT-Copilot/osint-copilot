@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     defaultViewport, clampScale, worldToScreen, screenToWorld, zoomAbout,
-    scaleFromWheel, panBy, rectContains, rectsIntersect, rectFromCorners,
+    scaleFromWheel, panBy, rectsIntersect, rectFromCorners,
     visibleWorldRect, cullToViewport, fitToRects, sideAnchor, inferSide,
     oppositeSide, edgePath, MIN_SCALE, MAX_SCALE,
     type Rect,
@@ -88,14 +88,6 @@ describe('panBy', () => {
 
 describe('rect helpers', () => {
     const rect: Rect = { x: 10, y: 10, width: 100, height: 50 };
-
-    it('tests containment inclusive of the edges', () => {
-        expect(rectContains(rect, { x: 50, y: 30 })).toBe(true);
-        expect(rectContains(rect, { x: 10, y: 10 })).toBe(true);
-        expect(rectContains(rect, { x: 110, y: 60 })).toBe(true);
-        expect(rectContains(rect, { x: 9, y: 30 })).toBe(false);
-        expect(rectContains(rect, { x: 50, y: 61 })).toBe(false);
-    });
 
     it('detects overlap but not mere adjacency', () => {
         expect(rectsIntersect(rect, { x: 100, y: 50, width: 10, height: 10 })).toBe(true);

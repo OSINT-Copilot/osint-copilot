@@ -61,7 +61,7 @@ function normalizeProperties(
 	return out;
 }
 
-export function parseEntityYaml(content: string, _path: string): YamlEntityFileV1 {
+export function parseEntityYaml(content: string): YamlEntityFileV1 {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const doc = parseYaml(content) as any;
 	if (!doc || typeof doc !== 'object') {
@@ -76,7 +76,7 @@ export function parseEntityYaml(content: string, _path: string): YamlEntityFileV
 	return doc as YamlEntityFileV1;
 }
 
-export function parseRelationshipYaml(content: string, _path: string): YamlRelationshipFileV1 {
+export function parseRelationshipYaml(content: string): YamlRelationshipFileV1 {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const doc = parseYaml(content) as any;
 	if (!doc || typeof doc !== 'object') {
