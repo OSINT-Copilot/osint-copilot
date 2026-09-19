@@ -78,6 +78,7 @@ import { OsintWorkspaceController } from './osint-workspace-controller';
 import { host as osintHost } from '../host';
 import { InboxService, readExtensionActivity } from '../services/inbox-service';
 import { ExtensionActivityModal } from '../modals/extension-activity-modal';
+import { CountingNotice } from '../inbox/extension-notice';
 import { EnricherDraftRequestModal, EnricherStateModal, type EnricherState } from '../modals/enricher-command-modals';
 import { enricherJsonPathFromId } from '../utils/registry-paths';
 
@@ -114,6 +115,12 @@ export default class VaultAIPlugin extends Plugin {
   extensionInbox: InboxService | null = null;
   /** Set by the Wayback toggle, so the next save writes this window's choice. */
   private extensionAllowWaybackChanged = false;
+  /** One notice for items arriving from the extension, counting up while it is shown. */
+  private readonly extensionAddedNotice = new CountingNotice({
+    message: (n) => `${n} ${n === 1 ? 'item' : 'items'} added from the browser extension. Click to review.`,
+    durationMs: 10_000,
+    onClick: () => this.openExtensionActivity(),
+  });
 
   attachVaultSkillFromVault(): void {
     if (!this.vaultPromptLoader) return;
@@ -879,12 +886,8 @@ While that id is listed under REGISTERED HTTP ENRICHERS, call the API through en
       );
     }
     if (applied === 0) return;
-    const notice = new Notice(
-      `${applied} ${applied === 1 ? 'item' : 'items'} added from the browser extension. Click to review.`,
-      10_000,
-    );
-    // The Notice hides itself on click; the dialog is what the click is for.
-    notice.noticeEl?.addEventListener('click', () => this.openExtensionActivity());
+    // Items sent a few seconds apart arrive in separate passes: one notice counts them all.
+    this.extensionAddedNotice.add(applied);
     // Open views only: an item arriving from the browser must not open the graph.
     if (this.settings.autoRefreshGraph) void this.refreshOpenInsightViews();
   }

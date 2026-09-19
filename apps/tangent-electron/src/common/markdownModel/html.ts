@@ -62,6 +62,34 @@ const doubleQuoteValueParsingPrograms = [
 
 const attributeNameMatch = /[\w:]/
 
+/**
+ * A single-line `<!-- comment -->` is hidden until the caret reaches it, as other markdown editors do.
+ * A line holding nothing but the comment is marked so that it can collapse entirely.
+ * Unclosed and multi-line comments remain text.
+ */
+export function parseHtmlComment(char: string, parser: NoteParser): boolean {
+	if (char !== '<' || !parser.feed.checkFor('<!--', false)) return false
+
+	const { feed } = parser
+	const end = feed.text.indexOf('-->', feed.index + 4)
+	if (end < 0) return false
+	const lineEnd = feed.text.indexOf('\n', feed.index)
+	if (lineEnd >= 0 && lineEnd < end) return false
+
+	const isCommentLine = parser.isStartOfContent && feed.getLineText(end + 3).trim() === ''
+
+	parser.commitSpan(null, 0) // Previous content
+
+	feed.nextByLength(end + 2 - feed.index)
+	parser.commitSpan({ html_comment: true, hidden: true })
+
+	if (isCommentLine) {
+		parser.lineData.commentLine = true
+	}
+
+	return true
+}
+
 export function parseHtml(char: string, parser: NoteParser): boolean {
 	if (char === '<' && parser.feed.peek().match(attributeNameMatch)) {
 		const { feed, builder } = parser

@@ -131,6 +131,9 @@ function getCoreLineProperties(attributes, baseClass = ''): AttributeMap {
 	if (attributes.embedLine) {
 		props.className += ' embedLine'
 	}
+	if (attributes.commentLine) {
+		props.className += ' commentLine'
+	}
 
 	const indent = attributes.indent as IndentDefinition
 	if (indent) {
@@ -785,7 +788,8 @@ const noteTypeset:TypesetTypes = {
 		},
 
 		hideableFormat('link_internal'),
-		hideableFormat('tag_internal')
+		hideableFormat('tag_internal'),
+		hideableFormat('html_comment')
 	]
 }
 

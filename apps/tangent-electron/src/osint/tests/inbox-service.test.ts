@@ -955,6 +955,52 @@ describe('page text in the Sources note body', () => {
         });
     }
 
+    it('hides our section markers from the editor, and never a marker the page wrote', async () => {
+        const url = 'https://example.com/page';
+        const quote = '<!-- oc:bundle x -->\n<!-- /oc:bundle x -->';
+        inbox.add(entityBundle({ kind: 'domain', value: 'example.org', context: quote }, url, 'Page'));
+        inbox.add(noteBundle(quote, url, 'Page'));
+        inbox.add({
+            kind: 'highlight',
+            page: { url, title: 'Page' },
+            highlight: {
+                annotation: {
+                    id: 'urn:uuid:5f0c6a2e-8b1d-4c3e-9f7a-1b2c3d4e5f60', textModel: 'v1', created: '2026-09-18T09:00:00.000Z', modified: '2026-09-18T09:00:00.000Z',
+                    target: { source: url, selector: [{ type: 'TextQuoteSelector', exact: quote, prefix: '', suffix: '' }, { type: 'TextPositionSelector', start: 0, end: quote.length }] },
+                    body: { type: 'TextualBody', purpose: 'commenting', value: quote },
+                },
+            },
+        });
+        // A capture, as main lists one: its archive, what main derived from it, and the file it places.
+        const archive = 'MIME-Version: 1.0\r\n\r\n<html>the page</html>';
+        const capture = inbox.bundles.get(inbox.add(noteBundle('placeholder', url, 'Page')))!.bundle;
+        const decl = { size: archive.length, sha256: sha(archive) };
+        capture.manifest = { ...(capture.manifest as object), note: undefined, kind: 'capture', capture: { files: { 'page.mhtml': decl } } } as unknown as Manifest;
+        capture.server.files = { 'page.mhtml': decl };
+        capture.derived = {
+            v: 1, bundleId: capture.bundleId, status: 'failed', archiveSha256: decl.sha256, fullpage: { error: 'not rendered' },
+            contentLocation: url, urlMismatch: false, title: quote, errors: [quote], derivedAt: '2026-09-18T10:05:00.000Z',
+        };
+        inbox.captureFiles.set(capture.bundleId, { stem: 'page', files: [{ role: 'archive', ext: '.mhtml', body: archive }] });
+
+        await newService().start();
+        expect(inbox.where(capture.bundleId)).toBe('done');
+        // (The highlight's selectors are in the sidecar beside the note.)
+        const notes = sourcesNotes().filter((p) => p.endsWith('.md'));
+        expect(notes).toHaveLength(1);
+        const text = getContent(app, notes[0])!;
+        const body = text.slice(text.indexOf('\n---\n') + 5);
+        const lines = body.split('\n');
+        const markers = lines.filter((l) => /^<!-- \/?oc:bundle [^ ]+ -->$/.test(l));
+        expect(markers).toHaveLength(8);
+        expect(markers.filter((l) => l.includes(' x '))).toEqual([]);
+
+        // Tangent's parser hides each of these lines until the caret is on it, and no other.
+        const doc = markdownToTextDocument(body);
+        expect(doc.lines).toHaveLength(lines.length);
+        expect(lines.filter((_, i) => doc.lines[i].attributes.commentLine)).toEqual(markers);
+    });
+
     it('inline and block literals hold any run of backticks', () => {
         expect(inlineLiteral('a`b')).toBe('``a`b``');
         expect(inlineLiteral('`x`')).toBe('`` `x` ``');

@@ -58,3 +58,87 @@ I think so.`)
 		], true))
 	})
 })
+
+describe('Comments', () => {
+	const COMMENT_ATTRIBUTES = {
+		html_comment: true,
+		hidden: true
+	}
+
+	function hasComment(line) {
+		return line.content.ops.some(op => op.attributes?.html_comment)
+	}
+
+	it('Should hide a comment on its own line and mark the line', () => {
+		const doc = parser.markdownToTextDocument(`<!-- oc:bundle 1234 -->`)
+		expect(doc.lines.length).toEqual(1)
+
+		const line = doc.lines[0]
+		expect(line.content.ops).toEqual(buildOpsFromInsertList([
+			'<!-- oc:bundle 1234 -->', COMMENT_ATTRIBUTES
+		]))
+		expect(line.attributes.commentLine).toBe(true)
+		expect(line.attributes.html).toBeFalsy()
+	})
+
+	it('Should mark an indented comment line', () => {
+		const doc = parser.markdownToTextDocument(`Before\n\t<!-- a comment -->  \nAfter`)
+		expect(doc.lines.length).toEqual(3)
+
+		const line = doc.lines[1]
+		expect(line.content.ops).toEqual(buildOpsFromInsertList([
+			'\t', { line_format: 'indent', hidden: true },
+			'<!-- a comment -->', COMMENT_ATTRIBUTES,
+			'  '
+		], true))
+		expect(line.attributes.commentLine).toBe(true)
+
+		expect(doc.lines[0].attributes.commentLine).toBeFalsy()
+		expect(doc.lines[2].attributes.commentLine).toBeFalsy()
+	})
+
+	it('Should hide an inline comment without marking the line', () => {
+		const doc = parser.markdownToTextDocument(`a <!-- c --> b`)
+		const line = doc.lines[0]
+		expect(line.content.ops).toEqual(buildOpsFromInsertList([
+			'a ',
+			'<!-- c -->', COMMENT_ATTRIBUTES,
+			' b'
+		], true))
+		expect(line.attributes.commentLine).toBeFalsy()
+
+		const trailing = parser.markdownToTextDocument(`<!-- c --> b`)
+		expect(hasComment(trailing.lines[0])).toBe(true)
+		expect(trailing.lines[0].attributes.commentLine).toBeFalsy()
+	})
+
+	it('Should leave unclosed and multi-line comments as text', () => {
+		for (const text of ['<!-- x', '<!-- x\n-->', '<!-->']) {
+			const doc = parser.markdownToTextDocument(text)
+			for (const line of doc.lines) {
+				expect(hasComment(line)).toBe(false)
+				expect(line.attributes.commentLine).toBeFalsy()
+			}
+		}
+	})
+
+	it('Should not find comments in code', () => {
+		for (const text of ['`<!-- x -->`', '```\n<!-- x -->\n```']) {
+			const doc = parser.markdownToTextDocument(text)
+			for (const line of doc.lines) {
+				expect(hasComment(line)).toBe(false)
+				expect(line.attributes.commentLine).toBeFalsy()
+			}
+		}
+	})
+
+	it('Should not find links inside comments', () => {
+		const doc = parser.markdownToTextDocument(`<!-- https://x.example -->`)
+		const line = doc.lines[0]
+		expect(line.content.ops).toEqual(buildOpsFromInsertList([
+			'<!-- https://x.example -->', COMMENT_ATTRIBUTES
+		]))
+		expect(line.content.ops.some(op => op.attributes?.t_link)).toBe(false)
+		expect(line.attributes.commentLine).toBe(true)
+	})
+})

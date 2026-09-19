@@ -447,6 +447,17 @@ test('the real extension sends an entity, a note and a page capture into the rea
 		expect(sources).toMatch(/### Capture: `Contact directory`/)
 		expect(sources).toMatch(/- Archive \(MHTML\): \[\[OSINTCopilot\/Evidence\/[a-z0-9-]+\.mhtml\|/)
 
+		// ---- the Sources note, in the editor: each marker is a line of its own that takes no space
+		await expect.poll(() => app.evaluate(p => !!(document as any).workspace.directoryStore.get(p), sourcesPath),
+			{ timeout: 30_000, message: 'Tangent never indexed the Sources note' }).toBe(true)
+		await window.setThread({ paths: [[...sourcesPaths][0]] })
+		const markerLines = window.locateCurrentNoteBody().locator('.line.commentLine')
+		await expect(markerLines).toHaveCount(2 * items.length, { timeout: 15_000 })
+		for (const line of await markerLines.all()) {
+			await expect(line).toHaveText(/^<!-- \/?oc:bundle [^ ]+ -->$/)
+			expect((await line.boundingBox())!.height).toBeLessThan(1)
+		}
+
 		// ---- OSINTCopilot/Evidence/, on disk
 		const placed: { role: string, path: string, sha256: string, created: boolean }[] = captureItem.outcome.placedFiles
 		const byRole = (role: string) => placed.find(f => f.role === role)

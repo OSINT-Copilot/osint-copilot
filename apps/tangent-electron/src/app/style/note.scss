@@ -646,6 +646,20 @@ article.note {
 		}
 	}
 
+	.html_comment.hidden {
+		color: var(--deemphasizedTextColor);
+		&.revealed {
+			font-size: 90%;
+		}
+	}
+
+	// A line holding only an html comment takes no space until the caret is on it
+	.line.commentLine:not([data-focus="focused"]) {
+		line-height: 0;
+		font-size: 0;
+		min-height: 0;
+	}
+
 	.templateToken {
 		font-family: var(--codeFontFamily);
 		color: var(--templateTokenTextColor);

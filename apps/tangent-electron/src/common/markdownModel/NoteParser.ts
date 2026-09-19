@@ -13,7 +13,7 @@ import { type ParsingContext, ParsingContextType, type ParsingProgram } from './
 import { parseTag } from './tag'
 import { parseCodeBlock, parseInlineCode, readCodeLines } from './code'
 import { getLanguage } from './codeSyntax'
-import { parseHtml } from './html'
+import { parseHtml, parseHtmlComment } from './html'
 import { parseTemplateTokens } from './templates'
 
 const blockPrograms: ParsingProgram[] = [
@@ -26,6 +26,7 @@ const blockPrograms: ParsingProgram[] = [
 ]
 
 const inlineObjectPrograms = [
+	parseHtmlComment,
 	parseInlineMath,
 	parseLink,
 	parseRawLink,
