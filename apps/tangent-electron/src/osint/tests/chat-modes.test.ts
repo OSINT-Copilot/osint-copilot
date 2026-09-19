@@ -241,4 +241,5 @@ describe('ChatView send routing', () => {
     expect(plugin.settings.agentRuntimeProvider).toBe('codex');
     expect(plugin.orchestrationService.processRequest).not.toHaveBeenCalled();
     expect(view.inputEl.value).toBe('Keep this prompt with Codex');
-  });});
+  });
+});

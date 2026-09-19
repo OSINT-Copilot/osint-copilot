@@ -5,7 +5,7 @@
  * codebase uses them 1,055 times -- far too many to hand-edit, and mechanical enough
  * that a faithful shim is strictly cheaper than a rewrite.
  *
- * Only the 10 members actually used are implemented. Everything else Obsidian patches
+ * Only the 9 members actually used are implemented. Everything else Obsidian patches
  * on (toggleClass, setAttr, detach, onClickEvent, hide, show, setCssStyles,
  * createFragment, insertAfter, findAll, matchParent, appendText) has zero occurrences
  * repo-wide.

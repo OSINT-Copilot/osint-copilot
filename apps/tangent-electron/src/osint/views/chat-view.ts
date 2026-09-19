@@ -1104,7 +1104,7 @@ export class ChatView extends ItemView {
 
   /**
    * The unified agent sends extracted attachment text as one prompt in a single turn -- there's
-   * no chunking for chat attachments (unlike vault graph ingest). A large, dense attachment (e.g.
+   * no chunking for chat attachments. A large, dense attachment (e.g.
    * a big CSV export) can legitimately take many minutes for the CLI to process, especially with
    * a slower model, and previously the only feedback was total silence until either a response or
    * a timeout. Surface the size up front instead of leaving the user guessing whether it's stuck.

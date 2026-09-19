@@ -172,8 +172,7 @@ export async function requestFor(req: HttpRequest, vault: OpenVault | null): Pro
 /**
  * Only what runs in-process: main's own handlers call these, and so does the `osint`
  * vitest project. The renderer's other members (net, vault, basemap, inbox, extension)
- * reach main over IPC, where the handlers call requestFor and the node/ modules for the
- * sending window.
+ * reach main over IPC, handled in index.ts, vault-ipc.ts and inbox/ipc.ts.
  */
 export const host: Pick<Host, 'platform' | 'cli' | 'extract'> = {
     platform,

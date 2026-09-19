@@ -1,5 +1,0 @@
-# Example: add your own types (family must be user)
-version: 1
-family: user
-entityTypes: []
-relationshipTypes: []

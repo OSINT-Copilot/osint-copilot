@@ -14,7 +14,6 @@ export interface Command {
     id: string;
     name: string;
     callback?: () => unknown;
-    checkCallback?: (checking: boolean) => boolean | void;
     icon?: string;
     hotkeys?: { modifiers: string[]; key: string }[];
 }

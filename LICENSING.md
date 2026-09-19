@@ -135,5 +135,7 @@ app. What it buys is that a key cannot be *forged* — invented as plausible-loo
 shared as a screenshot.
 
 The renderer does not gate features by plan: the licence screen lists what a key includes,
-and nothing else reads its entitlements. Anything that costs money is enforced by the
-dashboard, which counts credits against the key on every request.
+and nothing else in the renderer reads its entitlements. The main process reads one: it
+runs the browser extension's server only while the key carries `osint`. Anything that
+costs money is enforced by the dashboard, which counts credits against the key on every
+request.

@@ -366,8 +366,6 @@ export default class VaultAIPlugin extends Plugin {
     // The guide takes no host: it renders static content from data/guide-content.ts.
     this.registerView(DOCS_VIEW_TYPE, (leaf) => new DocsView(leaf));
 
-    // Add ribbon icons for all OSINT Copilot features (grouped together)
-    // Ctrl/Cmd+click opens a new instance as a tab next to other OSINT views in the same tab strip
     // No ribbon icons: the shell renders the OSINT views as a button group in Tangent's
     // top bar (integration/OsintViewsPill.svelte), driven by the Tangent-side commands in
     // app/model/commands/OsintViewCommands.ts, and "New canvas board" lives in the New Note

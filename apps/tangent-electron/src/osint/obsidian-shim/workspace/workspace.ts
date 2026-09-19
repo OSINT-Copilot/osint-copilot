@@ -78,8 +78,8 @@ export class Workspace {
     }
 
     /**
-     * Opens a new tab immediately after `anchor`, in the same group.
-     * This is the mechanism behind Ctrl/Cmd-click on all five ribbon icons.
+     * Opens a new tab immediately after `anchor`, in the same group: a second instance
+     * of an OSINT view, next to the first.
      */
     async duplicateLeaf(anchor: WorkspaceLeaf): Promise<WorkspaceLeaf> {
         const group = anchor.parent as WorkspaceTabs | null;

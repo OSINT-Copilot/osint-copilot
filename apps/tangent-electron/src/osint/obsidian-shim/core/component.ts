@@ -1,11 +1,9 @@
 /**
  * Component -- Obsidian's lifecycle/ownership primitive.
  *
- * This is the machinery that made the plugin's empty onunload() survivable: every
- * register/registerEvent cleanup is owned by a Component and torn down when it
- * unloads. Since vault-ai-plugin.ts:918 does nothing, ALL of that
- * cleanup is implicit today -- so this class is what makes vault switching and
- * window close leak-free rather than an afterthought.
+ * Every register/registerEvent cleanup is owned by a Component and runs when it
+ * unloads. The plugin itself is never unloaded: it lives as long as its window, and
+ * so do its registrations. Views are Components too, and do unload when closed.
  */
 export class Component {
     private cleanups: (() => void)[] = [];
