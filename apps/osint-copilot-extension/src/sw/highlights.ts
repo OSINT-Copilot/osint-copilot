@@ -15,8 +15,10 @@
  * can drive all of this.
  */
 import { buildManifest } from '../shared/manifest';
-import type { ContentCommand, ContentHighlight, DescribeReply, HighlightNames, HighlightStatus } from '../shared/highlights';
-import { highlightCss, isHighlightNames } from '../shared/highlights';
+import type {
+	ContentCommand, ContentHighlight, ContentReady, ContentStatus, DescribeReply, HighlightNames, HighlightReport, HighlightStatus,
+} from '../shared/highlights';
+import { highlightCss, isHighlightNames, sameSelection } from '../shared/highlights';
 import { normalisePageUrl } from '../shared/url';
 import type { HighlightAnnotation, HighlightManifest, Manifest } from '../shared/protocol';
 import { ItemTooLargeError, QueueFullError, type Queue } from './queue';
@@ -109,6 +111,20 @@ export class HighlightStore {
 		tx.objectStore(STORE).delete(id);
 		await done(tx);
 	}
+
+	/** How many are kept, in every investigation. */
+	async count(): Promise<number> {
+		const db = await this.open();
+		return req(db.transaction(STORE).objectStore(STORE).count());
+	}
+
+	/** Deletes every highlight kept here, in every investigation. The app's copies are not touched. */
+	async clear(): Promise<void> {
+		const db = await this.open();
+		const tx = db.transaction(STORE, 'readwrite');
+		tx.objectStore(STORE).clear();
+		await done(tx);
+	}
 }
 
 /** What the worker needs from Chrome for highlights. */
@@ -121,6 +137,8 @@ export interface HighlightTabs {
 	send<T>(tabId: number, command: ContentCommand): Promise<T>;
 	/** Adds the ::highlight() stylesheet to the tab's top frame, with origin USER. */
 	insertCss(tabId: number, css: string): Promise<void>;
+	/** Every open tab. */
+	all(): Promise<number[]>;
 }
 
 export interface HighlightDeps {
@@ -128,6 +146,12 @@ export interface HighlightDeps {
 	queue: Queue;
 	storage: KV;
 	paired(): Promise<boolean>;
+	/**
+	 * Whether the investigator allowed highlights to be shown again on a revisit, and Chrome
+	 * lets the extension read pages. Without both, the content script goes into a page only
+	 * when the investigator acts on it: makes a highlight, or asks to show them.
+	 */
+	revisit(): Promise<boolean>;
 	tabs: HighlightTabs;
 	now(): number;
 	uuid?(): string;
@@ -150,6 +174,26 @@ export interface HighlightList {
 	tabId: number;
 	page: { url: string; title: string } | null;
 	items: HighlightItem[];
+	/**
+	 * Whether the page shows them: yes; not yet, and the panel offers to (no); not since the
+	 * page changed its address without loading (navigated); or being looked into (pending).
+	 */
+	shown: 'yes' | 'no' | 'navigated' | 'pending';
+}
+
+/** Where a highlight made from the right-click menu came from, as Chrome reports it. */
+export interface MenuSelection {
+	frameId?: number;
+	selectionText?: string;
+}
+
+interface TabState {
+	statuses: Map<string, HighlightStatus>;
+	navigated: boolean;
+}
+
+function isStatus(value: unknown): value is HighlightStatus {
+	return value === 'exact' || value === 'fuzzy' || value === 'orphan';
 }
 
 export type HighlightResult =
@@ -165,8 +209,11 @@ const DESCRIBE_ERRORS: Record<Exclude<DescribeReply, { ok: true }>['reason'], st
 };
 
 export class Highlights {
-	/** What each tab's content script last reported, by highlight id. Progress, not data. */
-	private readonly statuses = new Map<number, Map<string, HighlightStatus>>();
+	/**
+	 * What each tab's content script last reported. Progress, not data: lost when the worker
+	 * stops, and asked for again (content.status) when the panel next looks.
+	 */
+	private readonly tabStates = new Map<number, TabState>();
 	/** Tabs the content script was injected into (or tried), until it reports or the tab goes. */
 	private readonly injected = new Set<number>();
 
@@ -181,15 +228,19 @@ export class Highlights {
 		const page = await this.deps.tabs.page(tabId);
 		const workspaceId = await this.workspace();
 		const key = page ? pageKeyOf(page.url) : null;
-		if (!page || !key || !workspaceId) return { tabId, page, items: [] };
-		// A tab open since before the permission was granted has no content script yet, so
-		// its highlights are not painted: inject once. Quietly refused without permission.
-		if (!this.statuses.has(tabId) && !this.injected.has(tabId)) {
-			this.injected.add(tabId);
-			await this.deps.tabs.inject(tabId);
-		}
-		const reported = this.statuses.get(tabId);
+		if (!page || !key || !workspaceId || !(await this.deps.paired())) return { tabId, page, items: [], shown: 'no' };
 		const records = await this.deps.store.forPage(workspaceId, key);
+		let state = this.tabStates.get(tabId);
+		let pending = false;
+		if (!state && records.length > 0) {
+			// A content script already in the page, whose report the worker forgot when it stopped.
+			state = await this.askStatus(tabId);
+			// None: a tab open since before revisits were allowed. Given once, when allowed.
+			if (!state && !this.injected.has(tabId) && await this.deps.revisit()) {
+				this.injected.add(tabId);
+				pending = await this.deps.tabs.inject(tabId);
+			}
+		}
 		return {
 			tabId,
 			page,
@@ -197,10 +248,32 @@ export class Highlights {
 				id: r.id,
 				exact: r.annotation.target.selector[0].exact,
 				note: r.annotation.body?.value ?? '',
-				status: reported?.get(r.id) ?? 'unknown',
+				status: state?.statuses.get(r.id) ?? 'unknown',
 				created: r.annotation.created,
 			})),
+			shown: state ? (state.navigated ? 'navigated' : 'yes') : pending ? 'pending' : 'no',
 		};
+	}
+
+	private async askStatus(tabId: number): Promise<TabState | undefined> {
+		let reply: ContentStatus | undefined;
+		try {
+			reply = await this.deps.tabs.send<ContentStatus>(tabId, { type: 'content.status' });
+		} catch {
+			return undefined;
+		}
+		if (!reply || !Array.isArray(reply.statuses)) return undefined;
+		return this.setState(tabId, reply.statuses, reply.navigated === true);
+	}
+
+	private setState(tabId: number, statuses: HighlightReport[], navigated: boolean): TabState {
+		const map = new Map<string, HighlightStatus>();
+		for (const s of statuses) {
+			if (typeof s?.id === 'string' && isStatus(s.status)) map.set(s.id, s.status);
+		}
+		const state = { statuses: map, navigated };
+		this.tabStates.set(tabId, state);
+		return state;
 	}
 
 	private async enqueue(manifest: Manifest): Promise<string | null> {
@@ -222,9 +295,15 @@ export class Highlights {
 		return new Date(t).toISOString();
 	}
 
-	/** Makes a highlight of the selection in the tab, files it for the app, and paints it. */
-	async create(tabId: number, workspaceIdShown?: string): Promise<HighlightResult> {
+	/**
+	 * Makes a highlight of the selection in the tab, files it for the app, and paints it.
+	 * From the right-click menu, `menu` is what Chrome said was right-clicked: the
+	 * selection read now must be the same one, in the top frame.
+	 */
+	async create(tabId: number, workspaceIdShown?: string, menu?: MenuSelection): Promise<HighlightResult> {
 		if (!(await this.deps.paired())) return { ok: false, error: 'not_paired' };
+		// The content script reads the top frame's selection only; one in a frame is not it.
+		if (menu?.frameId !== undefined && menu.frameId !== 0) return { ok: false, error: 'highlight_frame' };
 		const workspaceId = await this.workspace();
 		if (!workspaceId) return { ok: false, error: 'no_workspace' };
 		if (workspaceIdShown !== undefined && workspaceIdShown !== workspaceId) return { ok: false, error: 'workspace_changed' };
@@ -240,6 +319,10 @@ export class Highlights {
 			return { ok: false, error: 'highlight_no_access' };
 		}
 		if (!described?.ok) return { ok: false, error: DESCRIBE_ERRORS[described?.reason ?? 'no-selection'] ?? 'highlight_no_selection' };
+		// The page may have changed the selection between the right-click and now.
+		if (menu?.selectionText && !sameSelection(menu.selectionText, typeof described.shown === 'string' ? described.shown : '')) {
+			return { ok: false, error: 'highlight_selection_changed' };
+		}
 
 		const now = this.stamp();
 		const annotation: HighlightAnnotation = {
@@ -289,7 +372,7 @@ export class Highlights {
 		if (failed) return { ok: false, error: failed };
 		await this.deps.store.put({ ...record, annotation: (built.value as HighlightManifest).highlight.annotation });
 		this.deps.onChange?.();
-		return { ok: true, list: tabId === undefined ? { tabId: -1, page: null, items: [] } : await this.list(tabId), note: 'Note saved.' };
+		return { ok: true, list: tabId === undefined ? { tabId: -1, page: null, items: [], shown: 'no' } : await this.list(tabId), note: 'Note saved.' };
 	}
 
 	/** Deletes a highlight here and queues the delete for the app, which keeps a tombstone. */
@@ -306,11 +389,11 @@ export class Highlights {
 		if (failed) return { ok: false, error: failed };
 		await this.deps.store.delete(id);
 		if (tabId !== undefined) {
-			this.statuses.get(tabId)?.delete(id);
+			this.tabStates.get(tabId)?.statuses.delete(id);
 			await this.deps.tabs.send(tabId, { type: 'content.remove', id }).catch(() => {});
 		}
 		this.deps.onChange?.();
-		return { ok: true, list: tabId === undefined ? { tabId: -1, page: null, items: [] } : await this.list(tabId), note: 'Highlight deleted.' };
+		return { ok: true, list: tabId === undefined ? { tabId: -1, page: null, items: [], shown: 'no' } : await this.list(tabId), note: 'Highlight deleted.' };
 	}
 
 	/** Asks the page to look for a highlight again (after the page changed), and scroll to it. */
@@ -329,6 +412,62 @@ export class Highlights {
 		await this.deps.tabs.send(tabId, { type: 'content.scrollTo', id }).catch(() => {});
 	}
 
+	/**
+	 * Shows the highlights of the tab's page, as its address is now, because the
+	 * investigator asked: on a single-page site that changed its address without loading,
+	 * or on a page the extension does not look at on its own.
+	 */
+	async showHere(tabId: number): Promise<HighlightResult> {
+		if (!(await this.deps.paired())) return { ok: false, error: 'not_paired' };
+		const workspaceId = await this.workspace();
+		if (!workspaceId) return { ok: false, error: 'no_workspace' };
+		const page = await this.deps.tabs.page(tabId);
+		const key = page ? pageKeyOf(page.url) : null;
+		if (!page || !key) return { ok: false, error: 'highlight_no_page' };
+		if (!(await this.deps.tabs.inject(tabId))) return { ok: false, error: 'highlight_no_access' };
+		const records = await this.deps.store.forPage(workspaceId, key);
+		let reply: ContentStatus | undefined;
+		try {
+			reply = await this.deps.tabs.send<ContentStatus>(tabId, {
+				type: 'content.paint', highlights: records.map((r) => ({ id: r.id, selectors: r.annotation.target.selector })),
+			});
+		} catch {
+			return { ok: false, error: 'highlight_no_access' };
+		}
+		this.setState(tabId, Array.isArray(reply?.statuses) ? reply.statuses : [], false);
+		this.deps.onChange?.();
+		return { ok: true, list: await this.list(tabId) };
+	}
+
+	/**
+	 * Every open page asks for its highlights again: after the investigation was changed,
+	 * the extension unpaired, or the highlights kept here deleted. Pages without the
+	 * content script are not touched.
+	 */
+	async refreshAll(): Promise<void> {
+		this.tabStates.clear();
+		let tabs: number[] = [];
+		try {
+			tabs = await this.deps.tabs.all();
+		} catch {
+			return;
+		}
+		await Promise.all(tabs.map((tabId) => this.deps.tabs.send(tabId, { type: 'content.refresh' }).catch(() => {})));
+	}
+
+	/**
+	 * Deletes every highlight kept in this browser, in every investigation, and takes them
+	 * off open pages. Nothing is sent to the app: the investigations keep theirs. Works with
+	 * the queue full, and for investigations the app no longer lists.
+	 */
+	async clearLocal(): Promise<number> {
+		const count = await this.deps.store.count();
+		await this.deps.store.clear();
+		await this.refreshAll();
+		this.deps.onChange?.();
+		return count;
+	}
+
 	// ------------------------------------------------------------------ the content script
 
 	/**
@@ -337,25 +476,29 @@ export class Highlights {
 	 * reads, but not the sender Chrome reports. The stylesheet goes in first, so nothing
 	 * paints unstyled.
 	 */
-	async contentReady(tabId: number, senderUrl: string, names: HighlightNames | null): Promise<{ highlights: ContentHighlight[] }> {
-		this.statuses.delete(tabId);
+	async contentReady(tabId: number, senderUrl: string, names: HighlightNames | null): Promise<ContentReady> {
+		this.tabStates.delete(tabId);
 		// A new page in the tab: the next panel look may need to inject again.
 		this.injected.delete(tabId);
 		if (names && isHighlightNames(names)) await this.deps.tabs.insertCss(tabId, highlightCss(names)).catch(() => {});
 		const workspaceId = await this.workspace();
 		const key = pageKeyOf(senderUrl);
-		if (!workspaceId || !key) return { highlights: [] };
+		if (!workspaceId || !key || !(await this.deps.paired())) return { highlights: [] };
+		// Chrome's sender URL is where the document was loaded from, and does not follow
+		// history.pushState; the tab's address does. Where they differ, the page moved its
+		// address itself, and neither page's highlights are shown until the investigator asks.
+		const page = await this.deps.tabs.page(tabId);
+		if (!page || pageKeyOf(page.url) !== key) {
+			this.deps.onChange?.();
+			return { highlights: [], navigated: true };
+		}
 		const records = await this.deps.store.forPage(workspaceId, key);
 		this.deps.onChange?.();
 		return { highlights: records.map((r) => ({ id: r.id, selectors: r.annotation.target.selector })) };
 	}
 
-	contentReport(tabId: number, statuses: Array<{ id: string; status: HighlightStatus }>): void {
-		const map = new Map<string, HighlightStatus>();
-		for (const s of statuses) {
-			if (typeof s?.id === 'string' && (s.status === 'exact' || s.status === 'fuzzy' || s.status === 'orphan')) map.set(s.id, s.status);
-		}
-		this.statuses.set(tabId, map);
+	contentReport(tabId: number, statuses: HighlightReport[], navigated = false): void {
+		this.setState(tabId, statuses, navigated === true);
 		this.deps.onChange?.();
 	}
 
@@ -363,14 +506,18 @@ export class Highlights {
 		if (typeof id === 'string') this.deps.onClicked?.(tabId, id);
 	}
 
-	tabClosed(tabId: number): void {
-		this.statuses.delete(tabId);
+	/**
+	 * The tab closed, or began loading a new document: what the old one's content script
+	 * reported no longer holds, and the new one may have none.
+	 */
+	forgetTab(tabId: number): void {
+		this.tabStates.delete(tabId);
 		this.injected.delete(tabId);
 	}
 
 	private record(tabId: number, id: string, status: HighlightStatus): void {
-		let map = this.statuses.get(tabId);
-		if (!map) this.statuses.set(tabId, (map = new Map()));
-		map.set(id, status);
+		let state = this.tabStates.get(tabId);
+		if (!state) this.tabStates.set(tabId, (state = { statuses: new Map(), navigated: false }));
+		state.statuses.set(id, status);
 	}
 }

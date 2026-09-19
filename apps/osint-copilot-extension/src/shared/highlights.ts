@@ -28,12 +28,41 @@ export interface HighlightNames {
 
 /** Content script to worker. */
 export type ContentRequest =
-	/** On load and after an in-page navigation: "which highlights are on this page?" */
+	/**
+	 * On load and after an in-page navigation: "which highlights are on this page?" The
+	 * reply is ContentReady.
+	 */
 	| { type: 'content.ready'; names: HighlightNames | null }
-	/** Which highlights were found, approximately found, or not found. */
-	| { type: 'content.report'; statuses: Array<{ id: string; status: HighlightStatus }> }
+	/**
+	 * Which highlights were found, approximately found, or not found. navigated: the page
+	 * changed its address without loading, and shows no highlights until asked (ContentReady).
+	 */
+	| { type: 'content.report'; statuses: HighlightReport[]; navigated?: boolean }
 	/** The investigator clicked a highlight; the panel, if open, shows it. */
 	| { type: 'content.clicked'; id: string };
+
+export interface HighlightReport {
+	id: string;
+	status: HighlightStatus;
+}
+
+/**
+ * The answer to content.ready: the highlights of the page the document was loaded from.
+ * Chrome names that page (sender.url), and it does not follow history.pushState. So when
+ * the tab's address has moved on since (a single-page site), the answer is navigated and
+ * no highlights: another address's highlights are shown only when the investigator asks
+ * for them from the panel (content.paint), never because the page moved its address.
+ */
+export interface ContentReady {
+	highlights: ContentHighlight[];
+	navigated?: boolean;
+}
+
+/** What a content script says about its page: content.status's reply. */
+export interface ContentStatus {
+	statuses: HighlightReport[];
+	navigated: boolean;
+}
 
 export const CONTENT_REQUEST_TYPES: readonly ContentRequest['type'][] = ['content.ready', 'content.report', 'content.clicked'];
 
@@ -44,12 +73,39 @@ export type ContentCommand =
 	| { type: 'content.remove'; id: string }
 	| { type: 'content.findAgain'; id: string }
 	| { type: 'content.scrollTo'; id: string }
-	| { type: 'content.refresh' };
+	/** Ask for this page's highlights again: the investigation changed, or the extension was unpaired. */
+	| { type: 'content.refresh' }
+	/** Report again (ContentStatus): the worker restarted and forgot. */
+	| { type: 'content.status' }
+	/** Show these highlights, which the investigator asked for from the panel for the tab's address. */
+	| { type: 'content.paint'; highlights: ContentHighlight[] };
 
 export type DescribeReply =
-	| { ok: true; selectors: HighlightSelectors; exact: string }
+	/** shown: the selection as the browser reads it (Selection.toString()). */
+	| { ok: true; selectors: HighlightSelectors; exact: string; shown: string }
 	/** hidden-text: the page hides text inside the selection, so the quote is not what was seen. */
 	| { ok: false; reason: 'no-selection' | 'empty' | 'too-long' | 'not-in-page' | 'hidden-text' };
+
+/** Invisible in any case: whitespace, soft hyphens and zero-width characters, which a copy may drop. */
+const INVISIBLE = /[\s\u00ad\u200b-\u200d\u2060\ufeff]+/g;
+
+/**
+ * Text as compared across readings of it (the DOM's, the browser's, the menu's): without
+ * what is invisible, and without case. Upper then lower: "ß" and "SS" (text-transform)
+ * meet as "ss", and "İ" lowers to an "i".
+ */
+export function foldText(text: string): string {
+	return text.replace(INVISIBLE, '').toUpperCase().toLowerCase();
+}
+
+/**
+ * Whether the selection the right-click menu reported is still the one being described.
+ * The menu's copy may be cut short, so it need only begin the same.
+ */
+export function sameSelection(menuText: string, shown: string): boolean {
+	const menu = foldText(menuText);
+	return menu.length > 0 && foldText(shown).startsWith(menu);
+}
 
 /** The painter's names are random and of exactly this shape; anything else is not styled. */
 export const HIGHLIGHT_NAME = /^oc-[a-z0-9]{12}$/;

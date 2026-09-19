@@ -13,13 +13,19 @@
  * last look, and less often each time: each look is a pass over the whole text, and on a
  * page that never stops changing it would never stop. A highlight not found is reported
  * as such, and never deleted for it.
+ *
+ * Single-page sites. When the page changes its address without loading, it asks again;
+ * the worker answers only for the address the document was loaded from, so on another
+ * address it shows nothing (navigated) until the investigator asks from the panel.
  */
 import { anchor } from './anchor';
 import { describeRange } from './describe';
 import type { PaintEntry, Painter } from './render';
 import { buildTextModel, rangeFromOffsets, type TextModel } from './text-model';
-import type {
-	ContentCommand, ContentHighlight, ContentRequest, DescribeReply, HighlightStatus,
+import {
+	foldText,
+	type ContentCommand, type ContentHighlight, type ContentReady, type ContentRequest, type ContentStatus, type DescribeReply,
+	type HighlightStatus,
 } from '../shared/highlights';
 
 /** How long after a load highlights not found are looked for again. */
@@ -53,14 +59,6 @@ export function pageKey(href: string): string {
 	return url.href;
 }
 
-/** Invisible in any case: soft hyphens and zero-width characters, which a copy may drop. */
-const INVISIBLE = /[\s­​-‍⁠﻿]+/g;
-
-function fold(text: string): string {
-	// Upper then lower: "ß" and "SS" (text-transform) meet as "ss", and "İ" lowers to an "i".
-	return text.replace(INVISIBLE, '').toUpperCase().toLowerCase();
-}
-
 /**
  * Whether the quote holds text the selection did not show. The quote is taken from the
  * DOM (text model v1), which includes text the page hides with CSS; the browser's own
@@ -69,8 +67,8 @@ function fold(text: string): string {
  * generated content), and neither case nor spacing counts.
  */
 export function hidesText(exact: string, shown: string): boolean {
-	const a = fold(exact);
-	const b = fold(shown);
+	const a = foldText(exact);
+	const b = foldText(shown);
 	if (a === b) return false;
 	let j = 0;
 	for (let i = 0; i < a.length; i++) {
@@ -92,6 +90,8 @@ export class PageHighlights {
 	private loads = 0;
 	/** The page text last searched for highlights not found; not searched again until it changes. */
 	private searched: string | null = null;
+	/** The tab's address is no longer the one the document was loaded from, and nothing was asked for it. */
+	private navigated = false;
 
 	constructor(private readonly deps: PageDeps) {
 		this.key = pageKey(deps.document.location.href);
@@ -147,28 +147,42 @@ export class PageHighlights {
 			|| r.toString() !== t.text;
 	}
 
+	status(): ContentStatus {
+		return { statuses: [...this.tracked.values()].map((t) => ({ id: t.highlight.id, status: t.status })), navigated: this.navigated };
+	}
+
 	private report(): void {
-		const statuses = [...this.tracked.values()].map((t) => ({ id: t.highlight.id, status: t.status }));
-		void this.deps.send({ type: 'content.report', statuses }).catch(() => {});
+		void this.deps.send({ type: 'content.report', ...this.status() }).catch(() => {});
+	}
+
+	/** Shows exactly these highlights, found in the page as it is now. */
+	private show(highlights: ContentHighlight[]): void {
+		this.tracked.clear();
+		this.deps.painter?.clear();
+		for (const h of highlights) this.tracked.set(h.id, { highlight: h, status: 'orphan', range: null, text: '' });
+		if (this.tracked.size > 0) this.place([...this.tracked.values()], buildTextModel(this.body));
+		this.report();
 	}
 
 	/** Asks the worker for this page's highlights, and paints them. On load and after a navigation. */
 	async load(): Promise<void> {
 		const load = ++this.loads;
 		const key = this.key;
-		let reply: { highlights?: ContentHighlight[] } | undefined;
+		let reply: ContentReady | undefined;
 		try {
-			reply = await this.deps.send({ type: 'content.ready', names: this.deps.painter?.names ?? null }) as typeof reply;
+			reply = await this.deps.send({ type: 'content.ready', names: this.deps.painter?.names ?? null }) as ContentReady | undefined;
 		} catch {
 			return; // The worker restarted or the extension was reloaded: nothing to show.
 		}
-		// A later load, or a navigation while this one waited: the answer is for another page.
-		if (load !== this.loads || key !== this.key) return;
-		this.tracked.clear();
-		this.deps.painter?.clear();
-		for (const h of reply?.highlights ?? []) this.tracked.set(h.id, { highlight: h, status: 'orphan', range: null, text: '' });
-		if (this.tracked.size > 0) this.place([...this.tracked.values()], buildTextModel(this.body));
-		this.report();
+		// A later load or paint while this one waited: its answer stands.
+		if (load !== this.loads) return;
+		// The page moved its address while this one waited: the answer is for where it was.
+		if (pageKey(this.deps.document.location.href) !== key) {
+			this.changed();
+			return;
+		}
+		this.navigated = reply?.navigated === true;
+		this.show(Array.isArray(reply?.highlights) ? reply.highlights : []);
 	}
 
 	/** Something in the page changed, or its URL did: looked at once the changes settle. */
@@ -224,8 +238,9 @@ export class PageHighlights {
 		const d = describeRange(buildTextModel(this.body), range);
 		if (!d.ok) return { ok: false, reason: d.reason };
 		// The quote must be what the investigator saw: refused if the page hid text inside it.
-		if (hidesText(d.exact, selection.toString())) return { ok: false, reason: 'hidden-text' };
-		return { ok: true, selectors: d.selectors, exact: d.exact };
+		const shown = selection.toString();
+		if (hidesText(d.exact, shown)) return { ok: false, reason: 'hidden-text' };
+		return { ok: true, selectors: d.selectors, exact: d.exact, shown };
 	}
 
 	private scrollTo(id: string): void {
@@ -264,6 +279,16 @@ export class PageHighlights {
 				this.restartWindow();
 				void this.load();
 				return { ok: true };
+			case 'content.status':
+				return this.status();
+			case 'content.paint':
+				// Asked for by the investigator: an answer to an earlier load must not undo it.
+				this.loads++;
+				this.key = pageKey(this.deps.document.location.href);
+				this.restartWindow();
+				this.navigated = false;
+				this.show(Array.isArray(message.highlights) ? message.highlights : []);
+				return this.status();
 			default:
 				return undefined;
 		}

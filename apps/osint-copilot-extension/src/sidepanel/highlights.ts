@@ -10,7 +10,7 @@
  * in the panel.
  */
 import { describeError } from '../shared/errors';
-import { HIGHLIGHT_PERMISSIONS, type PanelRequest, type Reply } from '../shared/messages';
+import { HIGHLIGHT_PERMISSIONS, type PanelRequest, type PanelState, type Reply } from '../shared/messages';
 import type { HighlightItem, HighlightList } from '../sw/highlights';
 
 export interface HighlightPanelDeps {
@@ -22,13 +22,20 @@ export interface HighlightPanelDeps {
 	workspaceId(): string | undefined;
 	/** Why no page can be used, when tabId() is null. */
 	pageProblem(): string | null;
+	/** Shows a state the worker replied with. */
+	render(state: PanelState): void;
 }
 
 const STATUS_TEXT: Record<HighlightItem['status'], string> = {
 	exact: 'On the page.',
 	fuzzy: 'On the page, but its text has changed since you highlighted it.',
 	orphan: 'Not found on this page.',
-	unknown: 'Not checked on this page yet.',
+	unknown: 'Not shown on this page yet.',
+};
+
+const UNSHOWN_TEXT: Partial<Record<HighlightList['shown'], string>> = {
+	no: 'Your highlights for this page are not shown on it.',
+	navigated: 'This page changed its address without reloading, as single-page sites do, so its highlights are not shown on it yet.',
 };
 
 function $<T extends HTMLElement>(id: string): T {
@@ -48,6 +55,12 @@ export function initHighlights(deps: HighlightPanelDeps) {
 		create: $<HTMLButtonElement>('highlight-create'),
 		revisit: $<HTMLParagraphElement>('highlight-revisit'),
 		grant: $<HTMLButtonElement>('highlight-grant'),
+		revisitOn: $<HTMLParagraphElement>('highlight-revisit-on'),
+		revoke: $<HTMLButtonElement>('highlight-revoke'),
+		unshown: $<HTMLParagraphElement>('highlight-unshown'),
+		unshownText: $<HTMLSpanElement>('highlight-unshown-text'),
+		showHere: $<HTMLButtonElement>('highlight-show-here'),
+		clear: $<HTMLButtonElement>('highlight-clear'),
 		list: $<HTMLUListElement>('highlights'),
 		orphans: $<HTMLUListElement>('orphans'),
 		orphansTitle: $<HTMLHeadingElement>('orphans-title'),
@@ -104,10 +117,14 @@ export function initHighlights(deps: HighlightPanelDeps) {
 		ui.orphans.replaceChildren(...lost.map((i) => item(i, list.tabId)));
 		ui.orphansTitle.hidden = lost.length === 0;
 		ui.orphansHint.hidden = lost.length === 0;
+		const unshown = list.items.length > 0 ? UNSHOWN_TEXT[list.shown] : undefined;
+		ui.unshown.hidden = !unshown;
+		ui.unshownText.textContent = unshown ?? '';
 	}
 
 	async function act(request: PanelRequest): Promise<void> {
 		const reply = await deps.ask(request);
+		if (reply.state) deps.render(reply.state);
 		if (reply.ok) {
 			if (reply.note) deps.flash(reply.note);
 			render(reply.highlights);
@@ -122,19 +139,18 @@ export function initHighlights(deps: HighlightPanelDeps) {
 			shown = null;
 			ui.list.replaceChildren();
 			ui.orphans.replaceChildren();
-			ui.orphansTitle.hidden = ui.orphansHint.hidden = true;
+			ui.orphansTitle.hidden = ui.orphansHint.hidden = ui.unshown.hidden = true;
 			return;
 		}
 		const reply = await deps.ask({ type: 'highlights', tabId });
 		if (reply.ok) render(reply.highlights);
 	}
 
-	async function refreshPermission(): Promise<void> {
-		try {
-			ui.revisit.hidden = await chrome.permissions.contains(HIGHLIGHT_PERMISSIONS);
-		} catch {
-			ui.revisit.hidden = true;
-		}
+	/** The revisit choice, from the worker's state. */
+	function renderState(state: PanelState): void {
+		const paired = state.connection !== 'unpaired';
+		ui.revisit.hidden = !paired || state.revisitHighlights;
+		ui.revisitOn.hidden = !paired || !state.revisitHighlights;
 	}
 
 	ui.create.addEventListener('click', () => {
@@ -147,11 +163,29 @@ export function initHighlights(deps: HighlightPanelDeps) {
 	});
 
 	ui.grant.addEventListener('click', () => {
-		// Asked from this click: Chrome shows its prompt only during a user gesture.
+		// Asked from this click: Chrome shows its prompt only during a user gesture. Already
+		// granted (for page capture), it answers yes without asking.
 		void chrome.permissions.request(HIGHLIGHT_PERMISSIONS).then((granted) => {
-			void refreshPermission();
-			if (granted) deps.flash('Highlights will show again when you come back to a page.');
+			if (granted) void act({ type: 'highlights.revisit', allow: true });
+			else deps.flash(describeError('highlight_permission_needed'), true);
 		}).catch(() => {});
+	});
+
+	ui.revoke.addEventListener('click', () => void act({ type: 'highlights.revisit', allow: false }));
+
+	ui.showHere.addEventListener('click', () => {
+		const tabId = deps.tabId();
+		if (tabId === null) {
+			deps.flash(deps.pageProblem() ?? describeError('highlight_no_page'), true);
+			return;
+		}
+		void act({ type: 'highlight.showHere', tabId });
+	});
+
+	ui.clear.addEventListener('click', () => {
+		if (confirm('Delete every highlight this browser keeps, for all investigations? Your investigations in OSINT Copilot keep theirs; they just stop showing on pages here.')) {
+			void act({ type: 'highlights.clearLocal' });
+		}
 	});
 
 	/** A highlight was clicked on the page: bring its entry into view. */
@@ -165,9 +199,5 @@ export function initHighlights(deps: HighlightPanelDeps) {
 		}
 	}
 
-	void refreshPermission();
-	chrome.permissions.onAdded.addListener(() => void refreshPermission());
-	chrome.permissions.onRemoved.addListener(() => void refreshPermission());
-
-	return { refresh, focus };
+	return { refresh, focus, renderState };
 }

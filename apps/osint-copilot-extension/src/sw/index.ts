@@ -19,7 +19,7 @@ import {
 import { createRouter } from './messages';
 import { Queue, sendBundle } from './queue';
 import { Service } from './service';
-import { chromeLocal, restrictToTrustedContexts } from './storage';
+import { KEYS, chromeLocal, restrictToTrustedContexts } from './storage';
 
 restrictToTrustedContexts();
 
@@ -70,13 +70,26 @@ const highlightTabs: HighlightTabs = {
 		// USER origin: the page's own !important rules cannot restyle or hide our marks.
 		await chrome.scripting.insertCSS({ target: { tabId, frameIds: [0] }, css, origin: 'USER' });
 	},
+	async all() {
+		return (await chrome.tabs.query({})).flatMap(tab => (tab.id !== undefined && tab.id >= 0 ? [tab.id] : []));
+	},
 };
+
+/**
+ * Highlights come back on a revisit only if the investigator allowed it in the panel,
+ * and Chrome lets the extension read pages. The permission alone is not consent: page
+ * capture asks for the same one, for another purpose.
+ */
+async function revisitAllowed(): Promise<boolean> {
+	return (await storage.get<boolean>(KEYS.revisitHighlights)) === true && chrome.permissions.contains(HIGHLIGHT_PERMISSIONS);
+}
 
 const highlights = new Highlights({
 	store: new HighlightStore(self.indexedDB),
 	queue,
 	storage,
 	paired: async () => Boolean(await channel.pairing()),
+	revisit: revisitAllowed,
 	tabs: highlightTabs,
 	now: () => Date.now(),
 	onChange: broadcastChanged,
@@ -86,13 +99,13 @@ const highlights = new Highlights({
 });
 
 /**
- * With permission to read pages, the content script runs on every page as it loads, so
- * highlights come back on a revisit. Without it, it runs only where the user invoked the
- * extension (activeTab). Registered here, not in the manifest, because the permission is
- * optional and may come and go.
+ * With revisits allowed, the content script runs on every page as it loads, so highlights
+ * come back on a revisit. Otherwise it runs only where the investigator acted on a page:
+ * made a highlight there, or asked to show them. Registered here, not in the manifest,
+ * because the permission is optional and the choice may come and go.
  */
 async function syncContentScript(): Promise<void> {
-	const granted = await chrome.permissions.contains(HIGHLIGHT_PERMISSIONS);
+	const granted = await revisitAllowed();
 	const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [CONTENT_SCRIPT_ID] });
 	if (granted && existing.length === 0) {
 		await chrome.scripting.registerContentScripts([{
@@ -119,6 +132,13 @@ const service = new Service({
 	hasCapturePermission: () => chrome.permissions.contains(CAPTURE_PERMISSIONS),
 	activeTabId: async () => (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.id,
 	highlights,
+	revisitAllowed,
+	setRevisit: async (allow) => {
+		if (allow) await storage.set({ [KEYS.revisitHighlights]: true });
+		else await storage.remove(KEYS.revisitHighlights);
+		await syncContentScript();
+		return revisitAllowed();
+	},
 });
 
 const gesture: CaptureGestureDeps = {
@@ -143,21 +163,32 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 		if (tab?.id !== undefined && tab.id >= 0) {
 			const tabId = tab.id;
 			chrome.sidePanel.open({ tabId }).catch(() => {});
-			void highlights.create(tabId).then((result) => {
+			// What Chrome says was right-clicked, where: the selection read next must be it.
+			void highlights.create(tabId, undefined, { frameId: info.frameId, selectionText: info.selectionText }).then((result) => {
 				if (!result.ok) chrome.runtime.sendMessage({ type: CHANGED, error: result.error }).catch(() => {});
 			});
 		}
 	} else onMenuClicked(info, tab);
 });
 chrome.permissions.onAdded.addListener(() => void syncContentScript().catch(() => {}));
-chrome.permissions.onRemoved.addListener(() => void syncContentScript().catch(() => {}));
-// A tab opened before the permission was granted gets the script when it is next looked at.
+chrome.permissions.onRemoved.addListener(() => {
+	void (async () => {
+		// Taken away in Chrome's settings: the choice goes with it, and must be made again.
+		if (!(await chrome.permissions.contains(HIGHLIGHT_PERMISSIONS))) await storage.remove(KEYS.revisitHighlights);
+		await syncContentScript();
+		broadcastChanged();
+	})().catch(() => {});
+});
+// A tab opened before revisits were allowed gets the script when it is next looked at.
 chrome.tabs.onActivated.addListener(({ tabId }) => {
-	void chrome.permissions.contains(HIGHLIGHT_PERMISSIONS).then((granted) => {
-		if (granted) void highlightTabs.inject(tabId);
+	void revisitAllowed().then((allowed) => {
+		if (allowed) void highlightTabs.inject(tabId);
 	});
 });
-chrome.tabs.onRemoved.addListener((tabId) => highlights.tabClosed(tabId));
+chrome.tabs.onRemoved.addListener((tabId) => highlights.forgetTab(tabId));
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+	if (info.status === 'loading') highlights.forgetTab(tabId);
+});
 chrome.commands.onCommand.addListener((command, tab) => {
 	if (command === COMMAND_CAPTURE) void captureFromGesture(tab, gesture);
 });
@@ -170,7 +201,7 @@ chrome.runtime.onMessage.addListener(createRouter({
 			case 'content.ready':
 				return highlights.contentReady(from.tabId, from.url, request.names);
 			case 'content.report':
-				highlights.contentReport(from.tabId, Array.isArray(request.statuses) ? request.statuses : []);
+				highlights.contentReport(from.tabId, Array.isArray(request.statuses) ? request.statuses : [], request.navigated === true);
 				return { ok: true };
 			case 'content.clicked':
 				highlights.contentClicked(from.tabId, request.id);

@@ -2,10 +2,11 @@
 // Copyright 2026 Probe Point Analytics LLC
 
 import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Channel } from '../src/sw/channel';
 import { Queue, sendBundle } from '../src/sw/queue';
-import { Service } from '../src/sw/service';
+import type { Highlights } from '../src/sw/highlights';
+import { Service, type ServiceDeps } from '../src/sw/service';
 import { KEYS, memoryKV, type PairingRecord } from '../src/sw/storage';
 import { FakeApp, counterBytes, fakeNetwork, type Handler } from './fake-app';
 import { protocolVectors as v } from './vectors';
@@ -13,7 +14,7 @@ import { protocolVectors as v } from './vectors';
 const WS = [{ id: 'gtoz4Juogr-egTX3kAreCn', name: 'Case été', open: true }, { id: 'AAAAAAAAAAAAAAAAAAAAAA', name: 'Old case', open: false }];
 const PAGE = { url: 'https://example.com/profile', title: 'Profile' };
 
-function world(online = true) {
+function world(online = true, extra: Partial<ServiceDeps> = {}) {
 	const bundles: unknown[] = [];
 	const fake = new FakeApp({
 		port: 23760,
@@ -37,7 +38,7 @@ function world(online = true) {
 	const channel = new Channel({ fetch: net.fetch, storage, now: () => Date.now(), randomBytes: counterBytes() });
 	const queue = new Queue({ indexedDB: new IDBFactory(), now: () => Date.now(), send: m => sendBundle(channel, m) });
 	const changes = { count: 0 };
-	const service = new Service({ channel, queue, storage, extVersion: '0.1.0', now: () => 42, onChange: () => { changes.count++; } });
+	const service = new Service({ channel, queue, storage, extVersion: '0.1.0', now: () => 42, onChange: () => { changes.count++; }, ...extra });
 	return { service, storage, bundles, handlers, fake, net, changes };
 }
 
@@ -113,5 +114,35 @@ describe('service', () => {
 		expect(hellos()).toBe(1);
 		await service.handle({ type: 'refresh' });
 		expect(hellos()).toBe(2);
+	});
+
+	it('has open pages show the chosen investigation\'s highlights, and none once unpaired', async () => {
+		const refreshAll = vi.fn(async () => {});
+		const { service } = world(true, { highlights: { refreshAll } as unknown as Highlights });
+		await service.handle({ type: 'panelOpened' });
+		await service.handle({ type: 'selectWorkspace', workspaceId: WS[1].id });
+		expect(refreshAll).toHaveBeenCalledTimes(1);
+		await service.handle({ type: 'unpair' });
+		expect(refreshAll).toHaveBeenCalledTimes(2);
+	});
+
+	it('shows highlights again on a revisit only once the investigator allows it', async () => {
+		let allowed = false;
+		let permission = false;
+		const setRevisit = vi.fn(async (allow: boolean) => {
+			allowed = allow;
+			return allowed && permission;
+		});
+		const { service } = world(true, { revisitAllowed: async () => allowed && permission, setRevisit });
+		// Page capture's grant alone is not the investigator's choice.
+		permission = true;
+		expect((await service.state()).revisitHighlights).toBe(false);
+		const on = await service.handle({ type: 'highlights.revisit', allow: true });
+		expect(on).toMatchObject({ ok: true, state: { revisitHighlights: true } });
+		const off = await service.handle({ type: 'highlights.revisit', allow: false });
+		expect(off).toMatchObject({ ok: true, state: { revisitHighlights: false } });
+		// Allowed, but Chrome's permission is missing: said so, not claimed.
+		permission = false;
+		expect(await service.handle({ type: 'highlights.revisit', allow: true })).toMatchObject({ ok: false, error: 'highlight_permission_needed' });
 	});
 });

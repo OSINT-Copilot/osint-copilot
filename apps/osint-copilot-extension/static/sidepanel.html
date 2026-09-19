@@ -45,11 +45,18 @@
 				<h2>Highlights</h2>
 				<p class="hint">Select text on the page, then press <strong>Highlight selection</strong>, or right-click it and choose <strong>Highlight in OSINT Copilot</strong>. Each highlight and its note are filed in the investigation, on the page's Sources note.</p>
 				<button type="button" id="highlight-create">Highlight selection</button>
-				<p id="highlight-revisit" class="notice" hidden>Highlights show again when you come back to a page only if the extension may read the pages you visit. It looks only for your own highlights, and sends nothing when it does. <button type="button" id="highlight-grant" class="secondary">Allow</button></p>
+				<p id="highlight-revisit" class="notice" hidden>Your highlights show on a page only when you ask, on each visit. Allow this to have them shown again whenever you come back to a page: the extension then looks for your own highlights on every page you open, and sends nothing when it does. Chrome asks for its permission to read the pages you visit, unless page capture already has it. <button type="button" id="highlight-grant" class="secondary">Allow</button></p>
+				<p id="highlight-revisit-on" class="hint" hidden>Your highlights show again when you come back to a page. <button type="button" id="highlight-revoke" class="secondary">Stop that</button></p>
+				<p id="highlight-unshown" class="notice" hidden><span id="highlight-unshown-text"></span> <button type="button" id="highlight-show-here" class="secondary">Show on this page</button></p>
 				<ul id="highlights" class="highlights" aria-label="Highlights on this page"></ul>
 				<h3 id="orphans-title" hidden>Not found on this page</h3>
 				<p id="orphans-hint" class="hint" hidden>The page's text has changed since these were made, or the part of the page holding them has not loaded. They are kept, and still in the investigation.</p>
 				<ul id="orphans" class="highlights" aria-label="Highlights not found on this page"></ul>
+				<details id="highlight-kept">
+					<summary>Highlights kept in this browser</summary>
+					<p class="hint">This browser keeps a copy of your highlights, for every investigation, so it can show them on pages. Deleting that copy does not touch your investigations, which keep theirs.</p>
+					<button type="button" id="highlight-clear" class="danger">Delete highlights kept in this browser</button>
+				</details>
 			</section>
 
 			<section class="card">

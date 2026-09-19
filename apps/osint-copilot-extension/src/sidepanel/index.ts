@@ -135,6 +135,7 @@ function render(next: PanelState): void {
 	if (document.activeElement !== ui.workspace) renderWorkspaces(next);
 	renderCapture(next.capture);
 	renderQueue(next.queue);
+	highlightCard.renderState(next);
 }
 
 function renderCapture(status: CaptureStatus | null): void {
@@ -255,6 +256,7 @@ const highlightCard = initHighlights({
 	tabId: () => (page.url ? page.tabId : null),
 	workspaceId: () => ui.workspace.value || undefined,
 	pageProblem: () => page.problem,
+	render: next => render(next),
 });
 
 // --- the page ------------------------------------------------------------------------

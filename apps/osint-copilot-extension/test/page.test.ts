@@ -7,7 +7,7 @@ import { describeRange } from '../src/content/describe';
 import { DEBOUNCE_MS, MAX_DELAY_MS, PageHighlights, RETRY_MS, hidesText } from '../src/content/page';
 import { Painter, type HighlightApi } from '../src/content/render';
 import { buildTextModel, rangeFromOffsets } from '../src/content/text-model';
-import type { ContentHighlight, ContentRequest } from '../src/shared/highlights';
+import type { ContentHighlight, ContentReady, ContentRequest } from '../src/shared/highlights';
 
 const anchorCalls = vi.hoisted(() => ({ n: 0 }));
 vi.mock('../src/content/anchor', async (original) => {
@@ -33,7 +33,7 @@ function highlightOf(phrase: string, id: string, occurrence = 0): ContentHighlig
 	return { id, selectors: d.selectors };
 }
 
-function harness(replies: Array<{ highlights: ContentHighlight[] } | Promise<{ highlights: ContentHighlight[] }>> = []) {
+function harness(replies: Array<ContentReady | Promise<ContentReady>> = []) {
 	const { api, registry } = fakeApi();
 	const painter = new Painter(api);
 	const sent: ContentRequest[] = [];
@@ -50,13 +50,14 @@ function harness(replies: Array<{ highlights: ContentHighlight[] } | Promise<{ h
 		now: () => clock,
 		later: (run, ms) => { timers.push({ run, ms }); },
 	});
-	const reports = () => sent.filter((m) => m.type === 'content.report').map((m) => (m as Extract<ContentRequest, { type: 'content.report' }>).statuses);
+	const reportMessages = () => sent.filter((m): m is Extract<ContentRequest, { type: 'content.report' }> => m.type === 'content.report');
+	const reports = () => reportMessages().map((m) => m.statuses);
 	/** Runs what page changes scheduled, as the debounce timer would. */
 	const settle = () => {
 		for (let t = timers.shift(); t; t = timers.shift()) t.run();
 	};
 	const painted = () => [...(registry.values())].flatMap((h) => [...h].map((r) => r.toString()));
-	return { page, painter, registry, sent, timers, reports, settle, painted, tick: (ms: number) => { clock += ms; } };
+	return { page, painter, registry, sent, timers, reports, reportMessages, settle, painted, tick: (ms: number) => { clock += ms; } };
 }
 
 beforeEach(() => {
@@ -136,6 +137,44 @@ describe('loading a page\'s highlights', () => {
 		await loading;
 		expect(h.painted()).toEqual([]);
 		expect(h.sent.filter((m) => m.type === 'content.ready')).toHaveLength(2);
+	});
+});
+
+describe('a single-page site', () => {
+	it('shows nothing on an address the document was not loaded from, until the investigator asks', async () => {
+		document.body.innerHTML = '<p>The handle darkfox99 posted twice.</p>';
+		const h = harness([{ highlights: [], navigated: true }]);
+		await h.page.load();
+		expect(h.painted()).toEqual([]);
+		expect(h.reportMessages().at(-1)).toMatchObject({ statuses: [], navigated: true });
+		expect(h.page.handle({ type: 'content.status' })).toEqual({ statuses: [], navigated: true });
+
+		const status = h.page.handle({ type: 'content.paint', highlights: [highlightOf('darkfox99', 'a')] });
+		expect(status).toEqual({ statuses: [{ id: 'a', status: 'exact' }], navigated: false });
+		expect(h.painted()).toEqual(['darkfox99']);
+		expect(h.reportMessages().at(-1)).toMatchObject({ navigated: false });
+	});
+
+	it('keeps what the investigator asked for when an earlier load answers after it', async () => {
+		document.body.innerHTML = '<p>alpha beta</p>';
+		let answer!: (v: ContentReady) => void;
+		const h = harness([new Promise((resolve) => { answer = resolve; })]);
+		const loading = h.page.load();
+		h.page.handle({ type: 'content.paint', highlights: [highlightOf('beta', 'asked')] });
+		answer({ highlights: [highlightOf('alpha', 'old')] });
+		await loading;
+		expect(h.painted()).toEqual(['beta']);
+	});
+
+	it('asks again after moving its address, and shows what the answer allows', async () => {
+		document.body.innerHTML = '<p>alpha beta</p>';
+		const h = harness([{ highlights: [highlightOf('alpha', 'a')] }, { highlights: [], navigated: true }]);
+		await h.page.load();
+		history.pushState(null, '', '/article/2');
+		h.page.changed();
+		h.settle();
+		await vi.waitFor(() => expect(h.reportMessages().at(-1)).toMatchObject({ navigated: true }));
+		expect(h.painted()).toEqual([]);
 	});
 });
 
@@ -268,11 +307,11 @@ describe('describing the selection', () => {
 		expect(h.page.describeSelection()).toEqual({ ok: false, reason: 'hidden-text' });
 	});
 
-	it('takes a selection whose visible text is the quote', () => {
+	it('takes a selection whose visible text is the quote, and says what was shown', () => {
 		document.body.innerHTML = '<p>Alice paid Bob</p>';
 		selectAll();
 		const h = harness();
-		expect(h.page.describeSelection()).toMatchObject({ ok: true, exact: 'Alice paid Bob' });
+		expect(h.page.describeSelection()).toMatchObject({ ok: true, exact: 'Alice paid Bob', shown: 'Alice paid Bob' });
 	});
 });
 

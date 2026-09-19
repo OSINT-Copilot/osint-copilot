@@ -32,6 +32,10 @@ export interface ServiceDeps {
 	activeTabId?: () => Promise<number | undefined>;
 	/** Highlights (highlights.ts). Without it, highlight requests are refused. */
 	highlights?: Highlights;
+	/** Whether highlights are shown again on a revisit (the choice, and the permission). */
+	revisitAllowed?: () => Promise<boolean>;
+	/** Records the investigator's choice about revisits; returns whether they are now on. */
+	setRevisit?: (allow: boolean) => Promise<boolean>;
 }
 
 function validTab(tabId: unknown): tabId is number {
@@ -116,6 +120,7 @@ export class Service {
 			selectedWorkspaceId: selected,
 			queue: items.map(item => toEntry(item, queue)),
 			capture: this.captureView(items),
+			revisitHighlights: (await this.deps.revisitAllowed?.()) ?? false,
 		};
 	}
 
@@ -271,6 +276,8 @@ export class Service {
 			case 'unpair':
 				await channel.unpair();
 				this.workspacesLive = false;
+				// Open pages stop showing highlights: they belong to the paired app's investigations.
+				await this.deps.highlights?.refreshAll();
 				return { ok: true, state: await this.state() };
 
 			case 'selectWorkspace': {
@@ -278,6 +285,8 @@ export class Service {
 				await storage.set({ [KEYS.selectedWorkspace]: request.workspaceId });
 				// Panels in other windows must show the new choice before they send.
 				this.deps.onChange?.();
+				// Open pages show the new investigation's highlights, not the old one's.
+				await this.deps.highlights?.refreshAll();
 				void queue.drain({ force: true });
 				return { ok: true, state: await this.state() };
 			}
@@ -333,7 +342,27 @@ export class Service {
 			case 'highlight.delete':
 			case 'highlight.findAgain':
 			case 'highlight.show':
+			case 'highlight.showHere':
 				return this.highlight(request);
+
+			case 'highlights.revisit': {
+				if (!this.deps.setRevisit) return this.fail('highlight_no_access');
+				const on = await this.deps.setRevisit(request.allow === true);
+				if (request.allow === true && !on) return this.fail('highlight_permission_needed');
+				this.deps.onChange?.();
+				return {
+					ok: true,
+					state: await this.state(),
+					note: on ? 'Highlights will show again when you come back to a page.' : 'Highlights now show only when you ask, on each page.',
+				};
+			}
+
+			case 'highlights.clearLocal': {
+				const h = this.deps.highlights;
+				if (!h) return this.fail('highlight_no_access');
+				const n = await h.clearLocal();
+				return { ok: true, state: await this.state(), note: `Deleted ${n === 1 ? '1 highlight' : `${n} highlights`} from this browser. Your investigations still have them.` };
+			}
 		}
 	}
 
@@ -361,6 +390,8 @@ export class Service {
 			case 'highlight.show':
 				if (typeof request.id === 'string') await h.scrollTo(request.tabId, request.id);
 				return { ok: true, state: await this.state(), highlights: await h.list(request.tabId) };
+			case 'highlight.showHere':
+				return settle(await h.showHere(request.tabId));
 			default:
 				return this.fail('highlight_no_access');
 		}

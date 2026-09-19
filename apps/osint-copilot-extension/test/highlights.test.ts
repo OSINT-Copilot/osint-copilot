@@ -3,7 +3,7 @@
 
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
-import type { ContentCommand, DescribeReply } from '../src/shared/highlights';
+import type { ContentCommand, ContentStatus, DescribeReply } from '../src/shared/highlights';
 import type { HighlightSelectors, Manifest } from '../src/shared/protocol';
 import { validateManifest } from '../src/shared/validate';
 import { Channel } from '../src/sw/channel';
@@ -22,7 +22,22 @@ const SELECTORS: HighlightSelectors = [
 	{ type: 'TextPositionSelector', start: 40, end: 49 },
 ];
 
-function world(opts: { selection?: DescribeReply; inject?: boolean; page?: { url: string; title: string } | null } = {}) {
+const ID0 = 'urn:uuid:5f0c6a2e-8b1d-4c3e-9f7a-1b2c3d4e5f60';
+
+interface WorldOptions {
+	selection?: DescribeReply;
+	inject?: boolean;
+	page?: { url: string; title: string } | null;
+	/** Highlights may be shown again on a revisit. */
+	revisit?: boolean;
+	/** The content script is already in the page. */
+	present?: boolean;
+	/** What an asked content script says about its page. */
+	status?: ContentStatus;
+	tabs?: number[];
+}
+
+function world(opts: WorldOptions = {}) {
 	const bundles: Manifest[] = [];
 	const fake = new FakeApp({
 		port: 23760,
@@ -45,28 +60,56 @@ function world(opts: { selection?: DescribeReply; inject?: boolean; page?: { url
 	const queue = new Queue({ indexedDB: new IDBFactory(), now: () => Date.now(), send: m => sendBundle(channel, m) });
 	const sent: Array<{ tabId: number; command: ContentCommand }> = [];
 	const css: string[] = [];
+	let page = opts.page === undefined ? PAGE : opts.page;
+	let present = opts.present ?? false;
+	let revisit = opts.revisit ?? false;
+	let injections = 0;
 	const tabs: HighlightTabs = {
-		page: async () => opts.page === undefined ? PAGE : opts.page,
-		inject: async () => opts.inject ?? true,
+		page: async () => page,
+		inject: async () => {
+			injections++;
+			if (opts.inject === false) return false;
+			present = true;
+			return true;
+		},
 		send: async <T>(tabId: number, command: ContentCommand) => {
 			sent.push({ tabId, command });
 			if (command.type === 'content.describeSelection') {
-				return (opts.selection ?? { ok: true, selectors: SELECTORS, exact: 'darkfox99' }) as T;
+				return (opts.selection ?? { ok: true, selectors: SELECTORS, exact: 'darkfox99', shown: 'darkfox99' }) as T;
 			}
+			if (!present) throw new Error('Could not establish connection. Receiving end does not exist.');
 			if (command.type === 'content.add') return { status: 'exact' } as T;
+			if (command.type === 'content.status') return (opts.status ?? { statuses: [], navigated: false }) as T;
+			if (command.type === 'content.paint') {
+				return { statuses: command.highlights.map(h => ({ id: h.id, status: 'exact' })), navigated: false } satisfies ContentStatus as T;
+			}
 			return { ok: true } as T;
 		},
 		insertCss: async (_tabId, text) => { css.push(text); },
+		all: async () => opts.tabs ?? [3],
 	};
 	let clock = Date.parse('2026-09-19T08:00:00.000Z');
+	let ids = 0;
 	const store = new HighlightStore(new IDBFactory());
-	const highlights = new Highlights({
+	const deps = {
 		store, queue, storage, tabs,
 		paired: async () => Boolean(await channel.pairing()),
+		revisit: async () => revisit,
 		now: () => clock,
-		uuid: () => '5f0c6a2e-8b1d-4c3e-9f7a-1b2c3d4e5f60',
-	});
-	return { highlights, store, queue, storage, channel, bundles, sent, css, tick: (ms: number) => { clock += ms; }, drain: () => queue.drain({ force: true }) };
+		uuid: () => `5f0c6a2e-8b1d-4c3e-9f7a-1b2c3d4e5f6${ids++}`,
+	};
+	const highlights = new Highlights(deps);
+	return {
+		highlights, store, queue, storage, channel, bundles, sent, css,
+		tick: (ms: number) => { clock += ms; },
+		drain: () => queue.drain({ force: true }),
+		/** The service worker stopped and started again: same storage, nothing in memory. */
+		restart: () => new Highlights(deps),
+		setPage: (next: { url: string; title: string } | null) => { page = next; },
+		setPresent: (value: boolean) => { present = value; },
+		setRevisit: (value: boolean) => { revisit = value; },
+		injections: () => injections,
+	};
 }
 
 describe('making a highlight', () => {
@@ -109,9 +152,31 @@ describe('making a highlight', () => {
 		expect(await world({ inject: false }).highlights.create(3)).toMatchObject({ ok: false, error: 'highlight_no_access' });
 	});
 
-	it('says why when nothing is selected, or too much', async () => {
+	it('says why when nothing is selected, too much, or text the page hides', async () => {
 		expect(await world({ selection: { ok: false, reason: 'no-selection' } }).highlights.create(3)).toMatchObject({ ok: false, error: 'highlight_no_selection' });
 		expect(await world({ selection: { ok: false, reason: 'too-long' } }).highlights.create(3)).toMatchObject({ ok: false, error: 'highlight_too_long' });
+		expect(await world({ selection: { ok: false, reason: 'hidden-text' } }).highlights.create(3)).toMatchObject({ ok: false, error: 'highlight_hidden_text' });
+	});
+});
+
+describe('making a highlight from the right-click menu', () => {
+	it('refuses a selection inside a frame: the page\'s own selection would be read instead', async () => {
+		const w = world();
+		expect(await w.highlights.create(3, undefined, { frameId: 2, selectionText: 'darkfox99' })).toMatchObject({ ok: false, error: 'highlight_frame' });
+		expect(w.sent).toEqual([]);
+	});
+
+	it('refuses when the selection read is not the one right-clicked', async () => {
+		const w = world();
+		expect(await w.highlights.create(3, undefined, { frameId: 0, selectionText: 'something else' })).toMatchObject({ ok: false, error: 'highlight_selection_changed' });
+		await w.drain();
+		expect(w.bundles).toEqual([]);
+		expect(await w.store.get(ID0)).toBeUndefined();
+	});
+
+	it('takes the one right-clicked, however Chrome spaced, cased or shortened it', async () => {
+		const w = world({ selection: { ok: true, selectors: SELECTORS, exact: 'darkfox99', shown: 'darkfox99' } });
+		expect(await w.highlights.create(3, undefined, { frameId: 0, selectionText: ' DARKFOX' })).toMatchObject({ ok: true });
 	});
 });
 
@@ -152,13 +217,102 @@ describe('editing and deleting', () => {
 	});
 });
 
+describe('which pages show highlights', () => {
+	const PAGE2 = { url: 'https://example.com/article/2', title: 'Second' };
+
+	it('shows none on a page that moved its address without loading, until the investigator asks', async () => {
+		const w = world({ present: true });
+		await w.highlights.create(3);
+		w.setPage(PAGE2);
+		await w.highlights.create(3);
+		// The document was loaded from PAGE; the tab's address is PAGE2 now (history.pushState).
+		expect(await w.highlights.contentReady(3, PAGE.url, null)).toEqual({ highlights: [], navigated: true });
+		w.highlights.contentReport(3, [], true);
+		const before = await w.highlights.list(3);
+		expect(before.shown).toBe('navigated');
+		expect(before.items.map(i => [i.id, i.status])).toEqual([[`${ID0.slice(0, -1)}1`, 'unknown']]);
+
+		const shown = await w.highlights.showHere(3);
+		const paint = w.sent.find(s => s.command.type === 'content.paint')?.command;
+		// PAGE2's highlight only: the address the tab shows, which the investigator sees.
+		expect(paint).toEqual({ type: 'content.paint', highlights: [{ id: `${ID0.slice(0, -1)}1`, selectors: SELECTORS }] });
+		expect(shown.ok && shown.list).toMatchObject({ shown: 'yes', items: [{ status: 'exact' }] });
+	});
+
+	it('asks an open page again after the service worker restarted', async () => {
+		const w = world({ present: true, status: { statuses: [{ id: ID0, status: 'fuzzy' }], navigated: false } });
+		await w.highlights.create(3);
+		const list = await w.restart().list(3);
+		expect(w.sent.at(-1)?.command).toEqual({ type: 'content.status' });
+		expect(list).toMatchObject({ shown: 'yes', items: [{ id: ID0, status: 'fuzzy' }] });
+	});
+
+	it('goes into a page on its own only when revisits are allowed', async () => {
+		const w = world();
+		await w.highlights.create(3);
+		expect(w.injections()).toBe(1);
+		w.setPresent(false);
+		const notAllowed = await w.restart().list(3);
+		expect(w.injections()).toBe(1);
+		expect(notAllowed).toMatchObject({ shown: 'no', items: [{ status: 'unknown' }] });
+
+		w.setRevisit(true);
+		const allowed = await w.restart().list(3);
+		expect(w.injections()).toBe(2);
+		expect(allowed.shown).toBe('pending');
+	});
+
+	it('forgets what a page said once the tab loads another document', async () => {
+		const w = world({ present: true });
+		await w.highlights.create(3);
+		expect((await w.highlights.list(3)).shown).toBe('yes');
+		// Reloaded: the new document has no content script, since revisits are not allowed.
+		w.highlights.forgetTab(3);
+		w.setPresent(false);
+		expect(await w.highlights.list(3)).toMatchObject({ shown: 'no', items: [{ status: 'unknown' }] });
+	});
+
+	it('shows none once unpaired', async () => {
+		const w = world();
+		await w.highlights.create(3);
+		await w.channel.unpair();
+		expect(await w.highlights.contentReady(3, PAGE.url, null)).toEqual({ highlights: [] });
+		expect((await w.highlights.list(3)).items).toEqual([]);
+	});
+
+	it('has every open page ask again, and forgets what they said', async () => {
+		const w = world({ present: true, tabs: [3, 7] });
+		await w.highlights.create(3);
+		await w.highlights.refreshAll();
+		expect(w.sent.filter(s => s.command.type === 'content.refresh').map(s => s.tabId)).toEqual([3, 7]);
+		await w.highlights.list(3);
+		expect(w.sent.at(-1)?.command).toEqual({ type: 'content.status' });
+	});
+
+	it('deletes every highlight kept in this browser without telling the app, even with the queue full', async () => {
+		const w = world({ present: true });
+		await w.highlights.create(3);
+		await w.storage.set({ [KEYS.selectedWorkspace]: OTHER_WS });
+		await w.highlights.create(3);
+		await w.drain();
+		expect(w.bundles).toHaveLength(2);
+		// Nothing more can be queued; deleting here must not need to.
+		vi.spyOn(w.queue, 'enqueue').mockRejectedValue(new Error('must not queue'));
+		expect(await w.highlights.clearLocal()).toBe(2);
+		expect(await w.store.count()).toBe(0);
+		await w.drain();
+		expect(w.bundles).toHaveLength(2);
+		expect(w.sent.at(-1)?.command).toEqual({ type: 'content.refresh' });
+	});
+});
+
 describe('the content script', () => {
 	it('gets the highlights of the page Chrome says it is on, in the chosen investigation only', async () => {
 		const w = world();
 		await w.highlights.create(3);
 		const names = { exact: 'oc-aaaaaaaaaaaa', fuzzy: 'oc-bbbbbbbbbbbb' };
 		const here = await w.highlights.contentReady(3, 'https://example.com/article#top', names);
-		expect(here.highlights).toEqual([{ id: 'urn:uuid:5f0c6a2e-8b1d-4c3e-9f7a-1b2c3d4e5f60', selectors: SELECTORS }]);
+		expect(here).toEqual({ highlights: [{ id: ID0, selectors: SELECTORS }] });
 		expect(w.css).toHaveLength(1);
 		expect(w.css[0]).toContain('::highlight(oc-aaaaaaaaaaaa)');
 		expect((await w.highlights.contentReady(3, 'https://example.com/other', names)).highlights).toEqual([]);

@@ -8,7 +8,9 @@
  * sends a note and an entity, and checks both bundles landed in the workspace's
  * .osint-inbox/pending with MACs that verify. It captures a page the same way, through
  * the three-step upload, and checks the committed archive's digest. It also checks that an ordinary web page
- * cannot read the app's port.
+ * cannot read the app's port. It makes highlights, and checks when they are shown again:
+ * on a revisit only once allowed, on request otherwise, and on a single-page site never
+ * for an address the page moved to by itself.
  *
  * The side panel is opened as a tab (chrome-extension://<id>/sidepanel.html), since
  * Playwright cannot click the toolbar button that opens the real panel. The panel attaches
@@ -62,6 +64,26 @@ function chromiumPath(): string | undefined {
 /** An ordinary web page on another 127.0.0.1 port, standing in for any site the user visits. */
 const ARTICLE = '<!doctype html><title>Leak report</title><h1>Leak report</h1><p>Wallet 0x52908400098527886E0F7030069857D2E4169EE7 was seen on the forum.</p>';
 
+/**
+ * A single-page site: one document for both addresses, whose links change the address
+ * with history.pushState and redraw, as React or Vue routers do.
+ */
+const SPA = `<!doctype html><title>Single page</title><main id="view"></main>
+<a id="to-one" href="/spa">One</a> <a id="to-two" href="/spa/two">Two</a>
+<script>
+const views = { '/spa': 'Page one mentions nobody in particular.', '/spa/two': 'Page two names Northgate Freight as the shipper.' };
+function draw() { document.getElementById('view').innerHTML = '<p>' + views[location.pathname] + '</p>'; }
+document.addEventListener('click', (e) => {
+	const a = e.target.closest('a');
+	if (!a) return;
+	e.preventDefault();
+	history.pushState(null, '', a.getAttribute('href'));
+	draw();
+});
+addEventListener('popstate', draw);
+draw();
+</script>`;
+
 /** A page whose text the highlight test changes between visits. */
 const STORY_TEXT = 'Transfers were routed through Brightwater Holdings before reaching the second account.';
 let story = STORY_TEXT;
@@ -69,6 +91,10 @@ let story = STORY_TEXT;
 function startWebsite(): Promise<{ url: string; origin: string; close(): Promise<void> }> {
 	const server = http.createServer((req, res) => {
 		res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+		if (req.url === '/spa' || req.url === '/spa/two') {
+			res.end(SPA);
+			return;
+		}
 		if (req.url === '/story') {
 			res.end(`<!doctype html><title>Story</title><h1>Story</h1><p>Intro paragraph.</p><p>${story}</p>`
 				+ '<p id="hidden">Alice paid <span style="display:none">no money to </span>Bob in cash.</p>');
@@ -316,30 +342,45 @@ function painted(page: Page): Promise<string[]> {
 	});
 }
 
-test('highlights a selection, files it, paints it again on a revisit, and lists it when the text is gone', async () => {
-	story = STORY_TEXT;
-	// With permission to read pages, as in the capture test: that is what brings highlights back.
+/**
+ * A copy of the build whose manifest grants reading every page at install, as page capture
+ * would have: permission, but not the investigator's choice to have highlights come back.
+ */
+function grantedBuild(): string {
 	const granted = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-e2e-granted-'));
 	fs.cpSync(dist, granted, { recursive: true });
 	const manifestPath = path.join(granted, 'manifest.json');
 	const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 	manifest.host_permissions.push('<all_urls>');
 	fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+	return granted;
+}
+
+/** Opens the panel as a tab and pairs it with the harness. */
+async function pairedPanel(ctx: BrowserContext): Promise<Page> {
+	const id = await extensionId(ctx);
+	const panel = await ctx.newPage();
+	panel.on('dialog', (d) => void d.accept());
+	await panel.goto(`chrome-extension://${id}/sidepanel.html`);
+	await panel.fill('#pair-input', await harness.pairingString());
+	await panel.click('#pair-form button[type=submit]');
+	await expect(panel.locator('#connection')).toHaveText('Connected');
+	await expect(panel.locator('#workspace-current')).toHaveText('To: Case Alpha');
+	return panel;
+}
+
+test('highlights a selection, files it, paints it again on a revisit, and lists it when the text is gone', async () => {
+	story = STORY_TEXT;
+	const granted = grantedBuild();
 	const hlProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-e2e-profile-'));
 	const ctx = await launch(hlProfile, granted);
 	try {
-		const id = await extensionId(ctx);
 		const site = await ctx.newPage();
 		const storyUrl = `${website.origin}/story`;
 		await site.goto(storyUrl);
-		const panel = await ctx.newPage();
-		panel.on('dialog', (d) => void d.accept());
-		await panel.goto(`chrome-extension://${id}/sidepanel.html`);
-		await panel.fill('#pair-input', await harness.pairingString());
-		await panel.click('#pair-form button[type=submit]');
-		await expect(panel.locator('#connection')).toHaveText('Connected');
-		await expect(panel.locator('#workspace-current')).toHaveText('To: Case Alpha');
-		await expect(panel.locator('#highlight-revisit')).toBeHidden();
+		const panel = await pairedPanel(ctx);
+		// The extension may read pages (as after page capture), but revisits were not allowed.
+		await expect(panel.locator('#highlight-revisit')).toBeVisible();
 
 		await site.bringToFront();
 		await expect(panel.locator('#page .page-url')).toHaveText(storyUrl);
@@ -363,6 +404,21 @@ test('highlights a selection, files it, paints it again on a revisit, and lists 
 		await expect.poll(() => painted(site), { timeout: 10_000 }).toEqual([phrase]);
 		expect(await site.evaluate(() => document.querySelectorAll('[class*=highlight], mark').length)).toBe(0);
 		await expect(panel.locator('#highlights li .quote')).toHaveText([phrase]);
+
+		// Not allowed to come back on its own: a reload shows nothing, although the extension
+		// may read pages. Until the investigator asks, on this page.
+		await site.reload();
+		await expect(panel.locator('#highlight-unshown')).toBeVisible({ timeout: 10_000 });
+		expect(await painted(site)).toEqual([]);
+		await panel.click('#highlight-show-here');
+		await expect.poll(() => painted(site), { timeout: 10_000 }).toEqual([phrase]);
+		await expect(panel.locator('#highlight-unshown')).toBeHidden();
+		await expect(panel.locator('#highlights li .status')).toHaveText(['On the page.']);
+
+		// Allowed: from here on, highlights come back on their own.
+		await panel.click('#highlight-grant');
+		await expect(panel.locator('#highlight-revisit-on')).toBeVisible();
+		await expect(panel.locator('#highlight-revisit')).toBeHidden();
 
 		// A selection holding text the page hides is refused: the quote would not be what
 		// the investigator saw. Chrome's own reading of the selection leaves hidden text out.
@@ -408,6 +464,52 @@ test('highlights a selection, files it, paints it again on a revisit, and lists 
 		story = STORY_TEXT;
 		await ctx.close();
 		fs.rmSync(hlProfile, { recursive: true, force: true });
+		fs.rmSync(granted, { recursive: true, force: true });
+	}
+});
+
+test('on a single-page site, shows the highlights of an address the page moved to only when asked', async () => {
+	const granted = grantedBuild();
+	const spaProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-e2e-profile-'));
+	const ctx = await launch(spaProfile, granted);
+	try {
+		const site = await ctx.newPage();
+		await site.goto(`${website.origin}/spa/two`);
+		const panel = await pairedPanel(ctx);
+		await panel.click('#highlight-grant');
+		await expect(panel.locator('#highlight-revisit-on')).toBeVisible();
+
+		// A highlight on the second address, loaded as a document of its own.
+		await site.bringToFront();
+		await expect(panel.locator('#page .page-url')).toHaveText(`${website.origin}/spa/two`);
+		const phrase = 'Northgate Freight';
+		await selectText(site, phrase);
+		await panel.click('#highlight-create');
+		await expect.poll(() => painted(site), { timeout: 10_000 }).toEqual([phrase]);
+
+		// The first address, loaded; then the site's own link moves it to the second.
+		await site.goto(`${website.origin}/spa`);
+		await expect(panel.locator('#page .page-url')).toHaveText(`${website.origin}/spa`);
+		await site.click('#to-two');
+		await expect(site).toHaveURL(`${website.origin}/spa/two`);
+		await expect(site.locator('#view')).toContainText(phrase);
+		// Chrome still names the document by where it was loaded from, so the extension will
+		// not show another address's highlights because the page moved its address.
+		await expect(panel.locator('#highlight-unshown-text')).toContainText('changed its address', { timeout: 10_000 });
+		expect(await painted(site)).toEqual([]);
+
+		// The investigator, looking at this address, asks.
+		await panel.click('#highlight-show-here');
+		await expect.poll(() => painted(site), { timeout: 10_000 }).toEqual([phrase]);
+		await expect(panel.locator('#highlight-unshown')).toBeHidden();
+
+		// Back to the address the document was loaded from: its own highlights (none), on their own.
+		await site.goBack();
+		await expect(site).toHaveURL(`${website.origin}/spa`);
+		await expect.poll(() => painted(site), { timeout: 10_000 }).toEqual([]);
+	} finally {
+		await ctx.close();
+		fs.rmSync(spaProfile, { recursive: true, force: true });
 		fs.rmSync(granted, { recursive: true, force: true });
 	}
 });

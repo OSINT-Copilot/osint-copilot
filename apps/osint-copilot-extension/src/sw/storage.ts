@@ -22,6 +22,11 @@ export const KEYS = {
 	pairing: 'pairing',
 	workspaces: 'workspaces',
 	selectedWorkspace: 'selectedWorkspaceId',
+	/**
+	 * The investigator allowed highlights to be shown again on a revisit, from the panel.
+	 * Kept apart from the permission to read pages, which page capture also asks for.
+	 */
+	revisitHighlights: 'revisitHighlights',
 } as const;
 
 /** What pairing leaves behind. pairSecret is not in it: it is discarded once K is derived. */

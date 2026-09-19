@@ -42,6 +42,9 @@ const MESSAGES: Record<string, string> = {
 	highlight_too_long: 'That selection is too long to highlight (over 4000 characters). Select less.',
 	highlight_hidden_text: 'The page hides some text inside that selection, so the quote would not be what you see. Nothing was highlighted. Select a passage without hidden text in it (a collapsed section, for example, holds hidden text).',
 	highlight_gone: 'That highlight is no longer stored in this browser.',
+	highlight_frame: 'Highlights work on the page itself, not inside a frame embedded in it (an embedded document, video or widget). Nothing was highlighted.',
+	highlight_selection_changed: 'The selection on the page changed before it could be highlighted, so nothing was. Select the text again and try once more.',
+	highlight_permission_needed: 'Showing highlights again on a revisit needs Chrome\'s permission to read the pages you visit. Press Allow and accept it when Chrome asks.',
 	blob_missing: 'The captured files are no longer stored in the browser (site data may have been cleared). Delete this item and capture the page again.',
 	// Protocol codes (PROTOCOL.md §9).
 	pair_expired: 'That pairing string has expired or was already used. Start a new pairing in the app and paste the new string.',
