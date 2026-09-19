@@ -67,8 +67,10 @@ const highlightTabs: HighlightTabs = {
 	},
 	send: <T>(tabId: number, command: ContentCommand) => chrome.tabs.sendMessage(tabId, command, { frameId: 0 }) as Promise<T>,
 	async insertCss(tabId, css) {
-		// USER origin: the page's own !important rules cannot restyle or hide our marks.
-		await chrome.scripting.insertCSS({ target: { tabId, frameIds: [0] }, css, origin: 'USER' });
+		// Author origin. A user stylesheet would put our rules above the page's own
+		// !important ones, but Chromium paints no ::highlight() styled from a user sheet
+		// (it silently drops the highlight, even one an author rule styles too).
+		await chrome.scripting.insertCSS({ target: { tabId, frameIds: [0] }, css, origin: 'AUTHOR' });
 	},
 	async all() {
 		return (await chrome.tabs.query({})).flatMap(tab => (tab.id !== undefined && tab.id >= 0 ? [tab.id] : []));

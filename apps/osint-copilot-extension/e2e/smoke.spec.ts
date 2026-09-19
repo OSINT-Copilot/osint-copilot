@@ -442,10 +442,22 @@ test('highlights a selection, files it, paints it again on a revisit, and lists 
 		expect((await harness.pending()).length).toBe(beforeHidden);
 		await expect(panel.locator('#highlights li')).toHaveCount(1);
 
+		// Painted for real, not only registered: the page looks different with the mark than
+		// without it. (Chromium registers a highlight it then never paints when its style
+		// comes from a user stylesheet; the registry alone cannot tell.)
+		await site.evaluate(() => getSelection()!.removeAllRanges());
+		const markArea = await site.evaluate(() => {
+			const range = [...CSS.highlights.values()].flatMap((h) => [...h as Highlight])[0] as Range;
+			const r = range.getBoundingClientRect();
+			return { x: Math.floor(r.x), y: Math.floor(r.y), width: Math.ceil(r.width), height: Math.ceil(r.height) };
+		});
+		const withMark = await site.screenshot({ clip: markArea });
+
 		// The page's own scripts share the registry and can wipe it: the next change to the
 		// page makes the painter notice and put its marks back.
 		await site.evaluate(() => CSS.highlights.clear());
 		expect(await painted(site)).toEqual([]);
+		expect(withMark.equals(await site.screenshot({ clip: markArea })), 'the highlight is registered but not painted').toBe(false);
 		await site.evaluate(() => document.body.append(document.createElement('span')));
 		await expect.poll(() => painted(site), { timeout: 5_000 }).toEqual([phrase]);
 

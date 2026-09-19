@@ -121,7 +121,7 @@ export interface HighlightTabs {
 	inject(tabId: number): Promise<boolean>;
 	/** Sends a command to the tab's top-frame content script. */
 	send<T>(tabId: number, command: ContentCommand): Promise<T>;
-	/** Adds the ::highlight() stylesheet to the tab's top frame, with origin USER. */
+	/** Adds the ::highlight() stylesheet to the tab's top frame. */
 	insertCss(tabId: number, css: string): Promise<void>;
 	/** Every open tab. */
 	all(): Promise<number[]>;

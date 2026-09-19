@@ -117,9 +117,11 @@ export function isHighlightNames(value: unknown): value is HighlightNames {
 }
 
 /**
- * The ::highlight() rules for a painter's names, injected with origin USER: a user
- * !important rule beats the page's own !important rules, so a page cannot restyle or hide
- * our marks with CSS. Only background, colour and text decoration are allowed in
+ * The ::highlight() rules for a painter's names, injected as an author stylesheet (a user
+ * one is not painted: see sw/index.ts). A page could restyle our marks with its own
+ * !important rule, but only by reading the random names from the registry first, and it
+ * can delete the marks from there anyway: what a page shows is cosmetic, the record is in
+ * the investigation. Only background, colour and text decoration are allowed in
  * ::highlight(), so a mark cannot carry anything but colour.
  */
 export function highlightCss(names: HighlightNames): string {
