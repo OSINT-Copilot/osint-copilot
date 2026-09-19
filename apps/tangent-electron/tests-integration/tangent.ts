@@ -19,6 +19,10 @@ export type TangentOptions = {
 	// When true, will delete the entire workspace when finished
 	// When a string, will delete tangents & workspaces with that prefix
 	resetWorkspace: boolean | string
+	// Added to the app's environment, and to its command line after the workspace, for
+	// a test that needs a switch the others must not get (e.g. a throwaway userData).
+	launchEnv: Record<string, string>
+	launchArgs: string[]
 }
 
 type TangentFixtures = {
@@ -34,12 +38,16 @@ export const test = base.extend<TangentFixtures & TangentOptions>({
 	workspace: [defaultWorkspace, { option: true }],
 	resetWorkspaceInfo: [true, { option: true }],
 	resetWorkspace: [true, { option: true }],
+	launchEnv: [{}, { option: true }],
+	launchArgs: [[], { option: true }],
 
 	tangent: async ({
 		workspaceInfoName,
 		workspace,
 		resetWorkspaceInfo,
-		resetWorkspace
+		resetWorkspace,
+		launchEnv,
+		launchArgs
 	}, use) => {
 		// Set up the app
 
@@ -66,9 +74,10 @@ export const test = base.extend<TangentFixtures & TangentOptions>({
 		const platformArgs = process.platform === 'linux' ? ['--ozone-platform=x11'] : []
 
 		const electronApp = await electron.launch({
-			args: ['.', workspace, ...platformArgs],
+			args: ['.', workspace, ...platformArgs, ...launchArgs],
 			env: {
 				...childEnv,
+				...launchEnv,
 				INTEGRATION_TEST: '1',
 				WORKSPACE_NAME: workspaceInfoName
 			}
