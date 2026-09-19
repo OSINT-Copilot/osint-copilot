@@ -3136,21 +3136,38 @@ color: var(--text - muted);
 const NON_ENDPOINT_ENTITY_PROPERTIES = new Set(['addressEntity', 'proof']);
 
 /**
+ * Edge direction (from, to) for the bundled types whose featured list names the
+ * endpoints to-first. FollowTheMoney declares each edge's source and target, but the
+ * bundled snapshot does not carry them, so featured order stood in for it and ran these
+ * backwards: an employee works for an employer, a participant takes part in a project,
+ * a trip goes from its start location to its end location.
+ */
+const INTERVAL_EDGE_DIRECTION: Record<string, [string, string]> = {
+    Employment: ['employee', 'employer'],
+    ProjectParticipant: ['participant', 'project'],
+    Trip: ['startLocation', 'endLocation'],
+};
+
+/**
  * The two properties an FTM interval's edge runs between, in order: from, then to.
  *
  * A connection is one edge, so it keeps only these two; the schema's other entity
  * references (Payment's accounts, EconomicActivity's banks) have nowhere to go. The
- * order is featured, then required, then the schema's own properties, then inherited
- * ones: allProperties lists parents first, which made Payment payer -> payerAccount and
- * Event Thing's addressEntity -> proof.
+ * order is the type's edge direction when INTERVAL_EDGE_DIRECTION names one (a type
+ * derived from it included), then featured, then required, then the schema's own
+ * properties, then inherited ones: allProperties lists parents first, which made
+ * Payment payer -> payerAccount and Event Thing's addressEntity -> proof.
  *
- * Fewer than two comes back for every custom type (a custom property cannot reference an
- * entity) and for single-reference types such as Sanction; the modal then shows plain
- * From/To selects.
+ * Fewer than two comes back for a type made in the custom-type form (its properties
+ * cannot reference an entity, though a hand-written custom-types.json entry can) and for
+ * single-reference types such as Sanction; the modal then shows plain From/To selects.
  */
 function intervalEndpointProps(schemaName: string, config: FTMEntityConfig): string[] {
     const own = Object.keys(ftmSchemaService.getSchema(schemaName)?.properties ?? {});
+    const direction = Object.entries(INTERVAL_EDGE_DIRECTION)
+        .find(([type]) => ftmSchemaService.extendsParent(schemaName, type))?.[1] ?? [];
     const ordered = [
+        ...direction,
         ...config.featuredProperties,
         ...config.requiredProperties,
         ...own,

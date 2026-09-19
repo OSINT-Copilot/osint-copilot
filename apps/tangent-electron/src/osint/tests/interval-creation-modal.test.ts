@@ -12,7 +12,8 @@ vi.mock('obsidian', async (importOriginal) => {
 
 /**
  * The form that creates an FTM connection. It used to drop every field the user typed,
- * link the wrong pair of entities for types like Payment, leave out the dragged entities
+ * link the wrong pair of entities for types like Payment (and the right pair backwards
+ * for Employment and Trip), leave out the dragged entities
  * whenever the range was an abstract parent (LegalEntity, Organization, Thing), and refuse
  * every custom connection type outright.
  */
@@ -150,6 +151,31 @@ describe('FTMIntervalCreationModal', () => {
         await create(root, manager);
 
         expect(manager.createConnection).toHaveBeenCalledWith(ann.id, acme.id, 'Payment', {}, { schemaFamily: 'ftm' });
+    });
+
+    // Their featured lists name the endpoints to-first; the edge still runs from the
+    // employee, the participant and the start location.
+    it.each([
+        ['Employment', ann, acme, ['Employee *', 'Employer *']],
+        ['ProjectParticipant', acme, entity('pr1', 'Project', 'Bridge'), ['Participant *', 'Project *']],
+        ['Trip', entity('a1', 'Address', 'Home'), entity('a2', 'Address', 'Office'), ['Start location *', 'End location *']],
+    ] as const)('%s runs from the entity its edge starts at', async (schema, from, to, labels) => {
+        const { manager, root } = openModal(schema, [from, to], from.id, to.id);
+
+        const selects = endpointSelects(root);
+        expect(selects.map((s) => s.previousElementSibling?.textContent)).toEqual(labels);
+        expect(selects.map((s) => s.value)).toEqual([from.id, to.id]);
+        await create(root, manager);
+
+        expect(manager.createConnection).toHaveBeenCalledWith(from.id, to.id, schema, {}, { schemaFamily: 'ftm' });
+    });
+
+    it('runs a type derived from Employment the same way', () => {
+        ftmSchemaService.registerSchema({ name: 'TestCustomLink', label: 'Test link', extends: ['Employment'] });
+        const { root } = openModal('TestCustomLink', [ann, acme], ann.id, acme.id);
+
+        expect(field<HTMLSelectElement>(root, 'Employee').value).toBe(ann.id);
+        expect(field<HTMLSelectElement>(root, 'Employer').value).toBe(acme.id);
     });
 
     it('prefills the endpoints of any type from the dragged pair, by position', () => {
