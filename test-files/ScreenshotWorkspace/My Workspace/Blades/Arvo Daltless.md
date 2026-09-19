@@ -1,1 +1,0 @@
-Trick's character. A Whisper of mysterious origin.

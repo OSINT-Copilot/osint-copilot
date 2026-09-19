@@ -187,11 +187,31 @@ test('pairs from the side panel and sends a note and an entity into the investig
 	await panel.click('#entity-form button[type=submit]');
 	await expect.poll(pendingCount, { timeout: 15_000 }).toBe(2);
 
+	// A username on another platform than the page's. What it chose goes with it: the next
+	// entity starts with the page's site as its platform, and the first chain.
+	await panel.fill('#entity-value', '0x52908400098527886E0F7030069857D2E4169EE7');
+	await expect(panel.locator('#entity-chain')).toHaveValue('eth');
+	await panel.fill('#entity-value', 'alice');
+	await panel.selectOption('#entity-kind', 'username');
+	await expect(panel.locator('#entity-platform')).toHaveValue('127.0.0.1');
+	await panel.fill('#entity-platform', 'github.com');
+	await panel.click('#entity-form button[type=submit]');
+	await expect.poll(pendingCount, { timeout: 15_000 }).toBe(3);
+	await expect(panel.locator('#entity-kind')).toHaveValue('');
+	await expect(panel.locator('#platform-row')).toBeHidden();
+	await expect(panel.locator('#chain-row')).toBeHidden();
+	await panel.fill('#entity-value', 'bob');
+	await panel.selectOption('#entity-kind', 'wallet');
+	await expect(panel.locator('#entity-chain')).toHaveValue('btc');
+	await panel.selectOption('#entity-kind', 'username');
+	await expect(panel.locator('#entity-platform')).toHaveValue('127.0.0.1');
+
 	const bundles = await harness.pending();
 	for (const bundle of bundles) expect(bundle.macOk, `mac of ${bundle.bundleId}`).toBe(true);
 	const stored = bundles.map(b => b.stored as Record<string, any>);
 	const note = stored.find(s => s.kind === 'note');
-	const entity = stored.find(s => s.kind === 'entity');
+	const entity = stored.find(s => s.kind === 'entity' && s.entity.kind === 'email');
+	const username = stored.find(s => s.kind === 'entity' && s.entity.kind === 'username');
 	expect(note).toMatchObject({
 		workspaceId,
 		page: { url: website.url, title: 'Profile of alice' },
@@ -203,6 +223,7 @@ test('pairs from the side panel and sends a note and an entity into the investig
 		page: { url: website.url, title: 'Profile of alice' },
 		entity: { kind: 'email', value: 'alice@example.com', context: 'Contact line' },
 	});
+	expect(username?.entity).toEqual({ kind: 'username', value: 'alice', platform: 'github.com' });
 
 	// Both delivered, so the extension's queue is empty again.
 	await expect(panel.locator('#queue li.hint')).toBeVisible();

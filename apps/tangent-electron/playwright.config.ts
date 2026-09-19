@@ -1,4 +1,3 @@
-import path from 'path'
 import { defineConfig } from '@playwright/test'
 import type { TangentOptions } from './tests-integration/tangent'
 
@@ -16,16 +15,6 @@ export default defineConfig<TangentOptions>({
 		{
 			name: 'Benchmarks',
 			testMatch: /.*tests-integration.*\.bench\.(ts)/,
-		},
-		{
-			name: 'Screenshots',
-			testMatch: /.*tests-integration.*\.screenshot\.ts/,
-			use: {
-				workspace: path.resolve(path.join(
-					__dirname, '../../test-files/ScreenshotWorkspace/My Workspace'
-				)),
-				resetWorkspace: 'test'
-			}
 		}
 	],
 	workers: 1

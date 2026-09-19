@@ -1,1 +1,0 @@
-A low-ranking inspector in [[The Bluecoats]].

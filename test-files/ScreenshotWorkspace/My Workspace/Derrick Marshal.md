@@ -1,1 +1,0 @@
-Vice President of [[Demo Corp]].

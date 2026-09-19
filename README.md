@@ -10,9 +10,10 @@ toolset on top of it. See [NOTICE](./NOTICE) for attribution and a statement of 
 ## What it adds to Tangent
 
 * **Entities and connections** as plain markdown notes, with an FTM / OIDSF schema system
-  (141 bundled entity and relationship types, plus user-defined ones).
-* **Entity graph** — a Cytoscape canvas with multiple graph workspaces, confidence filtering,
-  undo/redo history and saved layouts.
+  (141 bundled entity and relationship types, plus user-defined ones). Each records its sources
+  and a confidence level derived from them (unverified to conflicted) in its front matter.
+* **Entity graph** — a Cytoscape canvas with multiple graph workspaces, undo/redo history and
+  saved layouts.
 * **Timeline** and **map** views derived from the same notes.
 * **Chat agent** driving a local CLI runtime (Claude Code, Codex, or a custom one) that can read
   the vault, propose graph operations, and apply them on approval.

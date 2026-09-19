@@ -306,7 +306,7 @@ const ENTITY_ICONS: Record<string, string> = {
  */
 export const COMMON_PROPERTIES = ["notes", "source", "image", "image_url"];
 
-/** Persisted confidence for investigator-facing filtering (graph, lists). */
+/** Persisted confidence, derived from sources (see osint-confidence-engine); shown in the note's front matter. */
 export const OSINT_CONFIDENCE_LEVELS = ['unverified', 'low', 'medium', 'high', 'conflicted'] as const;
 export type OsintConfidence = (typeof OSINT_CONFIDENCE_LEVELS)[number];
 

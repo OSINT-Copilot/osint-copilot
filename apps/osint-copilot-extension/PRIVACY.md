@@ -42,7 +42,7 @@ Removing the extension deletes all of this from your browser. What was sent to t
 
 | Permission | Why |
 |---|---|
-| Storage | The pairing key, your choice of investigation, and the queue and highlights described above. |
+| Storage | The pairing key, your choice of investigation, the list of investigations, whether highlights come back on a revisit, and text you right-click to send as an entity. The queue and your highlights are in IndexedDB, which needs no permission. |
 | Side panel | The extension's panel. |
 | Context menus | The right-click items for highlighting, sending an entity and capturing a page. |
 | Active tab | Seeing the current page's address and title, and its selected text, after you click the extension's button or one of its menu items there. |

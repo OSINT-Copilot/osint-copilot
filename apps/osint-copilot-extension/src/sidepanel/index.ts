@@ -66,7 +66,7 @@ let page: PageInfo = { tabId: null, url: null, title: '', problem: null };
  * would file evidence against the wrong source.
  */
 let pending: PendingSelection | null = null;
-/** Once the user picks a kind or platform by hand, typing no longer overrides it. */
+/** Once the user picks a kind or platform by hand, typing no longer overrides it, until the next entity. */
 let kindChosen = false;
 let platformEdited = false;
 
@@ -295,14 +295,30 @@ function reclassify(): void {
 	syncKindRows();
 }
 
+/** A new entity: the page's site is its platform again, and the chain starts from the top. */
+function resetEntityChoices(): void {
+	kindChosen = false;
+	platformEdited = false;
+	ui.entityChain.selectedIndex = 0;
+	ui.entityPlatform.value = platformFromUrl(page.url ?? undefined) ?? '';
+}
+
 function setEntityValue(text: string): void {
 	// Not cut to fit: the protocol rejects rather than truncates, and a clipped value would
 	// be a different entity. Too long shows the length error on Send.
 	ui.entityValue.value = text.trim();
-	kindChosen = false;
+	resetEntityChoices();
 	ui.entityProblem.hidden = true;
 	reclassify();
 	ui.entityValue.focus();
+}
+
+/** After a send: an empty form, with nothing the last entity chose carried over. */
+function resetEntityForm(): void {
+	ui.entityValue.value = '';
+	ui.entityContext.value = '';
+	resetEntityChoices();
+	reclassify();
 }
 
 async function takePending(): Promise<void> {
@@ -403,12 +419,7 @@ ui.entityForm.addEventListener('submit', async event => {
 	ui.entityProblem.hidden = true;
 	const where = pageOrComplain();
 	if (!where) return;
-	if (await act({ type: 'send', item: { kind: 'entity', page: where, entity }, workspaceId: ui.workspace.value })) {
-		ui.entityValue.value = '';
-		ui.entityContext.value = '';
-		kindChosen = false;
-		reclassify();
-	}
+	if (await act({ type: 'send', item: { kind: 'entity', page: where, entity }, workspaceId: ui.workspace.value })) resetEntityForm();
 });
 
 ui.capture.addEventListener('click', () => {

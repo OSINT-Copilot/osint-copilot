@@ -82,6 +82,7 @@ input, select, textarea {
 textarea { resize: vertical; }
 
 .row { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+.row[hidden] { display: none; }
 .row > input, .row > select { flex: 1; }
 
 button {

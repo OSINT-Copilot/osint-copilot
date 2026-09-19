@@ -33,11 +33,10 @@
     "test": "vitest run && npm run build:dev && npm run test:end-to-end",
     "test:no-build": "vitest run && npm run test:end-to-end",
     "test:unit": "vitest run --project tangent-electron-unit-core --project tangent-electron-unit-web",
-    "test:integration": "vitest --project integration",
+    "test:integration": "vitest run --project tangent-electron-integration",
     "test:end-to-end": "playwright test --project Tests",
     "demo": "playwright test --project Demo",
-    "svelte-dev": "webpack watch",
-    "screenshots": "playwright test --project Screenshots"
+    "svelte-dev": "webpack watch"
   },
   "keywords": [],
   "author": {

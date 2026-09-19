@@ -3,6 +3,7 @@ The system menu in the upper-right-corner of the window gives you access to the 
 
 There are multiple sections:
 * [[Appearance]]
+* [[OSINT Copilot]]
 * [[Attachments]]
 * [[Creation Rules]]
 * [[Database]]

@@ -50,7 +50,7 @@ Collect material from web pages (notes, entities, page captures and highlights) 
 
 **Permission justifications**
 
-- `storage`: Stores the pairing key for the local OSINT Copilot application, the chosen investigation, items waiting to be sent, and the user's highlights so they can be shown again.
+- `storage`: Keeps the pairing key for the local OSINT Copilot application, the list of investigations and the one chosen, and whether the user allowed highlights to come back on a revisit (`chrome.storage.local`); and text the user right-clicks to send as an entity, until the side panel takes it (`chrome.storage.session`, cleared when the browser closes). Items waiting to be sent and the user's highlights are kept in the extension's IndexedDB, which needs no permission.
 - `sidePanel`: The extension's user interface is a side panel.
 - `contextMenus`: Right-click items to highlight selected text, send it as an entity, and capture the page.
 - `activeTab`: Reads the current tab's address, title and selected text only after the user clicks the extension's button or menu item on that tab.
