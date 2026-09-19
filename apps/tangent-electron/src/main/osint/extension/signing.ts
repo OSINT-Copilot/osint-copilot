@@ -29,8 +29,6 @@ export function sha256Hex(data: Buffer | string): string {
     return createHash('sha256').update(data).digest('hex');
 }
 
-export const EMPTY_SHA256 = sha256Hex('');
-
 export function hmac(key: Buffer, message: string): Buffer {
     return createHmac('sha256', key).update(message, 'utf8').digest();
 }
@@ -81,10 +79,6 @@ export function requestStringToSign(p: RequestSigningParts): string {
     return ['OC1', p.endpoint, p.method, p.pathWithQuery, p.ts, p.nonce, p.clientId, p.contentLength, p.bodySha256].join('\n');
 }
 
-export function signRequest(key: Buffer, parts: RequestSigningParts): string {
-    return b64url(hmac(key, requestStringToSign(parts)));
-}
-
 export function responseStringToSign(endpoint: string, status: number, requestNonce: string, bodySha256: string): string {
     return ['OC1R', endpoint, String(status), requestNonce, bodySha256].join('\n');
 }
@@ -126,15 +120,6 @@ export function pairingIdFor(pairSecret: Buffer): string {
 
 export function pairingString(port: number, instanceId: string, pairSecret: Buffer): string {
     return `ocpair1.${port}.${instanceId}.${b64url(pairSecret)}`;
-}
-
-export function parsePairingString(text: string): { port: number; instanceId: string; pairSecret: Buffer } | null {
-    const m = /^ocpair1\.(\d{1,5})\.([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{43})$/.exec(text.trim());
-    if (!m) return null;
-    const port = Number(m[1]);
-    const pairSecret = fromB64url(m[3]);
-    if (port < 1 || port > 65535 || !pairSecret || pairSecret.length !== 32) return null;
-    return { port, instanceId: m[2], pairSecret };
 }
 
 /**

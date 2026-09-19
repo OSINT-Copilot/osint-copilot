@@ -300,13 +300,6 @@ const bridge: WindowApi = {
 		// Fetched once, before the page loads. See the note on 'osint:platform' in main.
 		platform: () => platformSnapshot,
 
-		secrets: {
-			has: ref => ipcRenderer.invoke('osint:secrets.has', ref),
-			setKeychain: (name, value) => ipcRenderer.invoke('osint:secrets.setKeychain', name, value),
-			deleteKeychain: name => ipcRenderer.invoke('osint:secrets.deleteKeychain', name),
-			listKeychain: () => ipcRenderer.invoke('osint:secrets.listKeychain')
-		},
-
 		cli: {
 			resolve: (configured, fallbackBareName, extraCandidates, probeTimeoutMs) =>
 				ipcRenderer.invoke('osint:cli.resolve', configured, fallbackBareName, extraCandidates, probeTimeoutMs),
@@ -334,8 +327,7 @@ const bridge: WindowApi = {
 			mkdir: p => ipcRenderer.invoke('osint:vault.mkdir', p),
 			remove: p => ipcRenderer.invoke('osint:vault.remove', p),
 			trash: p => ipcRenderer.invoke('osint:vault.trash', p),
-			rename: (from, to) => ipcRenderer.invoke('osint:vault.rename', from, to),
-			stat: p => ipcRenderer.invoke('osint:vault.stat', p)
+			rename: (from, to) => ipcRenderer.invoke('osint:vault.rename', from, to)
 		},
 
 		basemap: {
@@ -343,8 +335,7 @@ const bridge: WindowApi = {
 			open: () => ipcRenderer.invoke('osint:basemap.open'),
 			forget: () => ipcRenderer.invoke('osint:basemap.forget'),
 			read: (handleId, offset, length) =>
-				ipcRenderer.invoke('osint:basemap.read', handleId, offset, length),
-			close: handleId => ipcRenderer.invoke('osint:basemap.close', handleId)
+				ipcRenderer.invoke('osint:basemap.read', handleId, offset, length)
 		},
 
 		// None of these name a workspace: main uses the calling window's own.

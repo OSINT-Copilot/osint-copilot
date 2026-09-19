@@ -4,8 +4,7 @@
  * The threat this module exists to close: a byte-range read of a caller-supplied path is
  * an arbitrary-file-read primitive, and a better one than a whole-file read, because it
  * pages a large file out in chunks small enough to fit an enricher's HTTP body. The
- * renderer displays LLM and enricher output and this build ships without a CSP, so it is
- * assumed hostile.
+ * renderer displays LLM and enricher output, so it is assumed hostile, CSP or not.
  *
  * The rule is the one exec-guard already applies to binaries: **main decides which file,
  * the renderer only names a handle.** `open()` takes no path. The path comes from a

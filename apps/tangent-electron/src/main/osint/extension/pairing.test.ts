@@ -13,9 +13,9 @@ import {
 	pairingIdFor,
 	pairProofString,
 	pairServerProofString,
-	parsePairingString,
 	verifyMac,
 } from './signing'
+import { parsePairingString } from './test-client'
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'osint-ext-pairing-'))
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }))

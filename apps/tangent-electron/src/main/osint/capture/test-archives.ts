@@ -4,7 +4,7 @@
  */
 
 /** Quoted-printable as Blink writes it: '=' and non-ASCII escaped, 76-column soft breaks. */
-export function quotedPrintable(text: string): string {
+function quotedPrintable(text: string): string {
     const bytes = Buffer.from(text.replace(/\r?\n/g, '\r\n'), 'utf8');
     const lines: string[] = [];
     let line = '';

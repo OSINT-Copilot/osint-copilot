@@ -9,11 +9,8 @@ import { test, expect } from './tangent'
  * app depends on them, and nothing would fail if someone added `sandbox: false` while
  * debugging.
  *
- * Two things depend on them. The renderer displays LLM output, enricher output and
- * rendered markdown from hostile sources, with no CSP. And a `<webview>` guest inherits
- * these preferences from its host *conditionally* -- Electron only passes a value down
- * when the host's matches the default -- so weakening the window silently weakens every
- * browsing pane that runs inside it.
+ * The renderer depends on them: it displays LLM output, enricher output and rendered
+ * markdown from hostile sources.
  *
  * Asserted through their observable effects rather than by reading the preferences back:
  * Electron 42 has no API that returns them.

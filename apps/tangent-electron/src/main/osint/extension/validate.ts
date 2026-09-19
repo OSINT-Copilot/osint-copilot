@@ -31,7 +31,6 @@ import {
     REQUIRED_CAPTURE_FILE,
     SHA256_HEX,
     LIMITS,
-    SUPPORTED_KINDS,
     WALLET_CHAINS,
     type CaptureFileDecl,
     type CaptureFiles,
@@ -48,8 +47,6 @@ import { isValidEthAddress } from './keccak';
 import { isValidBtcAddress } from './wallet-checks';
 
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; detail: string };
-
-export const KIND_NOT_SUPPORTED = 'kind not supported by this app version';
 
 class Invalid extends Error {
     constructor(readonly detail: string) {
@@ -80,7 +77,7 @@ export function stripControlCharsMultiline(text: string): string {
     return text.replace(/\r\n?/g, '\n').replace(MULTI_LINE_STRIP, '');
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
@@ -426,9 +423,6 @@ function manifest(value: unknown): Manifest {
 
     if (typeof value.kind !== 'string' || !(ALL_KINDS as readonly string[]).includes(value.kind)) {
         fail('kind', `must be one of ${ALL_KINDS.join(', ')}`);
-    }
-    if (!(SUPPORTED_KINDS as readonly string[]).includes(value.kind)) {
-        throw new Invalid(KIND_NOT_SUPPORTED);
     }
     const kind = value.kind as Manifest['kind'];
     // Every highlight kind carries its payload under `highlight`.

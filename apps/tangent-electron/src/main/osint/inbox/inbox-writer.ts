@@ -30,7 +30,7 @@
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as nodePath from 'path';
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
 import { B64URL_16, CAPTURE_FILE_NAMES } from '../extension/protocol';
 import type {
     CaptureFileName,
@@ -40,7 +40,7 @@ import type {
     StatusResponse,
     WorkspaceInfo,
 } from '../extension/protocol';
-import { safeEqualText, workspaceIdFor } from '../extension/signing';
+import { safeEqualText, sha256Hex, workspaceIdFor } from '../extension/signing';
 import { validateManifest } from '../extension/validate';
 import type {
     BundleContext,
@@ -52,7 +52,7 @@ import type {
 } from '../extension/server';
 import { INBOX_FOLDER } from '../node/vault';
 import type { DeriveResults, DeriveStore, DeriveTarget } from '../capture/deriver';
-import { hashFile, receiveToFile } from './capture-files';
+import { hashFile, receiveToFile, syncDir } from './capture-files';
 import { evidenceStem } from '../capture/slug';
 import {
     DigestMismatchError,
@@ -88,11 +88,11 @@ import type {
 } from '../../../osint/host/types';
 
 export { INBOX_FOLDER };
-export const STAGING = '.staging';
+const STAGING = '.staging';
 export const PENDING = 'pending';
-export const DONE = 'done';
-export const REJECTED = 'rejected';
-export const REMOVED = 'removed';
+const DONE = 'done';
+const REJECTED = 'rejected';
+const REMOVED = 'removed';
 const SETTLED = [DONE, REJECTED, REMOVED] as const;
 /** The journal step markRemoved writes: when the item was removed. */
 export const REMOVED_STEP = 'removed';
@@ -103,15 +103,15 @@ export const REMOVED_STEP = 'removed';
  */
 export const PLACEMENT_STEP = 'placement';
 /** How many applied bundles listApplied returns, newest by receive time. */
-export const APPLIED_LIST_LIMIT = 500;
+const APPLIED_LIST_LIMIT = 500;
 
 /** Sent to every window with the workspace open whenever its pending set changes. */
 export const INBOX_CHANGED_CHANNEL = 'osint:inbox.changed';
 
 /** Per workspace. When full the server refuses; it never deletes anything to make room. */
-export const INBOX_BUDGET_BYTES = 2 * 1024 ** 3;
+const INBOX_BUDGET_BYTES = 2 * 1024 ** 3;
 /** Staging older than this belongs to a write that died; a live one takes milliseconds. */
-export const STAGING_MAX_AGE_MS = 60 * 60 * 1000;
+const STAGING_MAX_AGE_MS = 60 * 60 * 1000;
 /** How long a running inbox size is trusted before the tree is walked again. */
 const SIZE_RESCAN_MS = 10 * 60 * 1000;
 
@@ -119,11 +119,11 @@ const MANIFEST_FILE = 'manifest.json';
 const STATE_FILE = 'state.json';
 const REASON_FILE = 'reason.json';
 /** A capture's create-time record: the sealed manifest and stamp, before any file. */
-export const UPLOAD_FILE = 'upload.json';
-export const DERIVED_FILE = 'derived.json';
+const UPLOAD_FILE = 'upload.json';
+const DERIVED_FILE = 'derived.json';
 /** Never .md inside the inbox: the renderer's indexer must not pick page text up from here. */
-export const MARKDOWN_FILE = 'page.markdown';
-export const FULLPAGE_FILE = 'fullpage.png';
+const MARKDOWN_FILE = 'page.markdown';
+const FULLPAGE_FILE = 'fullpage.png';
 const MAX_DERIVED_BYTES = 64 * 1024;
 /** A stored manifest is a validated one plus a stamp; four times the body cap is ample. */
 const MAX_STORED_MANIFEST = 1024 * 1024;
@@ -176,7 +176,7 @@ interface Investigation {
     name: string;
 }
 
-export class InboxError extends Error {}
+class InboxError extends Error {}
 
 /**
  * A read that failed for a reason that may pass: a handle limit, a lock held by antivirus
@@ -297,20 +297,6 @@ async function writeExclusive(p: string, data: Buffer | string): Promise<void> {
     }
 }
 
-/** Makes a rename durable where the platform allows opening a directory. */
-async function syncDir(dir: string): Promise<void> {
-    try {
-        const handle = await fsp.open(dir, 'r');
-        try {
-            await handle.sync();
-        } finally {
-            await handle.close();
-        }
-    } catch {
-        // Windows cannot open a directory; NTFS journals the rename itself.
-    }
-}
-
 /** One sealed upload.json, read back. */
 interface Upload {
     manifest: CaptureManifest;
@@ -374,14 +360,9 @@ export class InboxWriter implements InboxBackend, DeriveStore {
         return open;
     }
 
-    async listInvestigations(): Promise<WorkspaceInfo[]> {
+    async listWorkspaces(): Promise<WorkspaceInfo[]> {
         const open = await this.openRealRoots();
         return (await this.investigations()).map(({ id, name, root }) => ({ id, name, open: open.has(root) }));
-    }
-
-    /** InboxBackend's name for listInvestigations. */
-    listWorkspaces(): Promise<WorkspaceInfo[]> {
-        return this.listInvestigations();
     }
 
     /**
@@ -415,9 +396,7 @@ export class InboxWriter implements InboxBackend, DeriveStore {
             const names = await fsp.readdir(nodePath.join(root, INBOX_FOLDER, PENDING)).catch(() => [] as string[]);
             pendingCount += names.length;
         }
-        // The backend is only reachable while the server runs, and it runs only while
-        // the channel is switched on; so receiving is the licence.
-        return { licensed, receiving: licensed, pendingCount };
+        return { licensed, pendingCount };
     }
 
     async acceptBundle(manifest: Manifest, ctx: BundleContext): Promise<BundleOutcome> {
@@ -857,7 +836,6 @@ export class InboxWriter implements InboxBackend, DeriveStore {
             const dir = nodePath.join(root, INBOX_FOLDER, PENDING, bundleId);
             // Moved on (rejected, or removed by hand) while it was being derived.
             if (!(await isRealDir(dir))) return false;
-            const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
             const derived: InboxCaptureDerived = {
                 v: 1,
                 bundleId,
@@ -872,13 +850,13 @@ export class InboxWriter implements InboxBackend, DeriveStore {
             if (results.markdown !== undefined) {
                 const bytes = Buffer.from(results.markdown, 'utf8');
                 await this.writeReplacing(dir, MARKDOWN_FILE, bytes);
-                derived.markdown = { file: MARKDOWN_FILE, sha256: sha(bytes) };
+                derived.markdown = { file: MARKDOWN_FILE, sha256: sha256Hex(bytes) };
             } else {
                 await fsp.rm(nodePath.join(dir, MARKDOWN_FILE), { force: true, recursive: true });
             }
             if (results.fullpage) {
                 await this.writeReplacing(dir, FULLPAGE_FILE, results.fullpage);
-                derived.fullpage = { file: FULLPAGE_FILE, sha256: sha(results.fullpage) };
+                derived.fullpage = { file: FULLPAGE_FILE, sha256: sha256Hex(results.fullpage) };
             } else {
                 await fsp.rm(nodePath.join(dir, FULLPAGE_FILE), { force: true, recursive: true });
                 derived.fullpage = { error: results.fullpageError ?? 'not rendered' };
@@ -1296,13 +1274,13 @@ export class InboxWriter implements InboxBackend, DeriveStore {
 
     /**
      * Moves a bundle out of pending/ once it is applied (done) or refused (rejected).
-     * `removed` is the Remove action on an applied item, so it also moves one out of done/.
+     * Remove, on an applied item, is markRemoved.
      */
     async finish(root: string, bundleId: string, outcome: InboxOutcome): Promise<void> {
-        if (outcome !== DONE && outcome !== REJECTED && outcome !== REMOVED) throw new InboxError('Not an outcome');
+        if (outcome !== DONE && outcome !== REJECTED) throw new InboxError('Not an outcome');
         await this.serialized(root, async () => {
             const inbox = await this.ensureLayout(root);
-            const from = await this.bundleDir(inbox, bundleId, outcome === REMOVED ? [PENDING, DONE] : [PENDING]);
+            const from = await this.bundleDir(inbox, bundleId, [PENDING]);
             const to = nodePath.join(inbox, outcome, bundleId);
             if (await lstatOrNull(to)) throw new InboxError(`Bundle ${bundleId} is already ${outcome}`);
             await this.renameWithRetry(from.dir, to);
@@ -1311,9 +1289,8 @@ export class InboxWriter implements InboxBackend, DeriveStore {
     }
 
     /**
-     * The Remove action on an applied item: done/ to removed/ only. finish() would also
-     * take a pending bundle to removed/, which here would mean dropping something that was
-     * never applied, so Remove cannot reach that.
+     * The Remove action on an applied item: done/ to removed/ only. A pending bundle is
+     * never taken to removed/, which would mean dropping something that was never applied.
      */
     async markRemoved(root: string, bundleId: string): Promise<void> {
         await this.serialized(root, async () => {

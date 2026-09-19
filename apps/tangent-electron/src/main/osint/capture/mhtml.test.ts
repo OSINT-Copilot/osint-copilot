@@ -3,7 +3,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { extractMainDocument, MhtmlParseError } from './mhtml'
 
-/** The shape Chromium's Page.captureSnapshot actually emits. */
+/** The shape Blink's MHTML serializer (chrome.pageCapture) actually emits. */
 function archive(body: string, encoding = 'quoted-printable', contentType = 'text/html') {
 	return [
 		'From: <Saved by Blink>',

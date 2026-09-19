@@ -1,8 +1,8 @@
 import {
 	entitlementsForTier,
+	fail,
 	graceExhausted,
 	isExpired,
-	licenseFailureMessage,
 	shouldRevalidate,
 	type Entitlements,
 	type LicenseFailure,
@@ -53,10 +53,6 @@ export function cachePolicy(cached: SubscriptionDetails | null, now = new Date()
 		return { check: true, required: false, reasonIfUnreachable: 'server-error' }
 	}
 	return { check: false, required: false, reasonIfUnreachable: 'server-error' }
-}
-
-function fail(reason: LicenseFailure): LicenseStatus {
-	return { valid: false, reason, message: licenseFailureMessage(reason) }
 }
 
 /**

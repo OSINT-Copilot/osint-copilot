@@ -8,7 +8,8 @@ import { InboxWriter, PLACEMENT_STEP } from './inbox-writer'
 import { workspaceIdFor } from '../extension/signing'
 import type { BundleContext } from '../extension/server'
 import type { CaptureFileName, CaptureManifest } from '../extension/protocol'
-import { CaptureDeriver, inProcessRunner } from '../capture/deriver'
+import { CaptureDeriver } from '../capture/deriver'
+import { inProcessRunner } from '../capture/test-runners'
 import { evidenceStem } from '../capture/slug'
 
 /**

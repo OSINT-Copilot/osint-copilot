@@ -48,8 +48,8 @@ describe('per-window vault roots', () => {
 		const rootA = freshDir('a')
 		const rootB = freshDir('b')
 
-		await openForSender(a, rootA, { watch: false })
-		await openForSender(b, rootB, { watch: false })
+		await openForSender(a, rootA)
+		await openForSender(b, rootB)
 
 		// A writes after B opened: with a single shared root this went into B's vault.
 		await vaultForSender(a.id).write('Person/alice.md', 'from a')
@@ -63,7 +63,7 @@ describe('per-window vault roots', () => {
 
 	it('a window that never opened a vault gets "No vault is open", not another window\'s', async () => {
 		const opener = fakeSender()
-		await openForSender(opener, freshDir('opened'), { watch: false })
+		await openForSender(opener, freshDir('opened'))
 
 		const stranger = fakeSender()
 		expect(() => vaultForSender(stranger.id)).toThrow('No vault is open')
@@ -72,7 +72,7 @@ describe('per-window vault roots', () => {
 
 	it('drops the entry when the window is destroyed', async () => {
 		const sender = fakeSender()
-		await openForSender(sender, freshDir('destroyed'), { watch: false })
+		await openForSender(sender, freshDir('destroyed'))
 		expect(findVaultForSender(sender.id)).not.toBeNull()
 
 		sender.destroy()
@@ -85,8 +85,8 @@ describe('per-window vault roots', () => {
 		const sender = fakeSender()
 		const first = freshDir('reopen-1')
 		const second = freshDir('reopen-2')
-		await openForSender(sender, first, { watch: false })
-		await openForSender(sender, second, { watch: false })
+		await openForSender(sender, first)
+		await openForSender(sender, second)
 
 		expect(sender.listenerCount()).toBe(1)
 		await vaultForSender(sender.id).write('note.md', 'x')
@@ -97,7 +97,7 @@ describe('per-window vault roots', () => {
 	it('does not register a window that closed while its vault was opening', async () => {
 		const sender = fakeSender()
 		sender.destroy()
-		await expect(openForSender(sender, freshDir('late'), { watch: false })).rejects.toThrow()
+		await expect(openForSender(sender, freshDir('late'))).rejects.toThrow()
 		expect(findVaultForSender(sender.id)).toBeNull()
 	})
 })
@@ -109,12 +109,12 @@ describe('path confinement', () => {
 	async function vaultWithLink(name: string) {
 		const root = freshDir(name)
 		fs.symlinkSync(outside, path.join(root, 'link'), 'dir')
-		const { vault } = await OpenVault.open(root, { watch: false })
+		const { vault } = await OpenVault.open(root)
 		return { root, vault }
 	}
 
 	it('refuses .. escapes', async () => {
-		const { vault } = await OpenVault.open(freshDir('dotdot'), { watch: false })
+		const { vault } = await OpenVault.open(freshDir('dotdot'))
 		await expect(vault.read('../outside/secret.txt')).rejects.toThrow('Path escapes the vault root')
 		await expect(vault.write('a/../../escaped.md', 'x')).rejects.toThrow('Path escapes the vault root')
 		expect(fs.existsSync(path.join(dir, 'escaped.md'))).toBe(false)
@@ -123,7 +123,7 @@ describe('path confinement', () => {
 	it('refuses to remove, move or trash the vault root itself', async () => {
 		const root = freshDir('root-guard')
 		fs.writeFileSync(path.join(root, 'note.md'), 'keep me')
-		const { vault } = await OpenVault.open(root, { watch: false })
+		const { vault } = await OpenVault.open(root)
 		for (const p of ['/', '', '.', 'x/..', 'a/b/../..']) {
 			await expect(vault.remove(p)).rejects.toThrow('vault root')
 			await expect(vault.rename(p, 'moved')).rejects.toThrow('vault root')
@@ -148,7 +148,7 @@ describe('path confinement', () => {
 		const root = freshDir('dangling')
 		const target = path.join(outside, 'not-yet.md')
 		fs.symlinkSync(target, path.join(root, 'dangling.md'))
-		const { vault } = await OpenVault.open(root, { watch: false })
+		const { vault } = await OpenVault.open(root)
 
 		await expect(vault.write('dangling.md', 'x')).rejects.toThrow('Path escapes the vault root')
 		expect(fs.existsSync(target)).toBe(false)
@@ -158,7 +158,7 @@ describe('path confinement', () => {
 		const root = freshDir('symlink-inside')
 		fs.mkdirSync(path.join(root, 'real'))
 		fs.symlinkSync(path.join(root, 'real'), path.join(root, 'alias'), 'dir')
-		const { vault } = await OpenVault.open(root, { watch: false })
+		const { vault } = await OpenVault.open(root)
 
 		await vault.write('alias/note.md', 'ok')
 		expect(fs.readFileSync(path.join(root, 'real/note.md'), 'utf-8')).toBe('ok')
@@ -168,7 +168,7 @@ describe('path confinement', () => {
 		const real = freshDir('real-root')
 		const linked = path.join(dir, 'linked-root')
 		fs.symlinkSync(real, linked, 'dir')
-		const { vault } = await OpenVault.open(linked, { watch: false })
+		const { vault } = await OpenVault.open(linked)
 
 		const stat = await vault.write('Person/x.md', 'x')
 		expect(stat.path).toBe('Person/x.md')
@@ -201,7 +201,7 @@ describe('path confinement', () => {
 		fs.symlinkSync(outside, path.join(root, 'outside-dir'), 'dir')
 		fs.symlinkSync(path.join(outside, 'gone.md'), path.join(root, 'dangling.md'))
 
-		const { vault, snapshot } = await OpenVault.open(root, { watch: false })
+		const { vault, snapshot } = await OpenVault.open(root)
 		const paths = snapshot.map(s => s.path).sort()
 
 		expect(paths).toEqual(['inside-link.md', 'real', 'real/inside.md'])
@@ -218,7 +218,7 @@ describe('path confinement', () => {
 		fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(root, 'out.txt'))
 		fs.symlinkSync(outside, path.join(root, 'out-dir'), 'dir')
 		fs.symlinkSync(path.join(outside, 'gone.md'), path.join(root, 'dangling.md'))
-		const { vault } = await OpenVault.open(root, { watch: false })
+		const { vault } = await OpenVault.open(root)
 
 		await vault.remove('out.txt')
 		await vault.remove('out-dir')
@@ -232,7 +232,7 @@ describe('path confinement', () => {
 		const root = freshDir('rename-links')
 		fs.symlinkSync(path.join(outside, 'gone.md'), path.join(root, 'dangling.md'))
 		fs.symlinkSync(outside, path.join(root, 'out-dir'), 'dir')
-		const { vault } = await OpenVault.open(root, { watch: false })
+		const { vault } = await OpenVault.open(root)
 
 		await vault.rename('dangling.md', 'Archive/dangling.md')
 		expect(fs.lstatSync(path.join(root, 'Archive/dangling.md')).isSymbolicLink()).toBe(true)
@@ -248,7 +248,7 @@ describe('path confinement', () => {
 	it('reads and writes still refuse a symlink that remove accepts', async () => {
 		const root = freshDir('link-read-write')
 		fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(root, 'out.txt'))
-		const { vault } = await OpenVault.open(root, { watch: false })
+		const { vault } = await OpenVault.open(root)
 
 		await expect(vault.read('out.txt')).rejects.toThrow('Path escapes the vault root')
 		await expect(vault.write('out.txt', 'overwritten')).rejects.toThrow('Path escapes the vault root')
@@ -285,7 +285,7 @@ describe('vault IPC handlers', () => {
 		const { handlers } = register([])
 		expect([...handlers.keys()].sort()).toEqual([
 			'osint:vault.create', 'osint:vault.mkdir', 'osint:vault.open', 'osint:vault.read',
-			'osint:vault.readBinary', 'osint:vault.remove', 'osint:vault.rename', 'osint:vault.stat',
+			'osint:vault.readBinary', 'osint:vault.remove', 'osint:vault.rename',
 			'osint:vault.trash', 'osint:vault.write', 'osint:vault.writeBinary',
 		])
 	})
@@ -316,10 +316,9 @@ describe('vault IPC handlers', () => {
 		expect(fs.readdirSync(path.join(rootA, 'Person'))).toEqual(['alice.md'])
 		expect(fs.readdirSync(path.join(rootB, 'Person'))).toEqual(['bob.md'])
 
-		// Reads, stats and trash resolve against the sender's vault as well.
+		// Reads and trash resolve against the sender's vault as well.
 		expect(await invoke(b, 'osint:vault.read', 'Person/bob.md')).toBe('from b')
 		await expect(invoke(b, 'osint:vault.read', 'Person/alice.md')).rejects.toThrow()
-		expect(await invoke(b, 'osint:vault.stat', 'Person/alice.md')).toBeNull()
 		await invoke(a, 'osint:vault.trash', 'Person/alice.md')
 		expect(trashed).toEqual([path.join(rootA, 'Person/alice.md')])
 	})
@@ -342,7 +341,7 @@ describe('the browser extension inbox', () => {
 		const bundle = path.join(root, '.osint-inbox', 'pending', 'b1')
 		fs.mkdirSync(bundle, { recursive: true })
 		fs.writeFileSync(path.join(bundle, 'manifest.json'), '{"signed":true}')
-		const opened = await OpenVault.open(root, { watch: false })
+		const opened = await OpenVault.open(root)
 		return { root, bundle, ...opened }
 	}
 
@@ -381,7 +380,6 @@ describe('the browser extension inbox', () => {
 		await expect(vault.rename('.osint-inbox/pending/b1', 'b1')).rejects.toThrow(/inbox/)
 		await expect(vault.rename('elsewhere', '.osint-inbox/pending/b4')).rejects.toThrow(/inbox/)
 		expect(() => vault.absolutePathOf('.osint-inbox/pending/b1')).toThrow(/inbox/)
-		expect(await vault.stat(inside)).toBeNull()
 		expect(fs.readFileSync(path.join(bundle, 'manifest.json'), 'utf-8')).toBe('{"signed":true}')
 		expect(fs.readdirSync(path.dirname(bundle))).toEqual(['b1'])
 	})
@@ -400,7 +398,7 @@ describe('the browser extension inbox', () => {
 		const bundle = path.join(parent, 'acme', '.osint-inbox', 'pending', 'b1')
 		fs.mkdirSync(bundle, { recursive: true })
 		fs.writeFileSync(path.join(bundle, 'state.json'), '{"v":1,"steps":[]}')
-		const { vault, snapshot } = await OpenVault.open(parent, { watch: false })
+		const { vault, snapshot } = await OpenVault.open(parent)
 		await expect(vault.write('acme/.osint-inbox/pending/b1/state.json', 'forged')).rejects.toThrow(/inbox/)
 		await expect(vault.remove('acme/.OSINT-INBOX/pending/b1')).rejects.toThrow(/inbox/)
 		await expect(vault.mkdir('acme/.osint-inbox/pending/b2')).rejects.toThrow(/inbox/)

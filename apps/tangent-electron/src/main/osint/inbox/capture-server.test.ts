@@ -5,7 +5,7 @@ import * as os from 'os'
 import * as path from 'path'
 import { createHash, randomBytes, randomUUID } from 'crypto'
 import { ExtensionController } from '../extension/controller'
-import { inProcessRunner } from '../capture/deriver'
+import { inProcessRunner } from '../capture/test-runners'
 import { tangentInboxHost, type WindowContents, type WindowLike } from './tangent-host'
 import { verifySealedDerived, verifySealedManifest } from './manifest-mac'
 import {
@@ -15,12 +15,11 @@ import {
 	hmac,
 	pairingIdFor,
 	pairProofString,
-	parsePairingString,
 	responseStringToSign,
 	sha256Hex,
-	signRequest,
 	verifyMac,
 } from '../extension/signing'
+import { parsePairingString, signRequest } from '../extension/test-client'
 
 /**
  * A capture over real sockets, through the real controller: pair, create, upload two

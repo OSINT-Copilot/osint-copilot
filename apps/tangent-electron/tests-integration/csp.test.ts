@@ -5,10 +5,10 @@ import path from 'path'
 /**
  * The Content-Security-Policy, checked against what the app actually renders.
  *
- * It is added for the renderer's sake, not the guests': that renderer holds window.api,
- * which reaches vault writes and cli.exec, and it displays markdown, LLM output and text
- * pulled out of pages under investigation. Without a policy, an injection that survives
- * DOMPurify runs with all of it.
+ * It is added for the renderer's sake: that renderer holds window.api, which reaches
+ * vault writes and cli.exec, and it displays markdown, LLM output and text pulled out of
+ * pages under investigation. Without a policy, an injection that survives DOMPurify runs
+ * with all of it.
  *
  * The risk of adding one is silent breakage in an upstream-owned file, and the two most
  * likely victims are Prism (syntax highlighting) and KaTeX (math) -- both inject markup

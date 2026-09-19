@@ -146,7 +146,7 @@ describe('IpcPMTilesSource', () => {
     };
     const makeHost = (read: Host['basemap']['read']): Host['basemap'] => ({
         read,
-        pick: vi.fn(), open: vi.fn(), forget: vi.fn(), close: vi.fn(),
+        pick: vi.fn(), open: vi.fn(), forget: vi.fn(),
     } as unknown as Host['basemap']);
 
     it('keys the cache on the resolved archive path', () => {

@@ -96,12 +96,6 @@ function fileUrlRoot(root: string): string {
 
 export const host: Host = {
     get platform() { return api().platform(); },
-    secrets: {
-        has: (ref) => api().secrets.has(ref),
-        setKeychain: (name, value) => api().secrets.setKeychain(name, value),
-        deleteKeychain: (name) => api().secrets.deleteKeychain(name),
-        listKeychain: () => api().secrets.listKeychain(),
-    },
     cli: {
         resolve: (configured, fallback, extras, timeout) => api().cli.resolve(configured, fallback, extras, timeout),
         exec: (execId, binary, args, options) => api().cli.exec(execId, binary, args, options),
@@ -128,7 +122,6 @@ export const host: Host = {
         async remove(p) { markSelfWrite(`d:${p}`); return api().vault.remove(p); },
         async trash(p) { markSelfWrite(`d:${p}`); return api().vault.trash(p); },
         async rename(from, to) { markSelfWrite(`d:${from}`); return api().vault.rename(from, to); },
-        stat: (p) => api().vault.stat(p),
         onChange(callback) {
             changeListeners.add(callback);
             return () => changeListeners.delete(callback);
@@ -152,7 +145,6 @@ export const host: Host = {
         open: () => api().basemap.open(),
         forget: () => api().basemap.forget(),
         read: (handleId, offset, length) => api().basemap.read(handleId, offset, length),
-        close: (handleId) => api().basemap.close(handleId),
     },
     inbox: {
         claim: () => api().inbox.claim(),
@@ -171,12 +163,5 @@ export const host: Host = {
         pairBegin: () => api().extension.pairBegin(),
         pairCancel: () => api().extension.pairCancel(),
         revoke: (clientId) => api().extension.revoke(clientId),
-    },
-    app: {
-        async pickVault() {
-            throw new Error('host.app.pickVault is not used under Tangent: it owns workspace selection.');
-        },
-        async lastVault() { return vaultRoot || null; },
-        async rememberVault() { /* Tangent persists the open workspace itself. */ },
     },
 };

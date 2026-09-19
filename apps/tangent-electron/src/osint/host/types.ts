@@ -1,27 +1,22 @@
 /**
  * The host contract -- the complete boundary between renderer code and the OS.
  *
- * Two implementations satisfy it:
- *   impl.ts        Node. Used by the Electron main process and by vitest.
- *   impl.bridge.ts Renderer. Forwards to window.host, which preload exposes over IPC.
- *
- * esbuild's renderer target aliases ./impl -> ./impl.bridge, so a sandboxed
- * renderer never links the Node implementation. Everything else (tests included)
- * gets the Node one, which is why the existing suites keep passing untouched.
+ * Implemented by:
+ *   impl.tangent.ts     Renderer. Forwards to window.api.osint, which preload exposes
+ *                       over IPC. The tsconfig `host-impl` path maps to it, and webpack
+ *                       follows tsconfig paths.
+ *   main/osint/impl.ts  Node, in-process parts only (platform, cli, extract). Used by
+ *                       the Electron main process, and by vitest through its own
+ *                       `host-impl` alias.
  */
 import type { CaptureFiles, Manifest } from '../../main/osint/extension/protocol';
 
 export interface PlatformInfo {
     /** NodeJS.Platform: 'darwin' | 'linux' | 'win32' | ... */
     readonly os: string;
-    readonly arch: string;
     readonly homedir: string;
     readonly pathSep: string;
-    readonly pathDelimiter: string;
     readonly isFlatpak: boolean;
-    /** Empty outside Electron (e.g. under vitest). */
-    readonly electron: string;
-    readonly chrome: string;
 }
 
 export interface ExecOptions {
@@ -54,8 +49,8 @@ export interface ExecResult {
  * secret itself. Resolution and injection happen in main.
  */
 export interface SecretRef {
-    source: 'env' | 'vault-file' | 'keychain';
-    /** Env var name, vault-relative credential path, or keychain key. */
+    source: 'env' | 'vault-file';
+    /** Env var name, or vault-relative credential path. */
     name: string;
 }
 
@@ -139,8 +134,7 @@ export interface VaultHost {
     /** Moves to the OS trash rather than unlinking (fileManager.trashFile). */
     trash(path: string): Promise<void>;
     rename(from: string, to: string): Promise<void>;
-    stat(path: string): Promise<StatDto | null>;
-    /** Batched watcher events for out-of-band edits; self-writes are suppressed in main. */
+    /** Batched events for out-of-band edits; echoes of this host's own writes are dropped. */
     onChange(callback: (events: WatchEvent[]) => void): () => void;
     /** Custom-protocol URL for displaying a vault file (images on graph nodes). */
     resourceUrl(path: string): string;
@@ -265,7 +259,7 @@ export interface InboxAppliedBundle extends InboxBundle {
     where: 'done' | 'removed';
 }
 
-export type InboxOutcome = 'done' | 'rejected' | 'removed';
+export type InboxOutcome = 'done' | 'rejected';
 
 /** What each placed file of a capture is. */
 export type InboxPlacedRole = 'archive' | 'fullpage' | 'viewport' | 'pdf' | 'markdown';
@@ -375,15 +369,6 @@ export interface Host {
      */
     readonly platform: PlatformInfo;
 
-    secrets: {
-        /** Whether a credential resolves, WITHOUT returning it. */
-        has(ref: SecretRef): Promise<boolean>;
-        /** Stores a secret in the OS keychain (Electron safeStorage). */
-        setKeychain(name: string, value: string): Promise<void>;
-        deleteKeychain(name: string): Promise<void>;
-        listKeychain(): Promise<string[]>;
-    };
-
     cli: {
         resolve(configured: string | undefined, fallbackBareName: string, extraCandidates?: string[], probeTimeoutMs?: number): Promise<string>;
         /**
@@ -415,17 +400,8 @@ export interface Host {
         open(): Promise<BasemapOpenResult>;
         forget(): Promise<void>;
         read(handleId: string, offset: number, length: number): Promise<BasemapRange>;
-        close(handleId: string): Promise<void>;
     };
 
     inbox: InboxHost;
     extension: ExtensionHost;
-
-    app: {
-        /** Native folder picker. Returns null if the user cancels. */
-        pickVault(): Promise<string | null>;
-        /** Last opened vault, remembered across launches in userData. */
-        lastVault(): Promise<string | null>;
-        rememberVault(dir: string): Promise<void>;
-    };
 }

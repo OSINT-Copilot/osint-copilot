@@ -31,7 +31,7 @@ const CLIENT = 'CCCCCCCCCCCCCCCCCCCCCC';
  * so two services on one FakeInbox are two windows on one investigation.
  */
 class FakeInbox implements InboxHost {
-    readonly bundles = new Map<string, { bundle: InboxBundle; where: 'pending' | InboxOutcome }>();
+    readonly bundles = new Map<string, { bundle: InboxBundle; where: 'pending' | InboxOutcome | 'removed' }>();
     heldElsewhere = false;
     held = false;
     /** Throws once, the next time this step is recorded: a crash just before the journal write. */
@@ -1026,6 +1026,16 @@ describe('helpers', () => {
         expect(sourceSlug('x'.repeat(80))).toHaveLength(60);
         expect(sourceSlug('a'.repeat(59) + ' b')).toBe('a'.repeat(59));
         expect(sourceSlug('!!!')).toBe('');
+    });
+
+    it('Sources note names are pinned: a changed slug would orphan existing notes', () => {
+        expect(sourceSlug('Café owner — Example News!')).toBe('cafe-owner-example-news');
+        expect(sourceSlug('--Leading and trailing--')).toBe('leading-and-trailing');
+        expect(sourceSlug('İstanbul ÉTÉ')).toBe('istanbul-ete');
+        expect(sourceSlug('ﬁle Ⅻ ①')).toBe('file-xii-1');
+        expect(sourceSlug('a'.repeat(58) + ' -- b')).toBe('a'.repeat(58) + '-b');
+        expect(sourceSlug('x'.repeat(59) + '!!!!!')).toBe('x'.repeat(59));
+        expect(sourceSlug('日本語のページ')).toBe('');
     });
 
     it('an applied step is read back defensively, and a bundle without one is not in the log', async () => {

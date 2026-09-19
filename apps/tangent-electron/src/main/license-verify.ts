@@ -3,11 +3,10 @@ import { createPublicKey, verify as verifySignature } from 'node:crypto'
 import {
 	LICENSE_FORMAT_VERSION,
 	LICENSE_PUBLIC_KEY_B64,
+	fail,
 	isExpired,
-	licenseFailureMessage,
 	normalizeLicenseKey,
 	parseLicenseKey,
-	type LicenseFailure,
 	type LicenseStatus,
 } from '../common/license'
 
@@ -37,10 +36,6 @@ function publicKeyFrom(base64: string) {
 		format: 'der',
 		type: 'spki',
 	})
-}
-
-export function fail(reason: LicenseFailure): LicenseStatus {
-	return { valid: false, reason, message: licenseFailureMessage(reason) }
 }
 
 /**

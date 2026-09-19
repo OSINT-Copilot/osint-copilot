@@ -12,15 +12,14 @@ import {
 	pairingString,
 	pairProofString,
 	pairServerProofString,
-	parsePairingString,
 	requestStringToSign,
 	responseStringToSign,
 	sha256Hex,
-	signRequest,
 	signResponse,
 	verifyMac,
 	workspaceIdFor,
 } from './signing'
+import { parsePairingString, signRequest } from './test-client'
 
 /**
  * protocol-vectors.json was produced by a separate Python implementation of PROTOCOL.md,

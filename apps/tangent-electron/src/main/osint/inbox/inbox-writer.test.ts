@@ -102,7 +102,7 @@ describe('which investigations exist', () => {
 		const a = freshDir('Case A')
 		const b = freshDir('Case B')
 		const s = setup({ known: [a, b], open: [b] })
-		const list = await s.writer.listInvestigations()
+		const list = await s.writer.listWorkspaces()
 		expect(list).toEqual([
 			{ id: s.idOf(a), name: path.basename(a), open: false },
 			{ id: s.idOf(b), name: path.basename(b), open: true },
@@ -132,12 +132,12 @@ describe('which investigations exist', () => {
 		const link = path.join(dir, `${n++}-link`)
 		fs.symlinkSync(real, link)
 		const s = setup({ known: [link], open: [link] })
-		const [only] = await s.writer.listInvestigations()
+		const [only] = await s.writer.listWorkspaces()
 		expect(only).toEqual({ id: workspaceIdFor(s.keys.workspaceIdKey(), real), name: path.basename(real), open: true })
 		expect(await s.writer.resolveInboxTarget(only.id)).toBe(real)
 		// The same folder registered twice is one investigation.
 		s.host.known.push(real)
-		expect(await s.writer.listInvestigations()).toHaveLength(1)
+		expect(await s.writer.listWorkspaces()).toHaveLength(1)
 	})
 
 	it('refuses a raw path where an id belongs', async () => {
@@ -188,8 +188,12 @@ describe('accepting a bundle', () => {
 			const s = setup({ known: [a] })
 			const m = entityManifest(s.idOf(a))
 			await s.writer.acceptBundle(m, ctx())
-			if (settled === 'removed') await s.writer.finish(a, m.bundleId, 'done')
-			if (settled !== 'pending') await s.writer.finish(a, m.bundleId, settled)
+			if (settled === 'removed') {
+				await s.writer.finish(a, m.bundleId, 'done')
+				await s.writer.markRemoved(a, m.bundleId)
+			} else if (settled !== 'pending') {
+				await s.writer.finish(a, m.bundleId, settled)
+			}
 			const before = tree(inboxOf(a))
 			s.host.notify.mockClear()
 
@@ -405,8 +409,7 @@ describe('listing for the renderer', () => {
 		const { m } = await acceptOne(s, a)
 		await expect(s.writer.recordStep(a, m.bundleId, '../state', {})).rejects.toThrow(/Not a step name/)
 		await expect(s.writer.finish(a, m.bundleId, 'elsewhere' as never)).rejects.toThrow(/Not an outcome/)
-		await expect(s.writer.finish(a, m.bundleId, 'removed')).resolves.toBeUndefined()
-		expect(fs.existsSync(path.join(inboxOf(a), 'removed', m.bundleId, 'manifest.json'))).toBe(true)
+		await expect(s.writer.finish(a, m.bundleId, 'removed' as never)).rejects.toThrow(/Not an outcome/)
 	})
 
 	it('finish moves a bundle out of pending and tells the windows', async () => {
@@ -428,6 +431,6 @@ describe('listing for the renderer', () => {
 		await acceptOne(s, a)
 		await acceptOne(s, b)
 		await acceptOne(s, b)
-		expect(await s.writer.status()).toEqual({ licensed: true, receiving: true, pendingCount: 3 })
+		expect(await s.writer.status()).toEqual({ licensed: true, pendingCount: 3 })
 	})
 })

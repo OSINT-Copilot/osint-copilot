@@ -1,16 +1,16 @@
 /**
- * Node implementation of the host contract.
+ * Node implementation of the host contract's in-process parts.
  *
- * Used by the Electron main process and by vitest. The sandboxed renderer never
- * links this file -- esbuild aliases ./impl to ./impl.bridge for that target.
+ * Used by the Electron main process, and by the `osint` vitest project, which resolves
+ * `host-impl` here. The renderer resolves `host-impl` to osint/host/impl.tangent.ts
+ * through tsconfig paths (TsConfigPathsPlugin in webpack), so it never links this file.
  */
-import type { ExecOptions, ExecResult, Host, HttpRequest, HttpResponse, PlatformInfo, WatchEvent } from '../../osint/host/types';
+import type { ExecOptions, ExecResult, Host, HttpRequest, HttpResponse, PlatformInfo } from '../../osint/host/types';
 import { resolveCliPath } from './node/cli';
-import { OpenVault } from './node/vault';
+import type { OpenVault } from './node/vault';
 import * as secretStore from './node/secrets';
 import { guardedFetch, BlockedRequestError } from './node/net-guard';
 import { extractPdfText, extractDocxText } from './node/extract';
-import * as basemapStore from './node/basemap';
 
 /**
  * Getters, not a snapshot: the resolve-binary-path suite overrides process.platform
@@ -19,13 +19,9 @@ import * as basemapStore from './node/basemap';
  */
 const platform: PlatformInfo = {
     get os() { return process.platform; },
-    get arch() { return process.arch; },
     get homedir() { return (require('os') as typeof import('os')).homedir(); },
     get pathSep() { return (require('path') as typeof import('path')).sep; },
-    get pathDelimiter() { return (require('path') as typeof import('path')).delimiter; },
     get isFlatpak() { return process.platform === 'linux' && Boolean(process.env.FLATPAK_ID?.trim()); },
-    get electron() { return process.versions.electron ?? ''; },
-    get chrome() { return process.versions.chrome ?? ''; },
 };
 
 const running = new Map<string, import('child_process').ChildProcess>();
@@ -174,107 +170,17 @@ export async function requestFor(req: HttpRequest, vault: OpenVault | null): Pro
 }
 
 /**
- * The vault of the in-process host object below, and nothing else's.
- *
- * Main's IPC handlers never go through `host.vault`: each window's vault is its own
- * OpenVault, looked up by sender (node/vault.ts). This one serves the callers that have
- * no sender -- vitest, which resolves `host-impl` to this file -- and, being a separate
- * instance, cannot be confused with any window's. In the running app it is never opened,
- * so `host.secrets.has` / `host.net.request` find no vault-file credentials through it.
+ * Only what runs in-process: main's own handlers call these, and so does the `osint`
+ * vitest project. The renderer's other members (net, vault, basemap, inbox, extension)
+ * reach main over IPC, where the handlers call requestFor and the node/ modules for the
+ * sending window.
  */
-let hostVault: OpenVault | null = null;
-/** Survive a reopen, as they did when the watcher was module-level. */
-const hostVaultListeners = new Set<(events: WatchEvent[]) => void>();
-
-function requireHostVault(): OpenVault {
-    if (!hostVault) throw new Error('No vault is open');
-    return hostVault;
-}
-
-const NO_WINDOW = 'The browser extension inbox is only reachable from an app window.';
-
-export const host: Host = {
+export const host: Pick<Host, 'platform' | 'cli' | 'extract'> = {
     platform,
-    secrets: {
-        has: (ref) => secretStore.hasSecret(ref, hostVault),
-        setKeychain: secretStore.setKeychain,
-        deleteKeychain: secretStore.deleteKeychain,
-        listKeychain: secretStore.listKeychain,
-    },
     cli: {
         resolve: resolveCliPath,
         exec,
         kill(execId: string) { running.get(execId)?.kill('SIGTERM'); },
-    },
-    net: { request: (req) => requestFor(req, hostVault) },
-    vault: {
-        async open(dir: string) {
-            const { vault, snapshot } = await OpenVault.open(dir);
-            const previous = hostVault;
-            hostVault = vault;
-            vault.onChange((events) => { for (const listener of hostVaultListeners) listener(events); });
-            await previous?.close();
-            return snapshot;
-        },
-        basePath: () => hostVault?.root ?? '',
-        read: (p) => requireHostVault().read(p),
-        readBinary: (p) => requireHostVault().readBinary(p),
-        write: (p, d) => requireHostVault().write(p, d),
-        writeBinary: (p, d) => requireHostVault().writeBinary(p, d),
-        create: (p, d) => requireHostVault().create(p, d),
-        mkdir: (p) => requireHostVault().mkdir(p),
-        remove: (p) => requireHostVault().remove(p),
-        // Electron's shell.trashItem is only available in main; under vitest this
-        // degrades to a plain remove, which is what the tests want anyway.
-        trash: (p) => requireHostVault().remove(p),
-        rename: (from, to) => requireHostVault().rename(from, to),
-        stat: (p) => requireHostVault().stat(p),
-        onChange(callback) {
-            hostVaultListeners.add(callback);
-            return () => hostVaultListeners.delete(callback);
-        },
-        // Same file:// shape as the renderer host. It used to mint `osint-vault://`, a
-        // scheme nothing registers -- and this is the implementation the `osint` vitest
-        // project resolves `host-impl` to, so a test would have proved the wrong thing.
-        resourceUrl: (path: string) => {
-            const encode = (value: string) =>
-                value.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/');
-            const root = encode(hostVault?.root ?? '').replace(/^([A-Za-z])%3A/i, '$1:');
-            return `file://${root.startsWith('/') ? root : `/${root}`}/${encode(path)}`;
-        },
-    },
-    basemap: {
-        pick: () => basemapStore.pick(),
-        open: () => basemapStore.open(),
-        forget: () => basemapStore.forget(),
-        read: (handleId: string, offset: number, length: number) => basemapStore.read(handleId, offset, length),
-        close: (handleId: string) => basemapStore.close(handleId),
-    },
-    // The inbox and the extension controls exist only per window, over IPC: main answers
-    // for the calling window's own investigation, and a caller with no window has none.
-    inbox: {
-        claim: async () => { throw new Error(NO_WINDOW); },
-        release: async () => { throw new Error(NO_WINDOW); },
-        list: async () => { throw new Error(NO_WINDOW); },
-        step: async () => { throw new Error(NO_WINDOW); },
-        finish: async () => { throw new Error(NO_WINDOW); },
-        markRemoved: async () => { throw new Error(NO_WINDOW); },
-        listApplied: async () => { throw new Error(NO_WINDOW); },
-        placeFiles: async () => { throw new Error(NO_WINDOW); },
-        onChanged: () => () => undefined,
-    },
-    extension: {
-        status: async () => { throw new Error(NO_WINDOW); },
-        setEnabled: async () => { throw new Error(NO_WINDOW); },
-        pairBegin: async () => { throw new Error(NO_WINDOW); },
-        pairCancel: async () => { throw new Error(NO_WINDOW); },
-        revoke: async () => { throw new Error(NO_WINDOW); },
-    },
-    // Overridden in main (electron/ipc) where dialog and userData exist; inert under vitest.
-    app: {
-        async pickVault() { return null; },
-        async lastVault() { return null; },
-        async rememberVault() { /* no-op outside Electron */ },
     },
     extract: {
         // A static import of extract.ts is cheap: the module is small and pdfjs itself

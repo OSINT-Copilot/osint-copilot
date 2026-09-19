@@ -1,7 +1,7 @@
 /**
  * Reading the document back out of an MHTML snapshot.
  *
- * Why bother, when the guest could just be asked for `document.documentElement.outerHTML`:
+ * Why bother, when the extension could just send `document.documentElement.outerHTML`:
  * because then the bytes that were hashed, the markdown shown to the analyst, and the
  * archive on disk would be three different moments of a page that is still changing under
  * you. A feed that appends while you capture would produce a hash attesting to something
@@ -11,7 +11,8 @@
  * hash covers the thing the markdown was derived from.
  *
  * Deliberately a small MIME reader rather than a dependency: this parses exactly one
- * shape, the output of Chromium's own `Page.captureSnapshot`.
+ * shape, the output of Blink's MHTML serializer, which the extension reaches through
+ * `chrome.pageCapture.saveAsMHTML`.
  */
 
 export class MhtmlParseError extends Error {}

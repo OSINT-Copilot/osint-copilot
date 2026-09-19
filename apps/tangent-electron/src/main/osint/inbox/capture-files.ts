@@ -24,7 +24,7 @@ export type ReceiveResult =
     | { ok: true }
     | { ok: false; error: 'too_large' | 'hash_mismatch' | 'invalid'; detail?: string };
 
-export const PART_SUFFIX = '.part';
+const PART_SUFFIX = '.part';
 
 /**
  * How long a file's body may send nothing before the upload is abandoned. On loopback a
@@ -71,7 +71,8 @@ async function* withIdleLimit(body: AsyncIterable<Buffer>, idleMs: number): Asyn
     }
 }
 
-async function syncDir(dir: string): Promise<void> {
+/** Makes a rename or link durable where the platform allows opening a directory. */
+export async function syncDir(dir: string): Promise<void> {
     try {
         const handle = await fsp.open(dir, 'r');
         try {
@@ -80,7 +81,7 @@ async function syncDir(dir: string): Promise<void> {
             await handle.close();
         }
     } catch {
-        // Windows cannot open a directory; NTFS journals the rename itself.
+        // Windows cannot open a directory; NTFS journals the rename or link itself.
     }
 }
 

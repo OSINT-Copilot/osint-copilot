@@ -138,7 +138,7 @@ export interface GuardedFetchInit {
 /**
  * Headers that must never survive a hop to a different origin.
  *
- * `request()` resolves keychain secrets into Authorization or a caller-named header before
+ * `request()` resolves secrets into Authorization or a caller-named header before
  * this runs. Following a redirect with those still attached would hand a live credential
  * to whatever host the first one nominated -- which, for a link the analyst merely pasted,
  * is a host chosen by someone else.

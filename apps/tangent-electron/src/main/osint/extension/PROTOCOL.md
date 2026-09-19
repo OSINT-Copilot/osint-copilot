@@ -182,7 +182,7 @@ Vector: `responses`.
 ### 7.1 `GET /v1/status` (signed)
 
 ```json
-{"licensed": true, "receiving": true, "pendingCount": 0}
+{"licensed": true, "pendingCount": 0}
 ```
 
 ### 7.2 `POST /v1/hello` (not signed with headers)
@@ -233,7 +233,6 @@ The body is a manifest (§8) of at most 256 KB. The kinds `note` and `entity` co
 | This `bundleId` was already received; nothing new is stored | `200 {"status":"duplicate","bundleId":"...","receivedAt":"<ISO 8601 of the first>"}` |
 | Malformed JSON | `400 bad_json` |
 | Fails validation | `422 {"error":"invalid","detail":"<field path>: <reason>"}` |
-| Any other kind | `422 {"error":"invalid","detail":"kind not supported by this app version"}` |
 | A capture `bundleId` that is staged with other files, another page, or by another client | `422 {"error":"invalid","detail":"bundleId: already used for a different capture"}` |
 | Unknown `workspaceId` | `404 unknown_workspace` |
 | Unlicensed | `403 unlicensed` |

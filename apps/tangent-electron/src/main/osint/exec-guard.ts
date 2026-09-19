@@ -1,8 +1,8 @@
 /**
  * The trust boundary for spawning processes.
  *
- * The renderer is untrusted: it displays LLM output and enricher output, and this
- * build ships without a CSP. Without this guard, `osint:cli.exec` forwards a
+ * The renderer is untrusted: it displays LLM output and enricher output, and is treated
+ * as hostile even with its CSP. Without this guard, `osint:cli.exec` forwards a
  * renderer-supplied `binary`, `args`, `cwd`, `stdin` and `envOverrides` straight into
  * execFile, which is arbitrary code execution from a markdown injection.
  *
@@ -74,16 +74,11 @@ function addCandidate(into: Set<string>, value: unknown): void {
 		Logger.warn('[osint] ignoring a configured CLI path inside the vault:', trimmed)
 		return
 	}
+	// A bare name ("claude") is resolved to an absolute path before exec, and the
+	// resolver's output is recorded by noteResolved(), so that spelling round-trips.
+	// Never the basename of a *path*: settings naming /opt/vendor/sh must not permit
+	// /bin/sh.
 	into.add(trimmed)
-	// A bare name ("claude") is resolved to an absolute path before exec, so permit both
-	// spellings; the absolute form is verified against this set by basename below.
-	//
-	// Only for a bare name. Adding the basename of a *path* would widen the set far past
-	// what was configured: settings naming /opt/vendor/sh would permit /bin/sh, which is
-	// the difference between "run the runtime the user chose" and "run anything". The
-	// resolver's own output is recorded by noteResolved() instead, so the path spelling
-	// still round-trips.
-	if (trimmed === path.basename(trimmed)) into.add(trimmed)
 }
 
 /**

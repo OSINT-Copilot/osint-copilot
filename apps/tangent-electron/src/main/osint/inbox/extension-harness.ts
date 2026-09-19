@@ -18,13 +18,6 @@ import { INBOX_FOLDER, PENDING } from './inbox-writer';
 import { verifySealedManifest } from './manifest-mac';
 import { tangentInboxHost, type WindowContents, type WindowLike } from './tangent-host';
 
-export interface HarnessOptions {
-    /** The investigation folder's name, which is what /v1/workspaces reports. */
-    workspaceName?: string;
-    /** Where the server binds; [0] (any free port) unless given. */
-    ports?: number[];
-}
-
 export interface StoredBundle {
     bundleId: string;
     /** The stored manifest: the cleaned manifest, the server stamp and the mac. */
@@ -34,7 +27,6 @@ export interface StoredBundle {
 }
 
 export interface ExtensionHarness {
-    controller: ExtensionController;
     port: number;
     /** Realpath of the temp workspace. */
     workspace: string;
@@ -47,9 +39,10 @@ export interface ExtensionHarness {
     stop(): Promise<void>;
 }
 
-export async function startExtensionHarness(options: HarnessOptions = {}): Promise<ExtensionHarness> {
+export async function startExtensionHarness(): Promise<ExtensionHarness> {
     const dir = fs.realpathSync(await fsp.mkdtemp(nodePath.join(os.tmpdir(), 'osint-ext-harness-')));
-    const workspace = nodePath.join(dir, options.workspaceName ?? 'Case Alpha');
+    // The investigation folder's name, which is what /v1/workspaces reports.
+    const workspace = nodePath.join(dir, 'Case Alpha');
     await fsp.mkdir(workspace);
 
     // One window with the case open, so it lists as open and receives the change notice.
@@ -68,7 +61,7 @@ export async function startExtensionHarness(options: HarnessOptions = {}): Promi
         licensed: async () => true,
         host: tangentInboxHost({ workspaceMap, contentsMap, documentationPath: () => null }),
         appVersion: '0.0.0-harness',
-        ports: options.ports ?? [0],
+        ports: [0],
     });
     await controller.setEnabled(true);
     const port = controller.server.port;
@@ -78,7 +71,6 @@ export async function startExtensionHarness(options: HarnessOptions = {}): Promi
     }
 
     return {
-        controller,
         port,
         workspace,
         confirmed,

@@ -1,15 +1,11 @@
 /**
- * API Service for AI-powered entity extraction.
+ * AI-powered entity extraction, and the text extraction that feeds it.
  *
- * HYBRID ARCHITECTURE:
- * - This service ONLY handles AI graph generation from text (requires API)
- * - All other features (entity CRUD, connections, graph, map) work locally
- * - Uses local API at http://localhost:5000 by default for development
- * - Can be configured to use remote API for production
- *
- * NOTE: HTTP goes through the host bridge to the Electron main process, which has
- * The browser's fetch API is blocked by CORS when making requests from
- * no CORS restrictions and no browser session.
+ * - Model calls go to the selected local AI CLI (Claude Code or Codex); there is no
+ *   remote API.
+ * - Everything else (entity CRUD, connections, graph, map) works without it.
+ * - URL fetches go through requestUrl, over the host bridge to the Electron main
+ *   process, which has no CORS restrictions and no browser session.
  */
 
 import { requestUrl } from 'obsidian';
@@ -57,7 +53,6 @@ export type UrlExtractSuccess = { ok: true; text: string };
 export type UrlExtractFailure = { ok: false; status?: number; shortMessage: string; /** Longer copy for modal/Notice (401/403). */ longDetail?: string };
 export type UrlExtractResult = UrlExtractSuccess | UrlExtractFailure;
 
-// Local interface to avoid circular dependency with main.ts
 export interface ApiSettings {
     apiProvider: 'claude-code' | 'codex';
     claudeCodeCliPath?: string;
@@ -320,7 +315,6 @@ export class GraphApiService {
         });
     }
 
-    /** Pages processed per batch, bounding peak memory/CPU for very long documents. */
     /**
      * PDF and DOCX text extraction run in the Electron main process.
      *
@@ -328,7 +322,7 @@ export class GraphApiService {
      * sandboxed renderer they cannot live here. Moving them also removed
      * globalThis.pdfjsWorker -- a module-level global that used to survive plugin
      * unload -- from the renderer entirely. The implementations are unchanged; see
-     * src/host/node/extract.ts.
+     * main/osint/node/extract.ts.
      */
     private async extractPdfText(file: File): Promise<string> {
         return host.extract.pdfText(await this.readFileAsArrayBuffer(file));

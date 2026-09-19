@@ -52,6 +52,7 @@ import { yamlScalarLine } from './entity-manager';
 import { identifierKey, normalizePlatform, usernameIdentifierKey } from './entity-identifiers';
 import { normalizeSourceUrl } from './osint-confidence-engine';
 import { ensureFolderExists } from '../utils/vault-bootstrap-fs';
+import { slugify } from '../utils/slug';
 import { OSINT_COPILOT_VAULT_ROOT } from '../constants/vault-layout';
 import { generateId, isGeneratedId, type Entity, type OsintSourceInput } from '../entities/types';
 import type { InboxAppliedBundle, InboxBundle, InboxHost, InboxPlacedFile, InboxPlacement } from '../host/types';
@@ -322,16 +323,9 @@ export function entityKindLabel(entity: Pick<EntityPayload, 'kind' | 'chain'>): 
 
 // ------------------------------------------------------------------ Sources notes
 
-/** `[a-z0-9-]`, at most 60 characters, no leading or trailing dash. Empty when nothing is left. */
+/** slugify, after folding accents (é to e). Empty when nothing is left. */
 export function sourceSlug(text: string): string {
-    return text
-        .normalize('NFKD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+/, '')
-        .slice(0, 60)
-        .replace(/-+$/, '');
+    return slugify(text.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''));
 }
 
 async function sha256Hex(text: string): Promise<string> {

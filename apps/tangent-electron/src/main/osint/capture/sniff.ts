@@ -19,7 +19,7 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
  * A MIME message whose top-level Content-Type is multipart/related with a boundary, as
  * Chrome's pageCapture writes it. The header block must end within SNIFF_BYTES.
  */
-export function looksLikeMhtml(head: Buffer): boolean {
+function looksLikeMhtml(head: Buffer): boolean {
     const text = head.subarray(0, SNIFF_BYTES).toString('latin1');
     const end = text.search(/\r?\n\r?\n/);
     if (end <= 0) return false;
@@ -31,11 +31,11 @@ export function looksLikeMhtml(head: Buffer): boolean {
     return !!type && /^multipart\/related\s*;/i.test(type[1]) && /boundary=/i.test(type[1]);
 }
 
-export function looksLikePng(head: Buffer): boolean {
+function looksLikePng(head: Buffer): boolean {
     return head.length >= PNG_SIGNATURE.length && head.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE);
 }
 
-export function looksLikePdf(head: Buffer): boolean {
+function looksLikePdf(head: Buffer): boolean {
     return head.subarray(0, 5).toString('latin1') === '%PDF-';
 }
 

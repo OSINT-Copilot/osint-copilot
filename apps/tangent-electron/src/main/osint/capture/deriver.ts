@@ -16,7 +16,7 @@
  * No electron import: the runner and the renderer are injected, so tests drive this with
  * an in-process parser and a fake renderer.
  */
-import { runParseJob, type ParseJob, type ParseOutcome } from './derive';
+import type { ParseJob, ParseOutcome } from './derive';
 
 export interface ParserProcess {
     result: Promise<ParseOutcome>;
@@ -25,12 +25,6 @@ export interface ParserProcess {
 }
 
 export type ParserRunner = (job: ParseJob) => ParserProcess;
-
-/** For tests and tools: parses on the caller's thread, and so cannot really be killed. */
-export const inProcessRunner: ParserRunner = job => ({
-    result: Promise.resolve().then(() => runParseJob(job)),
-    kill: () => undefined,
-});
 
 export interface RenderResult {
     png?: Buffer;
@@ -75,7 +69,7 @@ export interface CaptureDeriverDeps {
     log?: { warn(...args: unknown[]): void };
 }
 
-export const PARSE_TIMEOUT_MS = 60_000;
+const PARSE_TIMEOUT_MS = 60_000;
 const RENDER_TIMEOUT_MS = 90_000;
 
 type Timed<T> = { done: true; value: T } | { done: false };

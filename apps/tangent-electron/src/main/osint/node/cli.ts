@@ -1,7 +1,7 @@
 /**
  * CLI path resolution engine -- runs in Node (Electron main process, and vitest).
  *
- * Moved verbatim out of src/utils/resolve-binary-path.ts when the renderer was
+ * Moved verbatim out of osint/utils/resolve-binary-path.ts when the renderer was
  * sandboxed; that file is now a thin delegate to host.cli.resolve. The logic and
  * its rationale are unchanged, including the login-shell PATH probe, which is if
  * anything MORE necessary here: an Electron app launched from Finder or a .desktop

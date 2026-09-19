@@ -43,7 +43,7 @@ function unfoldedHeaders(mhtml: string): string {
 }
 
 /** The top-level Snapshot-Content-Location Blink writes: the URL of the tab it saved. */
-export function snapshotContentLocation(mhtml: string): string | undefined {
+function snapshotContentLocation(mhtml: string): string | undefined {
     const match = unfoldedHeaders(mhtml).match(/^Snapshot-Content-Location:\s*(.*)$/im);
     return match ? match[1].trim() : undefined;
 }
@@ -89,7 +89,7 @@ function decodeEntities(text: string): string {
 }
 
 /** The document's <title>, as text: whitespace collapsed, controls removed, bounded. */
-export function documentTitle(html: string): string {
+function documentTitle(html: string): string {
     const match = html.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
     if (!match) return '';
     const text = decodeEntities(match[1]).replace(CONTROL, ' ').replace(/\s+/g, ' ').trim();

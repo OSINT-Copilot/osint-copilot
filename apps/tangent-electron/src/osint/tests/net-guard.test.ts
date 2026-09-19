@@ -148,7 +148,7 @@ describe('guardedFetch redirect handling', () => {
     });
 
     it('drops credentials when a redirect crosses origins', async () => {
-        // request() injects resolved keychain secrets into these headers. Following a
+        // request() injects resolved secrets into these headers. Following a
         // redirect with them attached hands a live credential to a host the caller never
         // named -- which, for a pasted link, is a host chosen by someone else.
         const calls = scriptFetch([{ status: 302, location: OTHER_PUBLIC }, { status: 200 }]);

@@ -10,7 +10,6 @@ export const PROTO = 1;
 
 /** Bound on 127.0.0.1 only -- never 0.0.0.0, :: or 'localhost', which may resolve elsewhere. */
 export const HOST = '127.0.0.1';
-export const PREFERRED_PORT = 23760;
 /** Tried in order after the persisted port. Five, so a stale instance cannot lock us out. */
 export const PORTS: readonly number[] = [23760, 23761, 23762, 23763, 23764];
 
@@ -47,8 +46,6 @@ export const EXTENSION_ORIGIN = /^chrome-extension:\/\/[a-p]{32}$/;
 
 /** 16 random bytes, base64url without padding. */
 export const B64URL_16 = /^[A-Za-z0-9_-]{22}$/;
-/** 32 random bytes, base64url without padding. */
-export const B64URL_32 = /^[A-Za-z0-9_-]{43}$/;
 export const SHA256_HEX = /^[0-9a-f]{64}$/;
 export const EXT_VERSION = /^[0-9A-Za-z.+-]{1,32}$/;
 
@@ -107,12 +104,6 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
     budget_exceeded: 507,
 };
 
-export interface ErrorBody {
-    error: ErrorCode;
-    /** A field path and reason; for `incomplete`, the names of the files still missing. */
-    detail?: string | string[];
-}
-
 // --- handshake -----------------------------------------------------------------------
 
 export interface PairRequest {
@@ -129,11 +120,6 @@ export interface PairResponse {
     serverProof: string;
 }
 
-export interface HelloRequest {
-    clientId: string;
-    clientNonce: string;
-}
-
 export interface HelloResponse {
     instanceId: string;
     serverNonce: string;
@@ -146,7 +132,6 @@ export interface HelloResponse {
 
 export interface StatusResponse {
     licensed: boolean;
-    receiving: boolean;
     pendingCount: number;
 }
 
@@ -155,10 +140,6 @@ export interface WorkspaceInfo {
     id: string;
     name: string;
     open: boolean;
-}
-
-export interface WorkspacesResponse {
-    workspaces: WorkspaceInfo[];
 }
 
 export interface BundleResponse {
@@ -183,11 +164,8 @@ export interface FileReceivedResponse {
 
 // --- manifest ------------------------------------------------------------------------
 
-/** Every kind the protocol names; later phases add the rest to SUPPORTED_KINDS. */
+/** Every kind the protocol names. */
 export const ALL_KINDS = ['note', 'entity', 'capture', 'highlight', 'highlight.update', 'highlight.delete'] as const;
-export type BundleKind = typeof ALL_KINDS[number];
-export const SUPPORTED_KINDS = ['note', 'entity', 'capture', 'highlight', 'highlight.update', 'highlight.delete'] as const;
-export type SupportedKind = typeof SUPPORTED_KINDS[number];
 
 export const ENTITY_KINDS = ['email', 'phone', 'username', 'domain', 'url', 'ip', 'wallet'] as const;
 export type EntityKind = typeof ENTITY_KINDS[number];

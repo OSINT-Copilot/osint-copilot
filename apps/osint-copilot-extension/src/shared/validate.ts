@@ -40,8 +40,6 @@ export type ValidationResult<T> = { ok: true; value: T } | { ok: false; detail: 
 
 /** Every kind the protocol names, all of which this version sends. */
 const ALL_KINDS = ['note', 'entity', 'capture', 'highlight', 'highlight.update', 'highlight.delete'] as const;
-const SUPPORTED_KINDS = ALL_KINDS;
-export const KIND_NOT_SUPPORTED = 'kind not supported by this app version';
 
 class Invalid extends Error {
 	constructor(readonly detail: string) {
@@ -467,7 +465,6 @@ function manifest(value: unknown): Manifest {
 	if (typeof value.kind !== 'string' || !(ALL_KINDS as readonly string[]).includes(value.kind)) {
 		fail('kind', `must be one of ${ALL_KINDS.join(', ')}`);
 	}
-	if (!(SUPPORTED_KINDS as readonly string[]).includes(value.kind)) throw new Invalid(KIND_NOT_SUPPORTED);
 	const kind = value.kind as Manifest['kind'];
 	// Every highlight kind carries its payload under `highlight`.
 	const payloadKey = kind.startsWith('highlight') ? 'highlight' : kind;

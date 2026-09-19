@@ -47,7 +47,7 @@ const RENDER_WIDTH = 1280
 const RENDER_HEIGHT = 900
 
 /** Beyond this the PNG is larger than the evidence it illustrates. */
-export const MAX_RENDER_HEIGHT = 20000
+const MAX_RENDER_HEIGHT = 20000
 
 /** A page that has not settled by now is not going to. */
 const LOAD_TIMEOUT_MS = 15000

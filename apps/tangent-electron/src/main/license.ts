@@ -6,13 +6,14 @@ import Logger from 'js-logger'
 import {
 	FULL_ENTITLEMENTS,
 	LICENSE_FORMAT_VERSION,
+	fail,
 	licenseKeyKind,
 	normalizeLicenseKey,
 	type LicenseKeyKind,
 	type LicenseStatus,
 	type SubscriptionDetails,
 } from '../common/license'
-import { checkLicenseKey, fail } from './license-verify'
+import { checkLicenseKey } from './license-verify'
 import { cachePolicy, statusFromCache, statusFromOfflinePayload } from './license-policy'
 import { checkSubscriptionKey, licenseServerUrl } from './license-subscription'
 import { mode } from './environment'

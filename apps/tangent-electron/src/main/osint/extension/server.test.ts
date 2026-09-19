@@ -17,12 +17,11 @@ import {
 	hmac,
 	pairingIdFor,
 	pairProofString,
-	parsePairingString,
 	responseStringToSign,
 	sha256Hex,
-	signRequest,
 	verifyMac,
 } from './signing'
+import { parsePairingString, signRequest } from './test-client'
 
 /**
  * The server end to end over real sockets on an ephemeral port, with a fake inbox. Each
@@ -53,7 +52,7 @@ class FakeBackend implements InboxBackend {
 
 	async status() {
 		this.calls.push('status')
-		return { licensed: true, receiving: true, pendingCount: 3 }
+		return { licensed: true, pendingCount: 3 }
 	}
 
 	async listWorkspaces() {
@@ -333,7 +332,7 @@ describe('happy path', () => {
 
 		const status = await signed(client, 'GET', '/v1/status')
 		expect(status.res.status).toBe(200)
-		expect(status.res.json).toEqual({ licensed: true, receiving: true, pendingCount: 3 })
+		expect(status.res.json).toEqual({ licensed: true, pendingCount: 3 })
 		expect(responseSigOk(client, status.res, status.nonce)).toBe(true)
 
 		const workspaces = await signed(client, 'GET', '/v1/workspaces')

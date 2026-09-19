@@ -10,7 +10,7 @@ import type { LicenseStatus } from './license'
 import type {
 	BasemapOpenResult, BasemapRange, ExecOptions, ExecResult, ExtensionPairing, ExtensionStatus,
 	HttpRequest, HttpResponse, InboxAppliedBundle, InboxBundle, InboxClaimResult, InboxOutcome, InboxPlacement, InboxState,
-	PlatformInfo, SecretRef, StatDto
+	PlatformInfo, StatDto
 } from '../osint/host/types'
 
 export interface SelectPathOptions {
@@ -182,13 +182,6 @@ export default interface WindowAPI {
 		/** Synchronous snapshot, fetched once in preload. Read at seven sites. */
 		platform(): PlatformInfo
 
-		secrets: {
-			has(ref: SecretRef): Promise<boolean>
-			setKeychain(name: string, value: string): Promise<void>
-			deleteKeychain(name: string): Promise<void>
-			listKeychain(): Promise<string[]>
-		}
-
 		cli: {
 			resolve(configured: string | undefined, fallbackBareName: string, extraCandidates?: string[], probeTimeoutMs?: number): Promise<string>
 			/** `execId` is caller-supplied so an AbortSignal can kill a pending exec. */
@@ -223,7 +216,6 @@ export default interface WindowAPI {
 			remove(path: string): Promise<void>
 			trash(path: string): Promise<void>
 			rename(from: string, to: string): Promise<void>
-			stat(path: string): Promise<StatDto | null>
 		}
 
 		/**
@@ -238,7 +230,6 @@ export default interface WindowAPI {
 			open(): Promise<BasemapOpenResult>
 			forget(): Promise<void>
 			read(handleId: string, offset: number, length: number): Promise<BasemapRange>
-			close(handleId: string): Promise<void>
 		}
 
 		/**
@@ -253,7 +244,6 @@ export default interface WindowAPI {
 			list(): Promise<InboxBundle[]>
 			/** Records (or merges into) one journal step in the bundle's state.json. */
 			step(bundleId: string, step: string, data: unknown): Promise<InboxState>
-			/** 'removed' also applies to a bundle already done. */
 			finish(bundleId: string, outcome: InboxOutcome): Promise<void>
 			/**
 			 * Remove on an applied item: done/ to removed/, never from pending/. Needs the

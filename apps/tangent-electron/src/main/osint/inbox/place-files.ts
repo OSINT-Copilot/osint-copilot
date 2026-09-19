@@ -25,12 +25,12 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as nodePath from 'path';
 import { createHash, randomBytes } from 'crypto';
-import { hashFile } from './capture-files';
+import { hashFile, syncDir } from './capture-files';
 import type { InboxPlacedRole } from '../../../osint/host/types';
 import { OSINT_COPILOT_VAULT_ROOT } from '../../../osint/constants/vault-layout';
 
 /** Vault-relative, as the renderer names it. The segments, for resolving on disk. */
-export const EVIDENCE_SEGMENTS = [OSINT_COPILOT_VAULT_ROOT, 'Evidence'] as const;
+const EVIDENCE_SEGMENTS = [OSINT_COPILOT_VAULT_ROOT, 'Evidence'] as const;
 export const EVIDENCE_FOLDER = EVIDENCE_SEGMENTS.join('/');
 
 /** The extension each role is placed under. */
@@ -55,19 +55,6 @@ export class DigestMismatchError extends PlacementError {}
 function isStrictlyInside(parent: string, child: string): boolean {
     const rel = nodePath.relative(parent, child);
     return rel !== '' && !rel.startsWith('..') && !nodePath.isAbsolute(rel);
-}
-
-async function syncDir(dir: string): Promise<void> {
-    try {
-        const handle = await fsp.open(dir, 'r');
-        try {
-            await handle.sync();
-        } finally {
-            await handle.close();
-        }
-    } catch {
-        // Windows cannot open a directory; NTFS journals the link itself.
-    }
 }
 
 /**

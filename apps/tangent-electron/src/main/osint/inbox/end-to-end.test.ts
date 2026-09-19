@@ -193,7 +193,7 @@ describe('extension to inbox, end to end', () => {
 			expect(bundles[0].manifest).toEqual(manifest)
 
 			const status = await extension.signed('GET', '/v1/status')
-			expect(status.json).toEqual({ licensed: true, receiving: true, pendingCount: 1 })
+			expect(status.json).toEqual({ licensed: true, pendingCount: 1 })
 
 			const again = await extension.signed('POST', '/v1/bundles', manifest)
 			expect(again.json).toEqual({ status: 'duplicate', bundleId: manifest.bundleId, receivedAt: first.json.receivedAt })

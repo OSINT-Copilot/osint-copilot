@@ -16,9 +16,7 @@
 import * as fsp from 'fs/promises';
 import * as fs from 'fs';
 import * as nodePath from 'path';
-import type { StatDto, WatchEvent } from '../../../osint/host/types';
-
-const SELF_WRITE_TTL_MS = 2000;
+import type { StatDto } from '../../../osint/host/types';
 
 /**
  * The browser extension's inbox, at a workspace root. Main alone writes there: a bundle in
@@ -118,29 +116,8 @@ async function walk(dir: string, realRoot: string, out: StatDto[], toStat: (abso
     }
 }
 
-export interface OpenOptions {
-    /**
-     * Start our own filesystem watcher. Off under Tangent: Tangent already watches the
-     * workspace recursively and pushes TreeChange to the renderer, and a second watcher
-     * over the same tree would double every event and double the cost on a large case
-     * vault. On is kept for tests and for any host that does not watch for us.
-     */
-    watch?: boolean;
-}
-
 /** One opened vault. Every operation resolves against this vault's root and no other. */
 export class OpenVault {
-    private watcher: { close(): Promise<void> } | null = null;
-    private readonly listeners = new Set<(events: WatchEvent[]) => void>();
-
-    /**
-     * Suppresses the watcher echo of our own writes. Keyed on path+mtime+size, with a
-     * short TTL: without this, vault.modify -> chokidar change -> shim 'modify' event ->
-     * four registries invalidate -> schema-catalog rebuild, and anything that rebuild
-     * writes closes the loop. Per vault, because the keys are vault-relative.
-     */
-    private readonly selfWrites = new Map<string, number>();
-
     private constructor(
         /** Absolute path as opened; vault paths are reported relative to this. */
         readonly root: string,
@@ -148,7 +125,7 @@ export class OpenVault {
         readonly realRoot: string,
     ) {}
 
-    static async open(dir: string, { watch = true }: OpenOptions = {}): Promise<{ vault: OpenVault; snapshot: StatDto[] }> {
+    static async open(dir: string): Promise<{ vault: OpenVault; snapshot: StatDto[] }> {
         const root = nodePath.resolve(dir);
         await fsp.mkdir(root, { recursive: true });
         // The same realpath flavour resolve() uses, so the two sides compare in one form.
@@ -156,27 +133,7 @@ export class OpenVault {
 
         const snapshot: StatDto[] = [];
         await walk(root, vault.realRoot, snapshot, (absolute, stats) => vault.toStat(absolute, stats));
-        if (watch) vault.startWatching();
         return { vault, snapshot };
-    }
-
-    async close(): Promise<void> {
-        const watcher = this.watcher;
-        this.watcher = null;
-        this.listeners.clear();
-        await watcher?.close();
-    }
-
-    private markSelfWrite(stat: StatDto): void {
-        this.selfWrites.set(`${stat.path}:${stat.mtime}:${stat.size}`, Date.now());
-    }
-
-    private isSelfWrite(path: string, mtime: number, size: number): boolean {
-        const key = `${path}:${mtime}:${size}`;
-        const at = this.selfWrites.get(key);
-        if (at === undefined) return false;
-        this.selfWrites.delete(key);
-        return Date.now() - at < SELF_WRITE_TTL_MS;
     }
 
     /**
@@ -251,59 +208,6 @@ export class OpenVault {
         };
     }
 
-    private startWatching(): void {
-        const chokidar = require('chokidar') as typeof import('chokidar');
-
-        let batch: WatchEvent[] = [];
-        let timer: NodeJS.Timeout | null = null;
-        const flush = () => {
-            timer = null;
-            if (batch.length === 0) return;
-            const events = batch;
-            batch = [];
-            for (const listener of this.listeners) listener(events);
-        };
-        const push = (event: WatchEvent) => {
-            batch.push(event);
-            if (!timer) timer = setTimeout(flush, 50);
-        };
-
-        const instance = chokidar.watch(this.root, {
-            ignoreInitial: true,
-            ignored: (p: string) => p.includes(`${nodePath.sep}.git${nodePath.sep}`) || p.endsWith(`${nodePath.sep}.git`),
-            // Editors write in stages; without this we index a half-written note.
-            awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 30 },
-        });
-
-        const onFsEvent = (kind: 'create' | 'modify' | 'delete') => async (absolute: string) => {
-            try {
-                if (kind === 'delete') {
-                    push({ kind, path: this.toVaultPath(absolute) });
-                    return;
-                }
-                const stats = await fsp.stat(absolute);
-                const stat = this.toStat(absolute, stats);
-                if (this.isSelfWrite(stat.path, stat.mtime, stat.size)) return;
-                push({ kind, path: stat.path, stat });
-            } catch { /* raced with a delete */ }
-        };
-
-        instance
-            .on('add', onFsEvent('create'))
-            .on('change', onFsEvent('modify'))
-            .on('unlink', onFsEvent('delete'))
-            .on('addDir', onFsEvent('create'))
-            .on('unlinkDir', onFsEvent('delete'));
-
-        this.watcher = instance;
-    }
-
-    /** Events from this vault's own watcher; never fires when opened with watch:false. */
-    onChange(callback: (events: WatchEvent[]) => void): () => void {
-        this.listeners.add(callback);
-        return () => this.listeners.delete(callback);
-    }
-
     async read(path: string): Promise<string> {
         return fsp.readFile(this.resolve(path), 'utf-8');
     }
@@ -320,18 +224,14 @@ export class OpenVault {
         const absolute = this.resolve(path);
         await fsp.mkdir(nodePath.dirname(absolute), { recursive: true });
         await fsp.writeFile(absolute, data, 'utf-8');
-        const stat = await this.statOf(absolute);
-        this.markSelfWrite(stat);
-        return stat;
+        return this.statOf(absolute);
     }
 
     async writeBinary(path: string, data: Uint8Array): Promise<StatDto> {
         const absolute = this.resolve(path);
         await fsp.mkdir(nodePath.dirname(absolute), { recursive: true });
         await fsp.writeFile(absolute, data);
-        const stat = await this.statOf(absolute);
-        this.markSelfWrite(stat);
-        return stat;
+        return this.statOf(absolute);
     }
 
     async create(path: string, data: string): Promise<StatDto> {
@@ -339,9 +239,7 @@ export class OpenVault {
         if (fs.existsSync(absolute)) throw new Error('File already exists.');
         await fsp.mkdir(nodePath.dirname(absolute), { recursive: true });
         await fsp.writeFile(absolute, data, 'utf-8');
-        const stat = await this.statOf(absolute);
-        this.markSelfWrite(stat);
-        return stat;
+        return this.statOf(absolute);
     }
 
     async mkdir(path: string): Promise<StatDto> {
@@ -362,14 +260,6 @@ export class OpenVault {
         const target = this.resolveEntry(to);
         await fsp.mkdir(nodePath.dirname(target), { recursive: true });
         await fsp.rename(source, target);
-    }
-
-    async stat(path: string): Promise<StatDto | null> {
-        try {
-            return await this.statOf(this.resolve(path));
-        } catch {
-            return null;
-        }
     }
 
     /**
@@ -399,27 +289,20 @@ const hookedSenders = new Set<number>();
  * is dropped when the webContents is destroyed, so a closed window's root cannot be
  * picked up by anything later.
  */
-export async function openForSender(sender: VaultSender, dir: string, options?: OpenOptions): Promise<StatDto[]> {
-    const { vault, snapshot } = await OpenVault.open(dir, options);
+export async function openForSender(sender: VaultSender, dir: string): Promise<StatDto[]> {
+    const { vault, snapshot } = await OpenVault.open(dir);
     // The window may have closed while we walked the tree; its 'destroyed' has then
     // already fired and would never drop an entry added now.
-    if (sender.isDestroyed()) {
-        await vault.close();
-        throw new Error('The window closed before its vault opened');
-    }
+    if (sender.isDestroyed()) throw new Error('The window closed before its vault opened');
     const id = sender.id;
     if (!hookedSenders.has(id)) {
         hookedSenders.add(id);
         sender.once('destroyed', () => {
             hookedSenders.delete(id);
-            const open = bySender.get(id);
             bySender.delete(id);
-            void open?.close();
         });
     }
-    const previous = bySender.get(id);
     bySender.set(id, vault);
-    await previous?.close();
     return snapshot;
 }
 

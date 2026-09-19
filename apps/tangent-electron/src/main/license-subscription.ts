@@ -2,8 +2,8 @@ import {
 	DEFAULT_LICENSE_SERVER,
 	LICENSE_ENDPOINT,
 	entitlementsForTier,
+	fail,
 	isAppTier,
-	licenseFailureMessage,
 	type AppTier,
 	type Entitlements,
 	type LicenseFailure,
@@ -96,10 +96,6 @@ function reasonFrom(serverReason: unknown): LicenseFailure {
 	}
 }
 
-export function failWith(reason: LicenseFailure): LicenseStatus {
-	return { valid: false, reason, message: licenseFailureMessage(reason) }
-}
-
 /**
  * Turn one `license` object from the server into a status.
  *
@@ -111,7 +107,7 @@ export function statusFromResponse(body: unknown): LicenseStatus {
 	const envelope = body as { ok?: boolean, license?: Record<string, unknown> } | null
 	const license = envelope?.license
 	if (!envelope?.ok || !license || typeof license !== 'object') {
-		return failWith('server-error')
+		return fail('server-error')
 	}
 
 	// An unreadable tier is a trial rather than an error: a future server sending a tier
@@ -139,7 +135,7 @@ export function statusFromResponse(body: unknown): LicenseStatus {
 
 	if (license.active !== true) {
 		return {
-			...failWith(reasonFrom(license.reason)),
+			...fail(reasonFrom(license.reason)),
 			source: 'subscription',
 			// Carried even though invalid: the settings page shows which plan lapsed, and
 			// the cache keeps the answer so the app does not forget the account on a retry.
@@ -184,14 +180,14 @@ export async function checkSubscriptionKey(
 		// 401 is the one status that means the server understood and said no. Every other
 		// failure — 500, a proxy's 502, a captive portal's 200 of HTML — is "could not
 		// ask", and must not delete anyone's licence.
-		if (response.status === 401) return failWith('unknown-key')
-		if (!response.ok) return failWith('server-error')
+		if (response.status === 401) return fail('unknown-key')
+		if (!response.ok) return fail('server-error')
 
 		return statusFromResponse(await response.json())
 	}
 	catch {
 		// Timeout, DNS, TLS, or a body that is not JSON.
-		return failWith('server-error')
+		return fail('server-error')
 	}
 	finally {
 		clearTimeout(timer)

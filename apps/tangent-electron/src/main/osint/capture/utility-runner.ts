@@ -14,9 +14,10 @@ import type { ParseJob, ParseOutcome } from './derive'
 import type { ParserProcess, ParserRunner } from './deriver'
 
 /** webpack emits the worker beside the main bundle (see src/main/webpack.config.js). */
-export const WORKER_FILE = 'osint-capture-worker.js'
+const WORKER_FILE = 'osint-capture-worker.js'
 
-export function utilityParserRunner(workerPath = nodePath.join(__dirname, WORKER_FILE)): ParserRunner {
+export function utilityParserRunner(): ParserRunner {
+	const workerPath = nodePath.join(__dirname, WORKER_FILE)
 	return (job: ParseJob): ParserProcess => {
 		const child = utilityProcess.fork(workerPath, [], {
 			serviceName: 'OSINT Copilot capture parser',

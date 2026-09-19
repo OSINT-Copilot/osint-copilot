@@ -21,23 +21,3 @@ export function join(...segments: string[]): string {
     const body = joined.split(s).filter(Boolean).join(s);
     return leading + body;
 }
-
-export function dirname(p: string): string {
-    const normalized = p.replace(/[\\/]+$/, '');
-    const at = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'));
-    if (at < 0) return '.';
-    if (at === 0) return normalized[0];
-    return normalized.slice(0, at);
-}
-
-export function basename(p: string): string {
-    const normalized = p.replace(/[\\/]+$/, '');
-    const at = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'));
-    return at < 0 ? normalized : normalized.slice(at + 1);
-}
-
-export function extname(p: string): string {
-    const name = basename(p);
-    const dot = name.lastIndexOf('.');
-    return dot <= 0 ? '' : name.slice(dot);
-}

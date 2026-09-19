@@ -143,7 +143,7 @@ describe('the extension\'s client against the app\'s server', () => {
 		const workspaceId: string = listed.body.workspaces[0].id
 
 		const status = await channel.request('GET', '/v1/status')
-		expect(status).toEqual({ status: 200, body: { licensed: true, receiving: true, pendingCount: 0 } })
+		expect(status).toEqual({ status: 200, body: { licensed: true, pendingCount: 0 } })
 
 		// Items built the way the side panel builds them, sent through the durable queue.
 		const page = { url: 'https://user:pw@example.com/team?x=1', title: 'Our team' }

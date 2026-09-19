@@ -1,8 +1,8 @@
 export type * from './types';
 /**
  * `host-impl` is resolved per build target:
- *   renderer (esbuild alias) -> ./impl.bridge.ts   forwards to window.host
- *   node / vitest / main     -> ./impl.ts          the real Node implementation
- * Mapped in tsconfig.json paths, esbuild.config.mjs, and vitest.config.ts.
+ *   renderer -> ./impl.tangent.ts         forwards to window.api.osint
+ *   vitest   -> main/osint/impl.ts        the Node implementation, in-process parts only
+ * Mapped in tsconfig.json paths (which webpack follows) and vitest.config.project.osint.mts.
  */
 export { host } from 'host-impl';

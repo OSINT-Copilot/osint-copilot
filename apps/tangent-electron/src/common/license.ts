@@ -61,7 +61,7 @@ export const LICENSE_PUBLIC_KEY_B64 = 'vfJVwoKdSteUyfyNsxKyz9iDzTBV7PN0fUL7iakm3
  */
 export type AppTier = 'trial' | 'basic' | 'premium'
 
-export const APP_TIERS: readonly AppTier[] = ['trial', 'basic', 'premium'] as const
+const APP_TIERS: readonly AppTier[] = ['trial', 'basic', 'premium'] as const
 
 /** Ordering, for "premium or better" style checks. */
 const TIER_RANK: Record<AppTier, number> = { trial: 0, basic: 1, premium: 2 }
@@ -303,18 +303,12 @@ export interface LicenseStatus {
 /** The highest payload version this build understands. */
 export const LICENSE_FORMAT_VERSION = 1
 
-export function base64UrlDecode(value: string): Uint8Array {
+function base64UrlDecode(value: string): Uint8Array {
 	const padded = value.replace(/-/g, '+').replace(/_/g, '/')
 	const binary = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4))
 	const bytes = new Uint8Array(binary.length)
 	for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
 	return bytes
-}
-
-export function base64UrlEncode(bytes: Uint8Array): string {
-	let binary = ''
-	for (const byte of bytes) binary += String.fromCharCode(byte)
-	return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
 /**
@@ -325,7 +319,7 @@ export function normalizeLicenseKey(key: string): string {
 	return (key ?? '').replace(/\s+/g, '')
 }
 
-export interface ParsedLicenseKey {
+interface ParsedLicenseKey {
 	/** The signed message: the base64url payload, exactly as it appeared in the key. */
 	signedText: string
 	signature: Uint8Array
@@ -393,4 +387,9 @@ export function licenseFailureMessage(reason: LicenseFailure): string {
 		case 'server-error':
 			return 'The licence server could not be reached. Check your connection and try again.'
 	}
+}
+
+/** A failed status, carrying the sentence for its reason. */
+export function fail(reason: LicenseFailure): LicenseStatus {
+	return { valid: false, reason, message: licenseFailureMessage(reason) }
 }

@@ -4,20 +4,18 @@
  *
  * No electron import.
  */
+import { slugify } from '../../../osint/utils/slug'
 
-/** A filename that says what it is, without inviting a path traversal or a 300-char name. */
+/**
+ * A filename that says what it is, without inviting a path traversal or a 300-char name.
+ * No accent folding, unlike the Sources notes' slug: existing evidence keeps its name.
+ */
 export function evidenceSlug(title: string, url: string): string {
 	const source = (title || '').trim() || (() => {
 		try { return new URL(url).hostname }
 		catch { return 'capture' }
 	})()
-	const slug = source
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, '-')
-		.replace(/^-+|-+$/g, '')
-		.slice(0, 60)
-		.replace(/-+$/, '')
-	return slug || 'capture'
+	return slugify(source) || 'capture'
 }
 
 /**

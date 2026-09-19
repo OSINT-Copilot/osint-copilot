@@ -59,7 +59,7 @@ import {
     signResponse,
     verifyMac,
 } from './signing';
-import { validateManifest } from './validate';
+import { isRecord, validateManifest } from './validate';
 import type { ClientRecord, PairingManager } from './pairing';
 
 // --- the backend the next layer implements -------------------------------------------
@@ -232,10 +232,6 @@ function parseJson(body: Buffer): unknown {
     } catch {
         throw new RequestError('bad_json');
     }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** What a reply is signed with, once the request's MAC has verified. */

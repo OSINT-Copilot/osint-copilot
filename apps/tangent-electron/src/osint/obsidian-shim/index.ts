@@ -1,10 +1,9 @@
 /**
  * The `obsidian` module.
  *
- * esbuild and vitest both alias "obsidian" here, so the 42 coupled files compile
- * unchanged. Symbols are added as each phase lands; the UI primitives (Notice,
- * Setting, Modal, Menu, ItemView, MarkdownRenderer) arrive in Phase 3 along with the
- * workspace, since ItemView cannot exist without WorkspaceLeaf.
+ * The tsconfig `obsidian` path maps here (webpack follows tsconfig paths), so the files
+ * written against Obsidian's API compile unchanged. vitest aliases "obsidian" to
+ * tests/obsidian-mock.ts instead.
  */
 
 // --- vault -----------------------------------------------------------------

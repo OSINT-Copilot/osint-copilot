@@ -8,8 +8,8 @@
  * ("File already exists." / "Folder already exists."), which vault-bootstrap-fs.ts
  * matches on.
  *
- * It does NOT bring a second filesystem watcher: `open` is called with watch:false and
- * change events are derived from Tangent's own TreeChange stream in the renderer.
+ * It does NOT bring a second filesystem watcher: change events are derived from
+ * Tangent's own TreeChange stream in the renderer.
  *
  * Confinement is doubled up. vault.ts refuses any path escaping the open root, by `..`
  * or through a symlink, and the root itself must be a workspace Tangent has open — the
@@ -49,7 +49,7 @@ export function registerVaultHandlers({ handle, assertIsOpenWorkspace, trashItem
 
 	handle('osint:vault.open', (e, dir: string) => {
 		assertIsOpenWorkspace(dir)
-		return vaultFs.openForSender(e.sender, dir, { watch: false })
+		return vaultFs.openForSender(e.sender, dir)
 	})
 
 	handle('osint:vault.read', (e, p: string) => vaultOf(e).read(p))
@@ -60,7 +60,6 @@ export function registerVaultHandlers({ handle, assertIsOpenWorkspace, trashItem
 	handle('osint:vault.mkdir', (e, p: string) => vaultOf(e).mkdir(p))
 	handle('osint:vault.remove', (e, p: string) => vaultOf(e).remove(p))
 	handle('osint:vault.rename', (e, from: string, to: string) => vaultOf(e).rename(from, to))
-	handle('osint:vault.stat', (e, p: string) => vaultOf(e).stat(p))
 
 	/** Real OS trash, not unlink: four fileManager.trashFile call sites depend on it. */
 	handle('osint:vault.trash', async (e, p: string) => {

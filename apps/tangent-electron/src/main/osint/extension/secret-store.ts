@@ -1,12 +1,11 @@
 /**
  * The extension channel's keys -- main process only.
  *
- * Deliberately separate from secrets.ts. That module's keychain is reachable by name from
- * the renderer (osint:secrets.* lists, deletes and overwrites entries, and resolveSecret
- * injects any entry into an outbound request), and the renderer is the untrusted side. A
- * per-client key there could be read out to any allowlisted host, or overwritten with a
- * known value to impersonate the extension. This store has no IPC and no name-based
- * lookup; only the server and pairing code in main hold a reference to it.
+ * Deliberately separate from secrets.ts. Whatever that module can resolve, the renderer
+ * can name and have injected into an outbound request (resolveSecret), and the renderer
+ * is the untrusted side: a per-client key there could be read out to any allowlisted
+ * host. This store has no IPC and no name-based lookup; only the server and pairing code
+ * in main hold a reference to it.
  *
  * Held here: each paired client's K, the workspace-id key (so workspace ids are stable
  * across restarts without being guessable) and the manifest key the inbox signs bundles

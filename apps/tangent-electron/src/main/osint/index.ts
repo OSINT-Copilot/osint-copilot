@@ -5,7 +5,7 @@
  * single `import './osint'` in src/main/index.ts.
  *
  * Only capabilities Tangent does not already provide live here: spawning CLI runtimes,
- * guarded HTTP, document text extraction, and OS-keychain secrets. File I/O is
+ * guarded HTTP with main-side secrets, and document text extraction. File I/O is
  * deliberately absent — that goes through Tangent's own `file` API and DirectoryStore.
  *
  * Trust boundary rules, all enforced on this side because the renderer is untrusted:
@@ -24,7 +24,6 @@ import { mode } from 'main/environment'
 import { host, requestFor } from './impl'
 import * as vaultFs from './node/vault'
 import * as basemap from './node/basemap'
-import { configureKeychain, hasSecret } from './node/secrets'
 import {
 	assertCwdPermitted,
 	assertExecPermitted,
@@ -41,7 +40,7 @@ import { registerExtensionHandlers, registerInboxHandlers } from './inbox/ipc'
 import { tangentInboxHost, workspacePathOf } from './inbox/tangent-host'
 import { utilityParserRunner } from './capture/utility-runner'
 import { RENDER_PARTITION, renderArchive, renderSessionStats } from './capture/capture-surface'
-import type { ExecOptions, HttpRequest, PlatformInfo, SecretRef } from '../../osint/host/types'
+import type { ExecOptions, HttpRequest, PlatformInfo } from '../../osint/host/types'
 
 setWorkspaceRootsProvider(() => [...workspaceMap.keys()])
 
@@ -55,19 +54,9 @@ setWorkspaceRootsProvider(() => [...workspaceMap.keys()])
  */
 setApplicationWindowPredicate(contents => contentsMap.has(contents as Electron.WebContents))
 
-// safeStorage is only usable after the app is ready; until then the keychain source is
-// inert and secrets fall back to env / vault files.
-app.whenReady().then(() => {
-	configureKeychain(safeStorage, app.getPath('userData'))
-})
-
 function platformSnapshot(): PlatformInfo {
 	const p = host.platform
-	return {
-		os: p.os, arch: p.arch, homedir: p.homedir,
-		pathSep: p.pathSep, pathDelimiter: p.pathDelimiter,
-		isFlatpak: p.isFlatpak, electron: p.electron, chrome: p.chrome,
-	}
+	return { os: p.os, homedir: p.homedir, pathSep: p.pathSep, isFlatpak: p.isFlatpak }
 }
 
 /**
@@ -81,14 +70,8 @@ on('osint:platform', event => {
 })
 
 // ------------------------------------------------------------------------ secrets
-// Deliberately no 'osint:secrets.get'. No channel returns a secret value.
-// A vault-file ref is looked up in the asking window's own vault, never another's.
-handle('osint:secrets.has', (e, ref: SecretRef) =>
-	hasSecret(ref, vaultFs.findVaultForSender(e.sender.id)))
-handle('osint:secrets.setKeychain', (_e, name: string, value: string) =>
-	host.secrets.setKeychain(name, value))
-handle('osint:secrets.deleteKeychain', (_e, name: string) => host.secrets.deleteKeychain(name))
-handle('osint:secrets.listKeychain', () => host.secrets.listKeychain())
+// Deliberately no 'osint:secrets.get'. No channel returns a secret value: net.request
+// below resolves and injects them.
 
 // ---------------------------------------------------------------------------- cli
 handle('osint:cli.resolve', async (
@@ -180,7 +163,6 @@ handle('osint:basemap.open', (e) => { trackBasemapOwner(e); return basemap.open(
 handle('osint:basemap.forget', () => basemap.forget())
 handle('osint:basemap.read', (_e, handleId: string, offset: number, length: number) =>
 	basemap.read(handleId, offset, length))
-handle('osint:basemap.close', (_e, handleId: string) => basemap.close(handleId))
 
 // -------------------------------------------------------------- browser extension
 /**
@@ -230,7 +212,7 @@ const inboxHost = tangentInboxHost({
 	documentationPath: () => getDocumentationPath(),
 })
 
-// safeStorage, like the keychain above, is only usable once the app is ready.
+// safeStorage is only usable once the app is ready.
 const extensionReady: Promise<ExtensionController> = app.whenReady().then(() =>
 	ExtensionController.open({
 		userDataDir: app.getPath('userData'),

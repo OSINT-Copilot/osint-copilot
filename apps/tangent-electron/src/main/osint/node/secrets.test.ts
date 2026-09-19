@@ -20,7 +20,7 @@ async function vaultWithKey(name: string, key: string): Promise<OpenVault> {
 	const credentials = path.join(root, 'OSINTCopilot/custom/credentials/leakcheck')
 	fs.mkdirSync(credentials, { recursive: true })
 	fs.writeFileSync(path.join(credentials, 'api-key.txt'), `${key}\n`)
-	return (await OpenVault.open(root, { watch: false })).vault
+	return (await OpenVault.open(root)).vault
 }
 
 const ref = { source: 'vault-file' as const, name: 'leakcheck/api-key.txt' }

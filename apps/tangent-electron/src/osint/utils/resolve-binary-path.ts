@@ -2,7 +2,7 @@
  * Renderer-facing CLI path resolution.
  *
  * The resolution engine itself -- login-shell PATH probe, candidate scanning,
- * executability checks, caching -- moved to src/host/node/cli.ts when the renderer
+ * executability checks, caching -- moved to main/osint/node/cli.ts when the renderer
  * was sandboxed, since it needs child_process/fs/os. This file keeps the public
  * API unchanged (resolveCliPath was already async and every caller already awaited
  * it, so no signature moved) and delegates across the host boundary.

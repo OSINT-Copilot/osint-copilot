@@ -3,9 +3,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { LicenseStatus, SubscriptionDetails } from '../common/license'
+import { fail, type LicenseStatus, type SubscriptionDetails } from '../common/license'
 import * as license from './license'
-import { failWith } from './license-subscription'
 
 /**
  * The licence-change hook, driven the way the extension channel uses it: a listener that
@@ -97,7 +96,7 @@ describe('onLicenseChanged', () => {
 	it('does not loop when a listener re-asks and the dashboard keeps refusing the key', async () => {
 		// A revoked key answers 401, which keeps the stale `checkedAt`, so every ask is
 		// another request. Notifying on each answer made that a request loop.
-		state.answers = [failWith('unknown-key')]
+		state.answers = [fail('unknown-key')]
 		let notified = 0
 		unsubscribe = license.onLicenseChanged(() => {
 			notified++
@@ -114,7 +113,7 @@ describe('onLicenseChanged', () => {
 	})
 
 	it('notifies when the dashboard withdraws a licence it had granted', async () => {
-		state.answers = [validAnswer(), failWith('unknown-key')]
+		state.answers = [validAnswer(), fail('unknown-key')]
 		let notified = 0
 		unsubscribe = license.onLicenseChanged(() => { notified++ })
 
@@ -122,7 +121,7 @@ describe('onLicenseChanged', () => {
 		expect(notified).toBe(1)
 
 		// Same verdict again: nothing to tell anyone.
-		state.answers = [validAnswer(), validAnswer(), failWith('unknown-key')]
+		state.answers = [validAnswer(), validAnswer(), fail('unknown-key')]
 		expect((await license.licenseStatus(true)).valid).toBe(true)
 		expect(notified).toBe(1)
 

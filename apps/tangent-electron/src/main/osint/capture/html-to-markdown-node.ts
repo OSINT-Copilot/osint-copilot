@@ -71,7 +71,7 @@ const LINKABLE = /^((https?|mailto):|(?![a-z][a-z0-9+.-]*:))/i
  * emitted; it is restored last, so those, and only those, stay followable links. It is
  * random per conversion, so no page can spell it.
  */
-export function neutralise(markdown: string, schemeToken?: string): string {
+function neutralise(markdown: string, schemeToken?: string): string {
 	const out = markdown
 		.replace(/!\[/g, '!\\[')
 		.replace(/:\/\//g, ':\\/\\/')
