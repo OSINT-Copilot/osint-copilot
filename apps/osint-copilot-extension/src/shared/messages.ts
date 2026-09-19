@@ -36,7 +36,7 @@ export const PANEL_REQUEST_TYPES: readonly PanelRequest['type'][] = [
 
 export interface QueueEntry {
 	bundleId: string;
-	kind: 'note' | 'entity' | 'capture';
+	kind: 'note' | 'entity' | 'capture' | 'highlight' | 'highlight.update' | 'highlight.delete';
 	/** A short, human description: the note's first line, the entity's kind and value, or the page. */
 	label: string;
 	/** Bytes held for the item, a capture's files included. */

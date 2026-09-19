@@ -286,18 +286,18 @@ File uploads and commits share a limit of 120 a minute per client, apart from th
   "v": 1,
   "bundleId": "<UUID v4>",
   "workspaceId": "<id from /v1/workspaces>",
-  "kind": "note" | "entity" | "capture",
+  "kind": "note" | "entity" | "capture" | "highlight" | "highlight.update" | "highlight.delete",
   "page": {"url": "https://...", "title": "..."},
   "clientTime": "<ISO 8601 date-time, advisory only>",
   "note": {"text": "..."},
   "entity": {"kind": "...", "value": "...", "chain": "...", "platform": "...", "context": "..."},
-  "capture": {"files": {"page.mhtml": {"size": 123, "sha256": "..."}, "viewport.png": {...}, "page.pdf": {...}}}
+  "capture": {"files": {"page.mhtml": {"size": 123, "sha256": "..."}, "viewport.png": {...}, "page.pdf": {...}}},
+  "highlight": {"annotation": {...}}  or, for highlight.delete, {"annotationId": "...", "modified": "..."}
 }
 ```
 
-- `note` is present exactly when `kind` is `note`, `entity` exactly when it is `entity`, and `capture` exactly when it is `capture`.
+- `note` is present exactly when `kind` is `note`, `entity` exactly when it is `entity`, `capture` exactly when it is `capture`, and `highlight` exactly when `kind` is one of the three highlight kinds (§8.4).
 - Unknown fields are rejected at every level.
-- Later versions add the kinds `highlight`, `highlight.update` and `highlight.delete`. This app version rejects them with the detail shown in §7.4.
 
 ### 8.1 Cleaning and limits
 
@@ -351,6 +351,53 @@ Vectors: `entity-vectors.json`.
 | `page.pdf` | no | 50 MB | the original bytes of a PDF tab |
 
 Each entry is `{"size": <whole number of bytes, at least 1, at most the cap>, "sha256": "<64 lowercase hex>"}` and has no other fields. Violations are `422 invalid` with the field path, for example `capture.files.viewport.png.size: larger than 26214400 bytes`.
+
+
+### 8.4 Highlights
+
+A highlight is a W3C Web Annotation, trimmed to what the extension writes. Its `id` identifies it across all its edits.
+
+```json
+"highlight": {"annotation": {
+  "id": "urn:uuid:<UUID v4>",
+  "textModel": "v1",
+  "created": "<ISO 8601>",
+  "modified": "<ISO 8601>",
+  "target": {
+    "source": "<page.url without its fragment>",
+    "selector": [
+      {"type": "TextQuoteSelector", "exact": "...", "prefix": "...", "suffix": "..."},
+      {"type": "TextPositionSelector", "start": 0, "end": 0},
+      {"type": "RangeSelector",
+       "startSelector": {"type": "XPathSelector", "value": "/html[1]/body[1]/p[2]",
+                         "refinedBy": {"type": "TextPositionSelector", "start": 0, "end": 0}},
+       "endSelector": {"type": "XPathSelector", "value": "...", "refinedBy": {...}}}
+    ]
+  },
+  "body": {"type": "TextualBody", "purpose": "commenting", "value": "the investigator's note"}
+}}
+```
+
+- **`highlight`** files a new highlight. **`highlight.update`** carries the whole annotation again, with its new note and a later `modified`. **`highlight.delete`** carries `{"annotationId", "modified"}` instead.
+- **Ordering.** The app keeps, per `id`, whichever of these has the latest `modified`, and a delete leaves a tombstone. So the queue may deliver them in any order: an edit older than what the app holds changes nothing, and a create or edit that arrives after its delete (with an earlier or equal `modified`) does not bring the highlight back. `created` and `modified` are client times; `modified` must not be earlier than `created`.
+- **Text model v1.** Offsets count UTF-16 code units of the concatenated data of the Text nodes under `<body>`, in document order, skipping any inside `script`, `style`, `noscript`, `template`, `textarea` and `input`, with no whitespace normalisation. The extension uses the same model to find the highlight again.
+- **Selectors.** The array is exactly `[TextQuoteSelector, TextPositionSelector]`, optionally followed by one `RangeSelector`, in that order.
+  - The quote is the one that must match. The position and the range are hints that make re-finding fast.
+  - `end - start` of the position must equal the length of `exact`.
+  - Each end of the range names an element by an element-only path (`/tag[n]` steps) and a character offset into that element's text in the same model, as a point (`start` equal to `end`).
+- **Page text is checked, never cleaned.** `exact`, `prefix` and `suffix` must match the page to the code unit, so the app does not remove control or bidi characters from them. It stores them as JSON and shows them inert. The note (`body.value`) is the investigator's own text, cleaned like `note.text`. To have no note, omit `body`.
+
+| Field | Rule |
+|---|---|
+| `id`, `annotationId` | `urn:uuid:` and a UUID v4; stored lowercased |
+| `textModel` | exactly `v1` |
+| `created`, `modified` | as `clientTime`; `modified` not earlier than `created` |
+| `target.source` | `http(s)`, credentials removed, no fragment, and equal to `page.url` without its fragment |
+| `exact` | 1-4000 characters, not only whitespace |
+| `prefix`, `suffix` | at most 32 characters each; may be empty |
+| `start`, `end` | whole numbers, at least 0 |
+| XPath `value` | `(/<tag>[<n>])+` with `n` from 1, at most 1024 characters |
+| `body.value` | 1-20 000 characters after cleaning |
 
 ## 9. Errors
 
@@ -432,3 +479,9 @@ A pending capture is handed to the renderer only once its `derived.json` verifie
 `<stem>` is `[a-z0-9-]` from `page.title` (else the archived title, else the host), at most 60 characters, then `-` and the first 8 hex digits of the archive's sha256. Every file is first hashed while it is copied into a temporary file in the bundle folder, and only when all of them match their sealed digests (from the manifest for what the extension sent, from `derived.json` for what main made) are they linked into place, each with an exclusive create; a placement that fails part way removes the files it created, so a capture is placed whole or not at all. A sent file that no longer matches moves the capture to `rejected/`; a derived file that no longer matches is derived again. `OSINTCopilot` and `OSINTCopilot/Evidence` are resolved one component at a time and must really be inside the workspace and outside `.osint-inbox/`; a symlink leading elsewhere is refused and nothing is placed. A name already holding the same bytes is reused (the identical page captured twice is one piece of evidence); holding anything else, or a symlink, `-2`, `-3`, ... is tried. Before creating each file main records its name under the step `placement` in `state.json` (a step the renderer may not write), so a placement repeated after a crash reports the files it made as its own (`created`) and ones it found as reused.
 
 The renderer then makes one Evidence entity keyed `evidence:<archive sha256>` (a second capture of the same bytes merges into it), with a source for the live URL and one for `vault://<the .mhtml>` whose rationale gives the digest, and a section in the page's Sources note listing the files. Removing the item trashes only the files its placement created, and none that another applied item or the surviving Evidence entity still names. Because a capture still pending may have journaled a placement that reused those files, the renderer asks main to place again every time it applies a capture, rather than trusting the journaled placement: files trashed meanwhile are placed anew, and then count as the capture's own.
+
+### 12.2 Highlights
+
+A highlight is filed in the page's Sources note (`OSINTCopilot/Sources/<slug>-<hash>.md`) as its own section: the quote and the note, shown inert. Every highlight on the page is also recorded, selectors and all, in `<same name>.annotations.json` beside it, so the investigation keeps what it needs to find each one again even if the browser's copy is lost. That record keeps the quote exactly as the page had it.
+
+An edit rewrites the highlight's one section in place. A delete cuts it and leaves a tombstone in the record. Only the highlight itself (kind `highlight`) is listed in the app's activity, and Remove there takes it out and leaves a tombstone too. A later edit from the browser, with a newer `modified`, brings it back.

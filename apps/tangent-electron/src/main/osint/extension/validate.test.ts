@@ -63,3 +63,60 @@ describe('normalisePageUrl', () => {
 		}
 	})
 })
+
+describe('highlights', () => {
+	const annotation = (over: Record<string, unknown> = {}) => ({
+		id: 'urn:uuid:5F0C6A2E-8B1D-4C3E-9F7A-1B2C3D4E5F60',
+		textModel: 'v1',
+		created: '2025-10-09T08:53:20.000Z',
+		modified: '2025-10-09T08:53:20.000Z',
+		target: {
+			source: 'https://example.com/',
+			selector: [
+				{ type: 'TextQuoteSelector', exact: `a${ch(0x202e)}b${ch(0x0a)}c`, prefix: `x${ch(0x00)}`, suffix: '' },
+				{ type: 'TextPositionSelector', start: 10, end: 15 },
+			],
+		},
+		...over,
+	})
+	const manifest = (a: unknown, pageUrl = 'https://example.com/') => ({
+		v: 1,
+		bundleId: '0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e',
+		workspaceId: 'AAAAAAAAAAAAAAAAAAAAAA',
+		kind: 'highlight',
+		page: { url: pageUrl, title: '' },
+		clientTime: '2025-10-09T08:53:20.000Z',
+		highlight: { annotation: a },
+	})
+
+	it('keeps the quote and its context exactly as the page had them, controls included', () => {
+		const result = validateManifest(manifest(annotation()))
+		expect(result.ok, JSON.stringify(result)).toBe(true)
+		if (!result.ok || result.value.kind !== 'highlight') return
+		const [quote] = result.value.highlight.annotation.target.selector
+		// Cleaning would move the text off the page's own offsets and lose the highlight.
+		expect(quote.exact).toBe(`a${ch(0x202e)}b${ch(0x0a)}c`)
+		expect(quote.prefix).toBe(`x${ch(0x00)}`)
+	})
+
+	it('cleans the investigator\'s note like any note, and lowercases the id', () => {
+		const result = validateManifest(manifest(annotation({
+			body: { type: 'TextualBody', purpose: 'commenting', value: `one\r\ntwo${ch(0x202e)}three${ch(0x07)}` },
+		})))
+		expect(result.ok, JSON.stringify(result)).toBe(true)
+		if (!result.ok || result.value.kind !== 'highlight') return
+		expect(result.value.highlight.annotation.body?.value).toBe('one\ntwothree')
+		expect(result.value.highlight.annotation.id).toBe('urn:uuid:5f0c6a2e-8b1d-4c3e-9f7a-1b2c3d4e5f60')
+	})
+
+	it('files a highlight under its page without the fragment, and strips credentials from both', () => {
+		const result = validateManifest(manifest(
+			annotation({ target: { ...annotation().target, source: 'https://user:pw@example.com/a#x' } }),
+			'https://user:pw@example.com/a#y',
+		))
+		expect(result.ok, JSON.stringify(result)).toBe(true)
+		if (!result.ok || result.value.kind !== 'highlight') return
+		expect(result.value.highlight.annotation.target.source).toBe('https://example.com/a')
+		expect(result.value.page.url).toBe('https://example.com/a#y')
+	})
+})

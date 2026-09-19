@@ -101,6 +101,115 @@ def m(note, expect, over=None, drop=None, **extra):
 
 
 note = {"kind": "note", "note": {"text": "hello"}}
+
+# A highlight of "quick brown" on https://example.com/, as the extension writes it.
+HL_ID = "urn:uuid:5f0c6a2e-8b1d-4c3e-9f7a-1b2c3d4e5f60"
+
+
+def ann(**over):
+    a = {
+        "id": HL_ID,
+        "textModel": "v1",
+        "created": "2025-10-09T08:53:20.000Z",
+        "modified": "2025-10-09T08:53:20.000Z",
+        "target": {
+            "source": "https://example.com/",
+            "selector": [
+                {"type": "TextQuoteSelector", "exact": "quick brown", "prefix": "The ", "suffix": " fox"},
+                {"type": "TextPositionSelector", "start": 4, "end": 15},
+            ],
+        },
+    }
+    a.update(over)
+    return a
+
+
+def sel(*extra, quote=None, position=None):
+    return [
+        quote or {"type": "TextQuoteSelector", "exact": "quick brown", "prefix": "The ", "suffix": " fox"},
+        position or {"type": "TextPositionSelector", "start": 4, "end": 15},
+        *extra,
+    ]
+
+
+def hl(annotation, kind="highlight"):
+    return {"kind": kind, "highlight": {"annotation": annotation}}
+
+
+RANGE = {
+    "type": "RangeSelector",
+    "startSelector": {"type": "XPathSelector", "value": "/html[1]/body[1]/p[1]",
+                      "refinedBy": {"type": "TextPositionSelector", "start": 4, "end": 4}},
+    "endSelector": {"type": "XPathSelector", "value": "/html[1]/body[1]/p[1]",
+                    "refinedBy": {"type": "TextPositionSelector", "start": 15, "end": 15}},
+}
+SEL = "highlight.annotation.target.selector"
+
+highlights = [
+    m("highlight: quote and position", A, hl(ann())),
+    m("highlight: with an XPath range", A, hl(ann(target={"source": "https://example.com/", "selector": sel(RANGE)}))),
+    m("highlight.update carries the whole annotation, with a note", A,
+      hl(ann(modified="2025-10-09T09:00:00.000Z",
+             body={"type": "TextualBody", "purpose": "commenting", "value": "check this"}), "highlight.update")),
+    m("highlight.delete names the annotation", A,
+      {"kind": "highlight.delete", "highlight": {"annotationId": HL_ID, "modified": "2025-10-09T09:00:00.000Z"}}),
+    m("a quote keeps a bidi override: it must match the page to the code unit", A,
+      {**hl(ann(target={"source": "https://example.com/", "selector": sel(
+          quote={"type": "TextQuoteSelector", "exact": "a‮b", "prefix": "", "suffix": ""},
+          position={"type": "TextPositionSelector", "start": 0, "end": 3})}))}),
+    m("the page's fragment is not part of the highlight's page", A,
+      {**hl(ann()), "page": {"url": "https://example.com/#section-2", "title": "Example"}}),
+    m("highlight: a position that does not span the quote", R,
+      hl(ann(target={"source": "https://example.com/", "selector": sel(
+          position={"type": "TextPositionSelector", "start": 4, "end": 16})})),
+      detail=f"{SEL}[1]: end - start must equal the length of the quote"),
+    m("highlight: on a different page from page.url", R,
+      hl(ann(target={"source": "https://example.org/", "selector": sel()})),
+      detail="highlight.annotation.target.source: must be page.url without its fragment"),
+    m("highlight: an id that is not urn:uuid", R, hl(ann(id="5f0c6a2e-8b1d-4c3e-9f7a-1b2c3d4e5f60")),
+      detail="highlight.annotation.id: must be urn:uuid: and a UUID v4"),
+    m("highlight: an XPath that is not a plain element path", R,
+      hl(ann(target={"source": "https://example.com/", "selector": sel(
+          {**RANGE, "startSelector": {**RANGE["startSelector"], "value": "//p[1]/text()[1]"}})})),
+      detail=f"{SEL}[2].startSelector.value: must be an element path such as /html[1]/body[1]/p[2], at most 1024 characters"),
+    m("highlight: a range end that is not a point", R,
+      hl(ann(target={"source": "https://example.com/", "selector": sel(
+          {**RANGE, "endSelector": {**RANGE["endSelector"],
+                                    "refinedBy": {"type": "TextPositionSelector", "start": 15, "end": 16}}})})),
+      detail=f"{SEL}[2].endSelector.refinedBy: must be a point (start equal to end)"),
+    m("highlight: a quote of only whitespace", R,
+      hl(ann(target={"source": "https://example.com/", "selector": sel(
+          quote={"type": "TextQuoteSelector", "exact": "   ", "prefix": "", "suffix": ""},
+          position={"type": "TextPositionSelector", "start": 0, "end": 3})})),
+      detail=f"{SEL}[0].exact: must not be empty or only whitespace"),
+    m("highlight: a quote over 4000 characters", R,
+      hl(ann(target={"source": "https://example.com/", "selector": sel(
+          quote={"type": "TextQuoteSelector", "exact": "q" * 4001, "prefix": "", "suffix": ""},
+          position={"type": "TextPositionSelector", "start": 0, "end": 4001})})),
+      detail=f"{SEL}[0].exact: longer than 4000 characters"),
+    m("highlight: context over 32 characters", R,
+      hl(ann(target={"source": "https://example.com/", "selector": sel(
+          quote={"type": "TextQuoteSelector", "exact": "quick brown", "prefix": "p" * 33, "suffix": ""})})),
+      detail=f"{SEL}[0].prefix: longer than 32 characters"),
+    m("highlight: selectors in the wrong order", R,
+      hl(ann(target={"source": "https://example.com/", "selector": [
+          {"type": "TextPositionSelector", "start": 4, "end": 15},
+          {"type": "TextQuoteSelector", "exact": "quick brown", "prefix": "", "suffix": ""}]})),
+      detail=f"{SEL}[0].start: unknown field"),
+    m("highlight: modified earlier than created", R, hl(ann(modified="2025-10-09T08:00:00.000Z")),
+      detail="highlight.annotation.modified: earlier than created"),
+    m("highlight: an empty note (omit body instead)", R,
+      hl(ann(body={"type": "TextualBody", "purpose": "commenting", "value": "  "})),
+      detail="highlight.annotation.body.value: must not be empty"),
+    m("highlight: an unknown annotation field", R, hl(ann(motivation="highlighting")),
+      detail="highlight.annotation.motivation: unknown field"),
+    m("highlight kind without its payload", R, {"kind": "highlight", "note": {"text": "x"}},
+      detail="note: unknown field"),
+    m("highlight.delete with an id that is not urn:uuid", R,
+      {"kind": "highlight.delete", "highlight": {"annotationId": "x", "modified": "2025-10-09T09:00:00.000Z"}},
+      detail="highlight.annotationId: must be urn:uuid: and a UUID v4"),
+]
+
 manifests = [
     m("note", A, note),
     m("entity", A, {"kind": "entity", "entity": {"kind": "domain", "value": "example.com"}}),
@@ -110,7 +219,7 @@ manifests = [
       {"kind": "note", "note": {"text": "one\r\ntwo\u0007\u2029three"}}, text="one\ntwothree"),
     m("uppercase bundleId is lowercased", A,
       {**note, "bundleId": "0B7E7C1E-3F7A-4C56-9A3E-2D4F5B6C7D8E"}, bundleId="0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e"),
-    m("highlight is a later-phase kind", R, {"kind": "highlight"}, detail="kind not supported by this app version"),
+    *highlights,
     m("unknown kind", R, {"kind": "bogus"},
       detail="kind: must be one of note, entity, capture, highlight, highlight.update, highlight.delete"),
     m("wrong version", R, {**note, "v": 2}, detail="v: must be 1"),

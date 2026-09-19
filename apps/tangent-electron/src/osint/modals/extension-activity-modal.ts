@@ -20,12 +20,13 @@ export interface ExtensionActivityModalHost {
 export function activityTypeLabel(item: ExtensionActivityItem): string {
     if (item.kind === 'note') return 'Note';
     if (item.kind === 'capture') return 'Page capture';
+    if (item.kind === 'highlight') return 'Highlight';
     return item.entityKind ? entityKindLabel({ kind: item.entityKind as EntityPayload['kind'] }) : 'Entity';
 }
 
 /** "merged into existing <label>", or null when the item made something new. */
 export function activityMergeLabel(item: ExtensionActivityItem): string | null {
-    if (item.kind === 'note' || item.outcome.created || !item.outcome.entityId) return null;
+    if (item.kind === 'note' || item.kind === 'highlight' || item.outcome.created || !item.outcome.entityId) return null;
     return `merged into existing ${item.outcome.entityLabel ?? 'entity'}`;
 }
 

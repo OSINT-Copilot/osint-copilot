@@ -55,7 +55,7 @@ import { ensureFolderExists } from '../utils/vault-bootstrap-fs';
 import { OSINT_COPILOT_VAULT_ROOT } from '../constants/vault-layout';
 import { generateId, isGeneratedId, type Entity, type OsintSourceInput } from '../entities/types';
 import type { InboxAppliedBundle, InboxBundle, InboxHost, InboxPlacedFile, InboxPlacement } from '../host/types';
-import type { EntityPayload, ManifestPage } from '../../main/osint/extension/protocol';
+import type { EntityPayload, HighlightAnnotation, ManifestPage } from '../../main/osint/extension/protocol';
 import {
     captureName, captureWarnings, evidenceSourcesFor, evidenceTargetFor, normalizePlacedFiles, normalizePlacement,
 } from '../inbox/capture-to-entity';
@@ -86,7 +86,9 @@ export interface ExtensionActivityOutcome {
 
 export interface ExtensionActivityItem {
     bundleId: string;
-    kind: 'entity' | 'note' | 'capture';
+    kind: 'entity' | 'note' | 'capture' | 'highlight';
+    /** A highlight only: its annotation id, the same across the highlight's edits. */
+    annotationId?: string;
     /** For an entity: the extension's kind (email, phone, username, ...). */
     entityKind?: string;
     /** The value, or the note's first line, for the list. */
@@ -149,6 +151,7 @@ export function activityItemFor(bundle: InboxAppliedBundle): ExtensionActivityIt
     let kind: ExtensionActivityItem['kind'];
     let summary: string;
     let entityKind: string | undefined;
+    let annotationId: string | undefined;
     let captureFlags: Pick<ExtensionActivityItem, 'derivationFailed' | 'urlMismatch' | 'contentLocation'> = {};
     if (manifest.kind === 'capture') {
         kind = 'capture';
@@ -168,7 +171,13 @@ export function activityItemFor(bundle: InboxAppliedBundle): ExtensionActivityIt
     } else if (manifest.kind === 'note') {
         kind = 'note';
         summary = noteSummary(manifest.note.text);
+    } else if (manifest.kind === 'highlight') {
+        kind = 'highlight';
+        summary = oneLine(displayQuote(manifest.highlight.annotation.target.selector[0].exact)).slice(0, 140);
+        annotationId = manifest.highlight.annotation.id;
     } else {
+        // highlight.update and highlight.delete are edits of a highlight already in the
+        // log, not items of their own: nothing separate to show or to take back.
         return null;
     }
     const removed = bundle.where === 'removed';
@@ -177,6 +186,7 @@ export function activityItemFor(bundle: InboxAppliedBundle): ExtensionActivityIt
         bundleId,
         kind,
         ...(entityKind ? { entityKind } : {}),
+        ...(annotationId ? { annotationId } : {}),
         summary,
         url: manifest.page.url,
         title: manifest.page.title,
@@ -443,6 +453,110 @@ export function cutSection(text: string, bundleId: string): string | null {
         : before.replace(/\n+$/, '\n\n') + after.replace(/^\n+/, '');
 }
 
+/**
+ * The note text with this section's body replaced, or null when it has no such section.
+ * A highlight keeps one section across its edits, so an edit rewrites it in place.
+ */
+export function replaceSection(text: string, key: string, body: string): string | null {
+    const close = `\n${sectionClose(key)}`;
+    const start = sectionStart(text, key);
+    if (start < 0) return null;
+    const closeAt = text.indexOf(close, start);
+    if (closeAt < 0) return null;
+    return `${text.slice(0, start)}${sectionOpen(key)}\n${body}${text.slice(closeAt)}`;
+}
+
+// ------------------------------------------------------------------ highlights
+
+/**
+ * A highlight's quote for reading, not for matching: it keeps its line breaks and loses
+ * control characters and the bidi embeddings, overrides and isolates, which would show
+ * the text reordered. The vault's JSON record keeps the quote exactly as the page had it.
+ */
+export function displayQuote(exact: string): string {
+    return cleanNoteText(exact).replace(/[‪-‮⁦-⁩]/g, '');
+}
+
+/**
+ * One highlight in the sidecar. `section` is the key of its Sources-note section: the
+ * bundle that first filed it, kept across edits so an edit rewrites that one section.
+ * A deleted highlight stays as a tombstone, so a create or edit that arrives late (the
+ * extension retries out of order) cannot bring it back; only a newer `modified` wins.
+ */
+export interface SidecarHighlight {
+    annotation?: HighlightAnnotation;
+    section: string | null;
+    /** The annotation's own modified time, which orders its edits. */
+    modified: string;
+    /** When the app first received it, shown in the note. */
+    receivedAt?: string;
+    deleted: boolean;
+}
+
+export interface HighlightSidecar {
+    version: 1;
+    normalised_url: string;
+    highlights: Record<string, SidecarHighlight>;
+}
+
+/**
+ * `<note>.annotations.json` beside the page's Sources note: every highlight on the page
+ * with its full selectors, so the investigation keeps what it needs to find each one
+ * again even if the browser's copy is lost. JSON, not front matter: the quote is page
+ * text and stays exactly as the page had it.
+ */
+export function sidecarPathFor(notePath: string): string {
+    return notePath.replace(/\.md$/, '.annotations.json');
+}
+
+/** A sidecar read back, or null when it is not one this code wrote. */
+export function parseSidecar(raw: string): HighlightSidecar | null {
+    let v: unknown;
+    try {
+        v = JSON.parse(raw);
+    } catch {
+        return null;
+    }
+    const o = v as Record<string, unknown>;
+    if (!o || typeof o !== 'object' || o.version !== 1 || !isString(o.normalised_url)) return null;
+    const h = o.highlights;
+    if (!h || typeof h !== 'object' || Array.isArray(h)) return null;
+    const highlights: Record<string, SidecarHighlight> = {};
+    for (const [id, e] of Object.entries(h as Record<string, unknown>)) {
+        const r = e as Record<string, unknown>;
+        if (!r || typeof r !== 'object' || !isString(r.modified) || typeof r.deleted !== 'boolean') return null;
+        highlights[id] = {
+            ...(r.annotation && typeof r.annotation === 'object' ? { annotation: r.annotation as HighlightAnnotation } : {}),
+            section: isString(r.section) ? r.section : null,
+            modified: r.modified,
+            ...(isString(r.receivedAt) ? { receivedAt: r.receivedAt } : {}),
+            deleted: r.deleted,
+        };
+    }
+    return { version: 1, normalised_url: o.normalised_url, highlights };
+}
+
+/** Whether an edit stamped `incoming` should replace what the sidecar holds for it. */
+export function isNewer(incoming: string, held: SidecarHighlight | undefined): boolean {
+    if (!held) return true;
+    const a = Date.parse(incoming);
+    const b = Date.parse(held.modified);
+    // A tombstone wins a tie: a delete and a late edit stamped the same instant stay deleted.
+    return held.deleted ? a > b : a >= b;
+}
+
+function highlightSection(annotation: HighlightAnnotation, receivedAt: string, editedAt: string | null): string {
+    const lines = [
+        '### Highlight',
+        `Received ${oneLine(receivedAt)}.${editedAt ? ` Edited ${oneLine(editedAt)}.` : ''}`,
+        '',
+        blockLiteral(displayQuote(annotation.target.selector[0].exact)),
+    ];
+    const note = annotation.body?.value;
+    if (note) lines.push('', 'Note:', '', blockLiteral(cleanNoteText(note)));
+    return lines.join('\n');
+}
+
 // ------------------------------------------------------------------ the service
 
 type EntityPlan = { plannedEntityId: string };
@@ -633,6 +747,8 @@ export class InboxService {
             if (!this.active) break;
             try {
                 const result = await this.apply(bundle);
+                // An edit or delete of a highlight is applied quietly: it is not an item
+                // added, and the investigator made it in the browser a moment ago.
                 if (result === 'done') applied++;
                 else if (result === 'rejected') dropped++;
             } catch (e) {
@@ -644,7 +760,7 @@ export class InboxService {
     }
 
     /** Applies one bundle, resuming from its journal. */
-    private async apply(bundle: InboxBundle): Promise<'done' | 'rejected' | 'held'> {
+    private async apply(bundle: InboxBundle): Promise<'done' | 'edited' | 'rejected' | 'held'> {
         const { bundleId, manifest, server } = bundle;
         // Main lists a capture only once it is derived; one without derived.json is still
         // being derived, and is left pending for the pass that sees it done.
@@ -722,6 +838,30 @@ export class InboxService {
                 sourcesNotePath: null,
                 placedFiles: placement.files,
             };
+        } else if (manifest.kind === 'highlight' || manifest.kind === 'highlight.update') {
+            let done = journal.get('highlight') as { path?: unknown } | undefined;
+            if (!done || !isString(done.path)) {
+                const path = await this.upsertHighlight(manifest.page, manifest.highlight.annotation, bundleId, server.receivedAt);
+                done = { path };
+                await step('highlight', done);
+            }
+            // The item is the highlight; an update is an edit of it and is not listed or
+            // taken back on its own (see activityItemFor).
+            outcome = { entityId: null, entityLabel: null, created: false, addedSourceIds: [], sourcesNotePath: done.path as string, placedFiles: [] };
+            if (!journal.has(APPLIED_STEP)) await step(APPLIED_STEP, outcome);
+            await this.deps.inbox.finish(bundleId, 'done');
+            return manifest.kind === 'highlight' ? 'done' : 'edited';
+        } else if (manifest.kind === 'highlight.delete') {
+            let done = journal.get('highlight') as { path?: unknown } | undefined;
+            if (!done || !isString(done.path)) {
+                const path = await this.deleteHighlight(manifest.page, manifest.highlight.annotationId, manifest.highlight.modified);
+                done = { path };
+                await step('highlight', done);
+            }
+            outcome = { entityId: null, entityLabel: null, created: false, addedSourceIds: [], sourcesNotePath: done.path as string, placedFiles: [] };
+            if (!journal.has(APPLIED_STEP)) await step(APPLIED_STEP, outcome);
+            await this.deps.inbox.finish(bundleId, 'done');
+            return 'edited';
         } else {
             // A kind from a later protocol version: main rejects them, so this is a guard.
             return reject('a kind this version does not know');
@@ -874,6 +1014,109 @@ export class InboxService {
         return path;
     }
 
+    /**
+     * Writes a section under `key`, replacing its body when the note already has it, so an
+     * edit rewrites a highlight's one section instead of adding another. Returns the path.
+     */
+    private async putSection(page: ManifestPage, key: string, body: string): Promise<string> {
+        const { vault } = this.deps.app;
+        const path = await this.sourcesNotePathFor(page);
+        const file = vault.getAbstractFileByPath(path);
+        if (file instanceof TFile) {
+            const text = await vault.read(file);
+            const replaced = replaceSection(text, key, body);
+            if (replaced !== null) {
+                if (replaced !== text) await vault.modify(file, replaced);
+                return path;
+            }
+        }
+        return this.appendSection(page, key, body);
+    }
+
+    /**
+     * The page's highlight sidecar, or a fresh one. One that does not parse is set aside
+     * (renamed, never deleted: it is the investigation's record) rather than written over.
+     */
+    private async readSidecar(notePath: string, page: ManifestPage): Promise<{ path: string; sidecar: HighlightSidecar }> {
+        const { vault } = this.deps.app;
+        const path = sidecarPathFor(notePath);
+        const normalised = normalizeSourceUrl(page.url);
+        const fresh: HighlightSidecar = { version: 1, normalised_url: normalised, highlights: {} };
+        const file = vault.getAbstractFileByPath(path);
+        if (!(file instanceof TFile)) return { path, sidecar: fresh };
+        const parsed = parseSidecar(await vault.read(file));
+        if (!parsed) {
+            const aside = path.replace(/\.json$/, `.unreadable-${Date.now()}.json`);
+            await vault.rename(file, aside);
+            console.warn(`[osint] ${path} could not be read; kept as ${aside} and started again`);
+            return { path, sidecar: fresh };
+        }
+        // Found by the URL's hash, so this can only be another page by a hash collision:
+        // better to stop than to file one page's highlights under another's.
+        if (parsed.normalised_url !== normalised) throw new Error(`${path} belongs to another page`);
+        return { path, sidecar: parsed };
+    }
+
+    private async writeSidecar(path: string, sidecar: HighlightSidecar): Promise<void> {
+        const { vault } = this.deps.app;
+        const text = `${JSON.stringify(sidecar, null, '\t')}\n`;
+        const file = vault.getAbstractFileByPath(path);
+        if (file instanceof TFile) await vault.modify(file, text);
+        else {
+            await ensureFolderExists(this.deps.app, SOURCES_FOLDER);
+            await vault.create(path, text);
+        }
+    }
+
+    /**
+     * Files a highlight, or an edit of one: its section in the Sources note (rewritten in
+     * place on an edit) and its record in the sidecar. Idempotent, and ordered by the
+     * annotation's `modified`, so an edit that arrives after a newer one, or a create after
+     * a delete, changes nothing. Returns the Sources note's path.
+     */
+    private async upsertHighlight(page: ManifestPage, annotation: HighlightAnnotation, bundleId: string, receivedAt: string): Promise<string> {
+        const notePath = await this.sourcesNotePathFor(page);
+        const { path, sidecar } = await this.readSidecar(notePath, page);
+        const held = sidecar.highlights[annotation.id];
+        if (!isNewer(annotation.modified, held)) return notePath;
+
+        const key = held && !held.deleted && held.section ? held.section : bundleId;
+        const firstReceived = held && !held.deleted && held.receivedAt ? held.receivedAt : receivedAt;
+        const edited = firstReceived !== receivedAt ? receivedAt : null;
+        await this.putSection(page, key, highlightSection(annotation, firstReceived, edited));
+        sidecar.highlights[annotation.id] = {
+            annotation, section: key, modified: annotation.modified, receivedAt: firstReceived, deleted: false,
+        };
+        await this.writeSidecar(path, sidecar);
+        return notePath;
+    }
+
+    /**
+     * Deletes a highlight: cuts its section and leaves a tombstone in the sidecar, which
+     * keeps a late create or edit of it from bringing it back. A delete for a highlight the
+     * investigation never received still leaves the tombstone, for the same reason.
+     */
+    private async deleteHighlight(page: ManifestPage, annotationId: string, modified: string): Promise<string> {
+        const notePath = await this.sourcesNotePathFor(page);
+        const { path, sidecar } = await this.readSidecar(notePath, page);
+        const held = sidecar.highlights[annotationId];
+        if (held && !held.deleted && Date.parse(held.modified) > Date.parse(modified)) return notePath;
+        if (held?.deleted) return notePath;
+        if (held?.section) await this.cutNoteSection(notePath, held.section);
+        sidecar.highlights[annotationId] = { section: held?.section ?? null, modified, deleted: true };
+        await this.writeSidecar(path, sidecar);
+        return notePath;
+    }
+
+    private async cutNoteSection(notePath: string, key: string): Promise<void> {
+        const { vault } = this.deps.app;
+        const file = vault.getAbstractFileByPath(notePath);
+        if (!(file instanceof TFile)) return;
+        const text = await vault.read(file);
+        const cut = cutSection(text, key);
+        if (cut !== null) await vault.modify(file, cut);
+    }
+
     // ------------------------------------------------------------------ Remove
 
     /**
@@ -907,7 +1150,9 @@ export class InboxService {
                 }
             }
             await this.removePlacedFiles(item, log);
-            if (outcome.sourcesNotePath) {
+            if (item.kind === 'highlight' && item.annotationId && outcome.sourcesNotePath) {
+                await this.removeHighlight(item, outcome.sourcesNotePath);
+            } else if (outcome.sourcesNotePath) {
                 const file = this.deps.app.vault.getAbstractFileByPath(outcome.sourcesNotePath);
                 if (file instanceof TFile) {
                     const text = await this.deps.app.vault.read(file);
@@ -921,6 +1166,23 @@ export class InboxService {
             await this.deps.inbox.markRemoved(bundleId);
             return true;
         });
+    }
+
+    /**
+     * Takes a highlight back out of the investigation: its section, wherever its edits left
+     * it, and a tombstone in the sidecar so that its create, if still pending, does not put
+     * it back. An edit made later in the browser has a newer time, and does bring it back:
+     * the investigator changed it after removing it here.
+     */
+    private async removeHighlight(item: ExtensionActivityItem, notePath: string): Promise<void> {
+        const page = { url: item.url, title: item.title };
+        const { path, sidecar } = await this.readSidecar(notePath, page);
+        const held = sidecar.highlights[item.annotationId!];
+        const section = held?.section ?? item.bundleId;
+        await this.cutNoteSection(notePath, section);
+        if (held?.deleted) return;
+        sidecar.highlights[item.annotationId!] = { section, modified: new Date().toISOString(), deleted: true };
+        await this.writeSidecar(path, sidecar);
     }
 
     /**

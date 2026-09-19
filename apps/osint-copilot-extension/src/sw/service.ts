@@ -45,6 +45,13 @@ function label(manifest: Manifest): string {
 		const line = manifest.note.text.split('\n')[0];
 		return line.length > 80 ? `${line.slice(0, 79)}…` : line;
 	}
+	if (manifest.kind === 'highlight.delete') return 'Delete a highlight';
+	if (manifest.kind === 'highlight' || manifest.kind === 'highlight.update') {
+		const quote = manifest.highlight.annotation.target.selector[0].exact.replace(/\s+/g, ' ').trim();
+		const verb = manifest.kind === 'highlight' ? 'Highlight' : 'Edit highlight';
+		return `${verb}: ${quote.length > 80 ? `${quote.slice(0, 79)}…` : quote}`;
+	}
+	if (manifest.kind !== 'entity') return manifest.kind;
 	const e = manifest.entity;
 	const kind = e.kind === 'wallet' ? `${e.chain} wallet` : e.kind;
 	return `${kind}: ${e.value.length > 80 ? `${e.value.slice(0, 79)}…` : e.value}`;

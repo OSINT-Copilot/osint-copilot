@@ -138,6 +138,13 @@ export const LIMITS = {
 	entityContext: 500,
 	platform: 40,
 	clientTime: 64,
+	/** A highlight's quoted text (TextQuoteSelector.exact). */
+	quoteExact: 4000,
+	/** TextQuoteSelector.prefix and .suffix. */
+	quoteContext: 32,
+	xpath: 1024,
+	/** A highlight's note. */
+	highlightNote: 20_000,
 } as const;
 
 export const PLATFORM = /^[a-z0-9.-]{1,40}$/;
@@ -200,7 +207,60 @@ export interface CaptureManifest extends ManifestBase {
 	capture: { files: CaptureFiles };
 }
 
-export type Manifest = NoteManifest | EntityManifest | CaptureManifest;
+// --- highlights (§8.4) ----------------------------------------------------------------
+
+export interface TextQuoteSelector {
+	type: 'TextQuoteSelector';
+	exact: string;
+	prefix: string;
+	suffix: string;
+}
+
+export interface TextPositionSelector {
+	type: 'TextPositionSelector';
+	start: number;
+	end: number;
+}
+
+/** One end of a RangeSelector: an element, and a character offset into its text. */
+export interface XPathPoint {
+	type: 'XPathSelector';
+	value: string;
+	refinedBy: TextPositionSelector;
+}
+
+export interface RangeSelector {
+	type: 'RangeSelector';
+	startSelector: XPathPoint;
+	endSelector: XPathPoint;
+}
+
+export type HighlightSelectors =
+	| [TextQuoteSelector, TextPositionSelector]
+	| [TextQuoteSelector, TextPositionSelector, RangeSelector];
+
+/** A W3C Web Annotation, trimmed to what this extension writes (§8.4). */
+export interface HighlightAnnotation {
+	/** `urn:uuid:` and a UUID v4; the same across the highlight's edits. */
+	id: string;
+	textModel: 'v1';
+	created: string;
+	modified: string;
+	target: { source: string; selector: HighlightSelectors };
+	body?: { type: 'TextualBody'; purpose: 'commenting'; value: string };
+}
+
+export interface HighlightManifest extends ManifestBase {
+	kind: 'highlight' | 'highlight.update';
+	highlight: { annotation: HighlightAnnotation };
+}
+
+export interface HighlightDeleteManifest extends ManifestBase {
+	kind: 'highlight.delete';
+	highlight: { annotationId: string; modified: string };
+}
+
+export type Manifest = NoteManifest | EntityManifest | CaptureManifest | HighlightManifest | HighlightDeleteManifest;
 
 // --- the pairing string (§5.1) -------------------------------------------------------
 

@@ -746,9 +746,10 @@ describe('body handling', () => {
 		expect(res.status).toBe(422)
 		expect(res.json).toEqual({ error: 'invalid', detail: 'page.url: must be an http(s) URL' })
 
+		// A highlight kind with no highlight payload is refused before the backend sees it.
 		const highlight = await signed(client, 'POST', '/v1/bundles', manifest({ kind: 'highlight', note: undefined }))
 		expect(highlight.res.status).toBe(422)
-		expect(highlight.res.json).toEqual({ error: 'invalid', detail: 'kind not supported by this app version' })
+		expect(highlight.res.json).toEqual({ error: 'invalid', detail: 'highlight: must be an object' })
 		expect(ctx.backend.calls).toEqual([])
 	})
 })

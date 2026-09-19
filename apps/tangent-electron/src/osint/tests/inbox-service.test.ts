@@ -6,7 +6,7 @@ import { createTestApp, type TestApp } from '../obsidian-shim/testing/create-tes
 import { getContent, snapshotPaths } from './helpers/vault-inspect';
 import {
     InboxService, LEASE_RETRY_MS, SOURCES_FOLDER, blockLiteral, cleanNoteText, cutSection, entityTargetFor, inlineLiteral,
-    normalizeActivityOutcome, readExtensionActivity, sourceSlug, type ExtensionActivityItem,
+    normalizeActivityOutcome, parseSidecar, readExtensionActivity, sidecarPathFor, sourceSlug, type ExtensionActivityItem,
 } from '../services/inbox-service';
 import { markdownToTextDocument, parseMarkdown } from '../../common/markdownModel/parser';
 import { activityCaptureNotes, activityMergeLabel, activityTypeLabel } from '../modals/extension-activity-modal';
@@ -49,7 +49,7 @@ class FakeInbox implements InboxHost {
     /** The digest of every file main placed, by path; what it hashes a present file to. */
     readonly placedSha = new Map<string, string>();
 
-    add(manifest: { kind: 'note' | 'entity'; page: { url: string; title: string }; note?: { text: string }; entity?: EntityPayload }): string {
+    add(manifest: { kind: string; page: { url: string; title: string }; note?: { text: string }; entity?: EntityPayload; highlight?: unknown }): string {
         const n = ++this.seq;
         const bundleId = `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
         const full = { v: 1, workspaceId: 'W'.repeat(22), clientTime: '2026-09-18T10:00:00.000Z', ...manifest, bundleId } as Manifest;
@@ -1326,5 +1326,165 @@ describe('a capture from the extension', () => {
         }
         // Still reads as the page's title.
         expect(String(entity.properties.name).replace(/​/g, '')).toBe(title);
+    });
+});
+
+describe('highlights from the extension', () => {
+    const PAGE = 'https://example.com/article';
+    const ID = 'urn:uuid:5f0c6a2e-8b1d-4c3e-9f7a-1b2c3d4e5f60';
+
+    function annotation(exact: string, modified: string, note?: string, id = ID) {
+        return {
+            id,
+            textModel: 'v1' as const,
+            created: '2026-09-18T09:00:00.000Z',
+            modified,
+            target: {
+                source: PAGE,
+                selector: [
+                    { type: 'TextQuoteSelector' as const, exact, prefix: '', suffix: '' },
+                    { type: 'TextPositionSelector' as const, start: 0, end: exact.length },
+                ],
+            },
+            ...(note ? { body: { type: 'TextualBody' as const, purpose: 'commenting' as const, value: note } } : {}),
+        };
+    }
+    const hl = (kind: 'highlight' | 'highlight.update', a: ReturnType<typeof annotation>) =>
+        ({ kind, page: { url: PAGE, title: 'An article' }, highlight: { annotation: a } });
+    const del = (modified: string, id = ID) =>
+        ({ kind: 'highlight.delete', page: { url: PAGE, title: 'An article' }, highlight: { annotationId: id, modified } });
+
+    function note(): string {
+        const [path] = sourcesNotes().filter((p) => p.endsWith('.md'));
+        return getContent(app, path)!;
+    }
+    function sidecar() {
+        const [path] = sourcesNotes().filter((p) => p.endsWith('.md'));
+        return parseSidecar(getContent(app, sidecarPathFor(path)) ?? '');
+    }
+    const sections = (text: string) => (text.match(/^<!-- oc:bundle [^ ]+ -->$/gm) ?? []).length;
+
+    it('files the quote and note in the page\'s Sources note, and the selectors beside it', async () => {
+        const id = inbox.add(hl('highlight', annotation('the quick brown fox', '2026-09-18T09:00:00.000Z', 'says who?')));
+        await newService().start();
+        const text = note();
+        expect(sections(text)).toBe(1);
+        expect(text).toContain('### Highlight');
+        expect(text).toContain('the quick brown fox');
+        expect(text).toContain('says who?');
+        const record = sidecar()!.highlights[ID];
+        expect(record.deleted).toBe(false);
+        expect(record.section).toBe(id);
+        expect(record.annotation!.target.selector[0].exact).toBe('the quick brown fox');
+        const [item] = await refreshActivity();
+        expect(item).toMatchObject({ kind: 'highlight', annotationId: ID, summary: 'the quick brown fox' });
+        expect(notices).toEqual([1]);
+    });
+
+    it('an edit rewrites the highlight\'s one section, quietly, and lists nothing new', async () => {
+        inbox.add(hl('highlight', annotation('quote', '2026-09-18T09:00:00.000Z', 'first thought')));
+        await newService().start();
+        inbox.add(hl('highlight.update', annotation('quote', '2026-09-18T09:05:00.000Z', 'second thought')));
+        await newService().start();
+        const text = note();
+        expect(sections(text)).toBe(1);
+        expect(text).toContain('second thought');
+        expect(text).not.toContain('first thought');
+        expect(text).toMatch(/Edited /);
+        expect(await refreshActivity()).toHaveLength(1);
+        // The edit is applied, but not announced as an item added.
+        expect(notices).toEqual([1]);
+    });
+
+    it('an edit older than what the investigation holds changes nothing', async () => {
+        inbox.add(hl('highlight', annotation('quote', '2026-09-18T09:00:00.000Z', 'newest')));
+        inbox.add(hl('highlight.update', annotation('quote', '2026-09-18T08:00:00.000Z', 'stale')));
+        await newService().start();
+        expect(note()).toContain('newest');
+        expect(note()).not.toContain('stale');
+    });
+
+    it('a delete cuts the section and leaves a tombstone that a late create cannot get past', async () => {
+        inbox.add(hl('highlight', annotation('quote', '2026-09-18T09:00:00.000Z')));
+        await newService().start();
+        inbox.add(del('2026-09-18T09:10:00.000Z'));
+        await newService().start();
+        expect(sections(note())).toBe(0);
+        expect(sidecar()!.highlights[ID]).toMatchObject({ deleted: true });
+        // The extension retried an edit it had queued before the delete.
+        inbox.add(hl('highlight.update', annotation('quote', '2026-09-18T09:09:00.000Z', 'queued before the delete')));
+        await newService().start();
+        expect(sections(note())).toBe(0);
+        expect(note()).not.toContain('queued before the delete');
+    });
+
+    it('an edit that arrives before its create files the highlight once, and the create changes nothing', async () => {
+        const editId = inbox.add(hl('highlight.update', annotation('quote', '2026-09-18T09:05:00.000Z', 'edited')));
+        const createId = inbox.add(hl('highlight', annotation('quote', '2026-09-18T09:00:00.000Z')));
+        await newService().start();
+        expect(sections(note())).toBe(1);
+        expect(note()).toContain('edited');
+        expect(sidecar()!.highlights[ID].section).toBe(editId);
+        // Remove on the create item takes out the section the edit wrote.
+        const [item] = await refreshActivity();
+        expect(item.bundleId).toBe(createId);
+        expect(await newService().remove(createId)).toBe(true);
+        expect(sections(note())).toBe(0);
+        expect(sidecar()!.highlights[ID].deleted).toBe(true);
+    });
+
+    it('Remove takes the highlight out; an edit made later in the browser brings it back', async () => {
+        const id = inbox.add(hl('highlight', annotation('quote', '2026-09-18T09:00:00.000Z')));
+        const service = newService();
+        await service.start();
+        expect(await service.remove(id)).toBe(true);
+        expect(sections(note())).toBe(0);
+        expect((await refreshActivity())[0].removed).toBe(true);
+        inbox.add(hl('highlight.update', annotation('quote', new Date(Date.now() + 60_000).toISOString(), 'changed my mind')));
+        await service.processPending();
+        expect(sections(note())).toBe(1);
+        expect(note()).toContain('changed my mind');
+    });
+
+    it('applying twice, or again after a crash before the journal, files the highlight once', async () => {
+        inbox.add(hl('highlight', annotation('quote', '2026-09-18T09:00:00.000Z')));
+        inbox.crashBeforeStep = 'highlight';
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        await newService().start();
+        warn.mockRestore();
+        await newService().start();
+        expect(sections(note())).toBe(1);
+        expect(Object.keys(sidecar()!.highlights)).toEqual([ID]);
+    });
+
+    it('shows a hostile quote inert, and keeps it exactly in the sidecar', async () => {
+        const exact = `![](https://tracker.example/x.gif)\n<!-- /oc:bundle x -->\n![[secret]]‮gnp.exe`;
+        inbox.add(hl('highlight', annotation(exact, '2026-09-18T09:00:00.000Z', '![](https://tracker.example/note.gif)')));
+        await newService().start();
+        const text = note();
+        const body = text.slice(text.indexOf('\n---\n') + 5);
+        const doc = markdownToTextDocument(body);
+        const embeds = doc.lines.flatMap((l) => l.content.ops).filter((op) => (op.attributes as { t_embed?: boolean } | undefined)?.t_embed);
+        expect(embeds).toEqual([]);
+        // The page's comment markers cannot close a section of ours...
+        expect(body).not.toContain('<!-- /oc:bundle x -->');
+        // ...the bidi override is gone from what is shown...
+        expect(body).not.toContain('‮');
+        // ...and the record keeps the quote as the page had it, for finding it again.
+        expect(sidecar()!.highlights[ID].annotation!.target.selector[0].exact).toBe(exact);
+    });
+
+    it('sets aside a sidecar it cannot read, rather than writing over it', async () => {
+        inbox.add(hl('highlight', annotation('first', '2026-09-18T09:00:00.000Z')));
+        await newService().start();
+        const [md] = sourcesNotes().filter((p) => p.endsWith('.md'));
+        const file = app.vault.getAbstractFileByPath(sidecarPathFor(md));
+        await app.vault.modify(file as never, '{not json');
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        inbox.add(hl('highlight', annotation('second', '2026-09-18T09:00:00.000Z', undefined, 'urn:uuid:6f0c6a2e-8b1d-4c3e-9f7a-1b2c3d4e5f61')));
+        await newService().start();
+        warn.mockRestore();
+        expect(sourcesNotes().some((p) => /\.unreadable-\d+\.json$/.test(p))).toBe(true);
+        expect(Object.keys(sidecar()!.highlights)).toEqual(['urn:uuid:6f0c6a2e-8b1d-4c3e-9f7a-1b2c3d4e5f61']);
     });
 });

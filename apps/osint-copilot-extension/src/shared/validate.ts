@@ -28,15 +28,19 @@ import {
 	WORKSPACE_ID,
 	type EntityKind,
 	type EntityPayload,
+	type HighlightAnnotation,
 	type Manifest,
+	type RangeSelector,
+	type TextQuoteSelector,
 	type WalletChain,
+	type XPathPoint,
 } from './protocol';
 
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; detail: string };
 
-/** Every kind the protocol names; this version sends the first three. */
+/** Every kind the protocol names, all of which this version sends. */
 const ALL_KINDS = ['note', 'entity', 'capture', 'highlight', 'highlight.update', 'highlight.delete'] as const;
-const SUPPORTED_KINDS = ['note', 'entity', 'capture'] as const;
+const SUPPORTED_KINDS = ALL_KINDS;
 export const KIND_NOT_SUPPORTED = 'kind not supported by this app version';
 
 class Invalid extends Error {
@@ -311,10 +315,150 @@ function capture(value: unknown): { files: CaptureFiles } {
 	return { files: out as CaptureFiles };
 }
 
-// --- manifest ------------------------------------------------------------------------
+// --- times and ids -------------------------------------------------------------------
 
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+function isoTime(value: unknown, path: string): string {
+	const time = text(value, path, LIMITS.clientTime);
+	if (!ISO_TIME.test(time) || Number.isNaN(Date.parse(time))) fail(path, 'must be an ISO 8601 time');
+	return time;
+}
+
+// --- highlights (§8.4) ---------------------------------------------------------------
+
+/** An element path: `/html[1]/body[1]/div[3]`, elements only. */
+const XPATH = /^(\/[A-Za-z][A-Za-z0-9._-]*\[[1-9][0-9]{0,5}\])+$/;
+
+function annotationId(value: unknown, path: string): string {
+	if (typeof value !== 'string') fail(path, 'must be a string');
+	const lower = value.toLowerCase();
+	if (!lower.startsWith('urn:uuid:') || !UUID_V4.test(lower.slice('urn:uuid:'.length))) {
+		fail(path, 'must be urn:uuid: and a UUID v4');
+	}
+	return lower;
+}
+
+function offset(value: unknown, path: string): number {
+	if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) fail(path, 'must be a whole number, at least 0');
+	return value;
+}
+
+/** Page text, checked but never cleaned: it must match the page to the code unit. */
+function pageText(value: unknown, path: string, max: number, opts: { allowEmpty?: boolean } = {}): string {
+	if (typeof value !== 'string') fail(path, 'must be a string');
+	if (!opts.allowEmpty && !value.trim()) fail(path, 'must not be empty or only whitespace');
+	if (value.length > max) fail(path, `longer than ${max} characters`);
+	return value;
+}
+
+function onlyType(obj: Record<string, unknown>, path: string, type: string): void {
+	if (obj.type !== type) fail(`${path}.type`, `must be ${type}`);
+}
+
+function positionSelector(value: unknown, path: string): { type: 'TextPositionSelector'; start: number; end: number } {
+	if (!isRecord(value)) fail(path, 'must be an object');
+	onlyKeys(value, path, ['type', 'start', 'end']);
+	onlyType(value, path, 'TextPositionSelector');
+	return { type: 'TextPositionSelector', start: offset(value.start, `${path}.start`), end: offset(value.end, `${path}.end`) };
+}
+
+function xpathPoint(value: unknown, path: string): XPathPoint {
+	if (!isRecord(value)) fail(path, 'must be an object');
+	onlyKeys(value, path, ['type', 'value', 'refinedBy']);
+	onlyType(value, path, 'XPathSelector');
+	if (typeof value.value !== 'string' || value.value.length > LIMITS.xpath || !XPATH.test(value.value)) {
+		fail(`${path}.value`, `must be an element path such as /html[1]/body[1]/p[2], at most ${LIMITS.xpath} characters`);
+	}
+	const refinedBy = positionSelector(value.refinedBy, `${path}.refinedBy`);
+	if (refinedBy.start !== refinedBy.end) fail(`${path}.refinedBy`, 'must be a point (start equal to end)');
+	return { type: 'XPathSelector', value: value.value, refinedBy };
+}
+
+function selectors(value: unknown): HighlightAnnotation['target']['selector'] {
+	const path = 'highlight.annotation.target.selector';
+	if (!Array.isArray(value) || value.length < 2 || value.length > 3) {
+		fail(path, 'must be [TextQuoteSelector, TextPositionSelector] with an optional RangeSelector after them');
+	}
+	const q = value[0];
+	const qPath = `${path}[0]`;
+	if (!isRecord(q)) fail(qPath, 'must be an object');
+	onlyKeys(q, qPath, ['type', 'exact', 'prefix', 'suffix']);
+	onlyType(q, qPath, 'TextQuoteSelector');
+	const quote: TextQuoteSelector = {
+		type: 'TextQuoteSelector',
+		exact: pageText(q.exact, `${qPath}.exact`, LIMITS.quoteExact),
+		prefix: pageText(q.prefix, `${qPath}.prefix`, LIMITS.quoteContext, { allowEmpty: true }),
+		suffix: pageText(q.suffix, `${qPath}.suffix`, LIMITS.quoteContext, { allowEmpty: true }),
+	};
+	const position = positionSelector(value[1], `${path}[1]`);
+	if (position.end - position.start !== quote.exact.length) {
+		fail(`${path}[1]`, 'end - start must equal the length of the quote');
+	}
+	if (value.length === 2) return [quote, position];
+	const r = value[2];
+	const rPath = `${path}[2]`;
+	if (!isRecord(r)) fail(rPath, 'must be an object');
+	onlyKeys(r, rPath, ['type', 'startSelector', 'endSelector']);
+	onlyType(r, rPath, 'RangeSelector');
+	const range: RangeSelector = {
+		type: 'RangeSelector',
+		startSelector: xpathPoint(r.startSelector, `${rPath}.startSelector`),
+		endSelector: xpathPoint(r.endSelector, `${rPath}.endSelector`),
+	};
+	return [quote, position, range];
+}
+
+function annotation(value: unknown): HighlightAnnotation {
+	const path = 'highlight.annotation';
+	if (!isRecord(value)) fail(path, 'must be an object');
+	onlyKeys(value, path, ['id', 'textModel', 'created', 'modified', 'target', 'body']);
+	if (value.textModel !== 'v1') fail(`${path}.textModel`, 'must be v1');
+	const target = value.target;
+	if (!isRecord(target)) fail(`${path}.target`, 'must be an object');
+	onlyKeys(target, `${path}.target`, ['source', 'selector']);
+	if (typeof target.source !== 'string') fail(`${path}.target.source`, 'must be a string');
+	const source = normalisePageUrl(stripControlChars(target.source).trim());
+	if (!source) fail(`${path}.target.source`, 'must be an http(s) URL');
+	const sourceUrl = new URL(source);
+	sourceUrl.hash = '';
+	if (sourceUrl.href.length > LIMITS.pageUrl) fail(`${path}.target.source`, `longer than ${LIMITS.pageUrl} characters`);
+	const created = isoTime(value.created, `${path}.created`);
+	const modified = isoTime(value.modified, `${path}.modified`);
+	if (Date.parse(modified) < Date.parse(created)) fail(`${path}.modified`, 'earlier than created');
+	const out: HighlightAnnotation = {
+		id: annotationId(value.id, `${path}.id`),
+		textModel: 'v1',
+		created,
+		modified,
+		target: { source: sourceUrl.href, selector: selectors(target.selector) },
+	};
+	if (value.body !== undefined) {
+		const body = value.body;
+		if (!isRecord(body)) fail(`${path}.body`, 'must be an object');
+		onlyKeys(body, `${path}.body`, ['type', 'purpose', 'value']);
+		onlyType(body, `${path}.body`, 'TextualBody');
+		if (body.purpose !== 'commenting') fail(`${path}.body.purpose`, 'must be commenting');
+		out.body = {
+			type: 'TextualBody',
+			purpose: 'commenting',
+			value: text(body.value, `${path}.body.value`, LIMITS.highlightNote, { multiline: true }),
+		};
+	}
+	return out;
+}
+
+function highlightDelete(value: unknown): { annotationId: string; modified: string } {
+	if (!isRecord(value)) fail('highlight', 'must be an object');
+	onlyKeys(value, 'highlight', ['annotationId', 'modified']);
+	return {
+		annotationId: annotationId(value.annotationId, 'highlight.annotationId'),
+		modified: isoTime(value.modified, 'highlight.modified'),
+	};
+}
+
+// --- manifest ------------------------------------------------------------------------
 
 function manifest(value: unknown): Manifest {
 	if (!isRecord(value)) fail('manifest', 'must be a JSON object');
@@ -325,7 +469,9 @@ function manifest(value: unknown): Manifest {
 	}
 	if (!(SUPPORTED_KINDS as readonly string[]).includes(value.kind)) throw new Invalid(KIND_NOT_SUPPORTED);
 	const kind = value.kind as Manifest['kind'];
-	onlyKeys(value, '', ['v', 'bundleId', 'workspaceId', 'kind', 'page', 'clientTime', kind]);
+	// Every highlight kind carries its payload under `highlight`.
+	const payloadKey = kind.startsWith('highlight') ? 'highlight' : kind;
+	onlyKeys(value, '', ['v', 'bundleId', 'workspaceId', 'kind', 'page', 'clientTime', payloadKey]);
 
 	if (typeof value.bundleId !== 'string' || !UUID_V4.test(value.bundleId.toLowerCase())) fail('bundleId', 'must be a UUID v4');
 	if (typeof value.workspaceId !== 'string' || !WORKSPACE_ID.test(value.workspaceId)) {
@@ -342,8 +488,7 @@ function manifest(value: unknown): Manifest {
 	if (url.length > LIMITS.pageUrl) fail('page.url', `longer than ${LIMITS.pageUrl} characters`);
 	const title = text(value.page.title, 'page.title', LIMITS.pageTitle, { allowEmpty: true });
 
-	const clientTime = text(value.clientTime, 'clientTime', LIMITS.clientTime);
-	if (!ISO_TIME.test(clientTime) || Number.isNaN(Date.parse(clientTime))) fail('clientTime', 'must be an ISO 8601 time');
+	const clientTime = isoTime(value.clientTime, 'clientTime');
 
 	const base = {
 		v: 1 as const,
@@ -360,6 +505,17 @@ function manifest(value: unknown): Manifest {
 		return { ...base, kind, note: { text: text(note.text, 'note.text', LIMITS.noteText, { multiline: true }) } };
 	}
 	if (kind === 'capture') return { ...base, kind, capture: capture(value.capture) };
+	if (kind === 'highlight.delete') return { ...base, kind, highlight: highlightDelete(value.highlight) };
+	if (kind === 'highlight' || kind === 'highlight.update') {
+		const h = value.highlight;
+		if (!isRecord(h)) fail('highlight', 'must be an object');
+		onlyKeys(h, 'highlight', ['annotation']);
+		const a = annotation(h.annotation);
+		const pageUrl = new URL(url);
+		pageUrl.hash = '';
+		if (pageUrl.href !== a.target.source) fail('highlight.annotation.target.source', 'must be page.url without its fragment');
+		return { ...base, kind, highlight: { annotation: a } };
+	}
 	return { ...base, kind, entity: entity(value.entity) };
 }
 

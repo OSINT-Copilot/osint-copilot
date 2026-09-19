@@ -186,7 +186,7 @@ export interface FileReceivedResponse {
 /** Every kind the protocol names; later phases add the rest to SUPPORTED_KINDS. */
 export const ALL_KINDS = ['note', 'entity', 'capture', 'highlight', 'highlight.update', 'highlight.delete'] as const;
 export type BundleKind = typeof ALL_KINDS[number];
-export const SUPPORTED_KINDS = ['note', 'entity', 'capture'] as const;
+export const SUPPORTED_KINDS = ['note', 'entity', 'capture', 'highlight', 'highlight.update', 'highlight.delete'] as const;
 export type SupportedKind = typeof SUPPORTED_KINDS[number];
 
 export const ENTITY_KINDS = ['email', 'phone', 'username', 'domain', 'url', 'ip', 'wallet'] as const;
@@ -202,6 +202,13 @@ export const LIMITS = {
     entityContext: 500,
     platform: 40,
     clientTime: 64,
+    /** A highlight's quoted text (TextQuoteSelector.exact). */
+    quoteExact: 4000,
+    /** TextQuoteSelector.prefix and .suffix: the context the extension records around a quote. */
+    quoteContext: 32,
+    xpath: 1024,
+    /** A highlight's note (its TextualBody). */
+    highlightNote: 20_000,
 } as const;
 
 export interface ManifestPage {
@@ -266,4 +273,67 @@ export interface CaptureManifest extends ManifestBase {
     capture: { files: CaptureFiles };
 }
 
-export type Manifest = NoteManifest | EntityManifest | CaptureManifest;
+// --- highlights (§8.4) ----------------------------------------------------------------
+
+/** `urn:uuid:` and a lowercase UUID v4: one highlight, the same across its edits. */
+export type AnnotationId = string;
+
+export interface TextQuoteSelector {
+    type: 'TextQuoteSelector';
+    exact: string;
+    prefix: string;
+    suffix: string;
+}
+
+export interface TextPositionSelector {
+    type: 'TextPositionSelector';
+    start: number;
+    end: number;
+}
+
+/** One end of a RangeSelector: an element, and a character offset into its text. */
+export interface XPathPoint {
+    type: 'XPathSelector';
+    value: string;
+    refinedBy: TextPositionSelector;
+}
+
+export interface RangeSelector {
+    type: 'RangeSelector';
+    startSelector: XPathPoint;
+    endSelector: XPathPoint;
+}
+
+/**
+ * A W3C Web Annotation, trimmed to what the extension writes. The selectors are tried
+ * in order when the page is visited again: the quote is the one that must match, the
+ * position and the range are hints that make the common case fast.
+ */
+export interface HighlightAnnotation {
+    id: AnnotationId;
+    /** Which text the offsets count over; see PROTOCOL.md §8.4. */
+    textModel: 'v1';
+    /** Client times. Advisory like clientTime, but ordered: the app keeps the latest. */
+    created: string;
+    modified: string;
+    target: {
+        /** The page, as an http(s) URL without its fragment. */
+        source: string;
+        selector: [TextQuoteSelector, TextPositionSelector] | [TextQuoteSelector, TextPositionSelector, RangeSelector];
+    };
+    /** The investigator's note, when there is one. */
+    body?: { type: 'TextualBody'; purpose: 'commenting'; value: string };
+}
+
+export interface HighlightManifest extends ManifestBase {
+    /** 'highlight' when it is made, 'highlight.update' when its note changes; both carry it whole. */
+    kind: 'highlight' | 'highlight.update';
+    highlight: { annotation: HighlightAnnotation };
+}
+
+export interface HighlightDeleteManifest extends ManifestBase {
+    kind: 'highlight.delete';
+    highlight: { annotationId: AnnotationId; modified: string };
+}
+
+export type Manifest = NoteManifest | EntityManifest | CaptureManifest | HighlightManifest | HighlightDeleteManifest;
