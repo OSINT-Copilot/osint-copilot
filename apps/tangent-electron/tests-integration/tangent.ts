@@ -29,6 +29,24 @@ type TangentFixtures = {
 	tangent: TangentApp
 }
 
+/**
+ * Marks the OSINT layer's first-run tour as already seen in this workspace. The tour is a
+ * dialog that opens on a workspace's first launch and takes the keyboard, so a test's
+ * first keystrokes (a new note, a link) would land in it instead of the editor.
+ */
+async function seenWelcomeGuide(workspace: string): Promise<void> {
+	const dir = path.join(workspace, '.osint-copilot')
+	const file = path.join(dir, 'data.json')
+	let data: Record<string, unknown> = {}
+	try {
+		data = JSON.parse(await fs.promises.readFile(file, 'utf8'))
+	}
+	catch (e) {}
+	if (data.hasSeenWelcomeGuide === true) return
+	await fs.promises.mkdir(dir, { recursive: true })
+	await fs.promises.writeFile(file, JSON.stringify({ ...data, hasSeenWelcomeGuide: true }, null, 2))
+}
+
 export const defaultWorkspace = path.resolve(path.join(
 	__dirname, '../../IntegrationTestWorkspace'))
 
@@ -53,6 +71,7 @@ export const test = base.extend<TangentFixtures & TangentOptions>({
 
 		if (workspace) {
 			await fs.promises.mkdir(workspace, { recursive: true })
+			await seenWelcomeGuide(workspace)
 		}
 
 		// Playwright REPLACES the environment when `env` is given rather than merging,
@@ -77,6 +96,11 @@ export const test = base.extend<TangentFixtures & TangentOptions>({
 			args: ['.', workspace, ...platformArgs, ...launchArgs],
 			env: {
 				...childEnv,
+				// A development build without a licence shows the licence screen instead of
+				// the workspace, so every test would be testing that screen. Only a
+				// non-production build honours this; a test that is about licensing sets
+				// its own environment in launchEnv.
+				OSINT_SKIP_LICENSE: '1',
 				...launchEnv,
 				INTEGRATION_TEST: '1',
 				WORKSPACE_NAME: workspaceInfoName
