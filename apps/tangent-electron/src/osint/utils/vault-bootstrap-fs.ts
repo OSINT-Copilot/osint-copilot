@@ -91,3 +91,27 @@ export async function createFileIfMissing(app: App, path: string, content: strin
 		await warnIfNotReallyThere(app, normalized, "file", e);
 	}
 }
+
+/**
+ * Creates a stock file if it is missing, and replaces one that still holds, exactly, one of
+ * its earlier stock texts (`superseded`) with the current one. A file that differs from
+ * every earlier text has been edited, and is never touched.
+ */
+export async function createOrUpgradeStockFile(
+	app: App,
+	path: string,
+	content: string,
+	superseded: readonly string[] = [],
+): Promise<void> {
+	const normalized = normalizePath(path);
+	const existing = app.vault.getAbstractFileByPath(normalized);
+	if (!(existing instanceof TFile)) {
+		await createFileIfMissing(app, normalized, content);
+		return;
+	}
+	if (superseded.length === 0) return;
+	const current = await app.vault.read(existing);
+	if (current !== content && superseded.includes(current)) {
+		await app.vault.modify(existing, content);
+	}
+}

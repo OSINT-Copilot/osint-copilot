@@ -1,4 +1,7 @@
-/** Bootstrap files under skillsFolder (created only if missing). */
+/**
+ * Bootstrap files under skillsFolder: created if missing, and upgraded while they still hold
+ * an earlier stock text (superseded-defaults.ts).
+ */
 export const SKILL_DEFAULT_FILES: { path: string; content: string }[] = [
 	{
 		path: "README.md",

@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { requestUrl } from 'obsidian';
 import { executeEnricherHttp } from '../services/enrichers/enricher-executor';
 import type { EnricherSpec } from '../services/enrichers/enricher-schema';
+import { executeEnricherTool } from '../skills/skill-executor';
+import { OrchestrationService } from '../services/orchestration-service';
+import { AGENT_TURN_SCHEMA_VERSION } from '../services/agent-runtime/provider-types';
 
 function minimalSpec(overrides: Partial<EnricherSpec> = {}): EnricherSpec {
 	return {
@@ -161,5 +164,79 @@ describe('executeEnricherHttp', () => {
 			},
 		});
 		expect(call.allowedDomains).toEqual(spec.allowedDomains);
+	});
+});
+
+describe('enricher_invocations', () => {
+	beforeEach(() => {
+		vi.mocked(requestUrl).mockReset();
+		vi.mocked(requestUrl).mockResolvedValue({
+			status: 200,
+			text: '{"hits":1}',
+			headers: {},
+			json: { hits: 1 },
+			arrayBuffer: new ArrayBuffer(0),
+		} as any);
+	});
+
+	/** A plugin whose model asks for enricher t1, which the registry holds as `spec`. */
+	function pluginWith(spec: EnricherSpec): any {
+		const turnJson = JSON.stringify({
+			version: AGENT_TURN_SCHEMA_VERSION,
+			answer_markdown: 'Checking the address.',
+			retrieval_hits: [],
+			graph_operations: [],
+			custom_vault_operations: [],
+			enricher_invocations: [{ enricher_id: spec.id, query: 'x@y.com' }],
+		});
+		return {
+			settings: {
+				enableGraphFeatures: true,
+				credentialsFolder: 'OSINTCopilot/custom/credentials',
+				agentRuntimeProvider: 'claude-code',
+				customAgentRuntimes: [],
+			},
+			graphApiService: {
+				tryExtractTextFromUrl: vi.fn().mockResolvedValue({ ok: true, text: '' }),
+				callLocalProviderModel: vi.fn().mockResolvedValue(turnJson),
+			},
+			vaultPromptLoader: { getOrchestrationAugmentation: vi.fn().mockResolvedValue('') },
+			enricherRegistry: {
+				listRunnable: vi.fn().mockResolvedValue([]),
+				getById: vi.fn().mockResolvedValue(spec),
+			},
+		};
+	}
+
+	async function turn(plugin: any): Promise<string> {
+		const orch = new OrchestrationService(plugin);
+		const result = await orch.processRequest('check x@y.com', '', { entities: [], connections: [] }, [], vi.fn(), {});
+		return result.finalResponse ?? '';
+	}
+
+	it.each([
+		['a draft', minimalSpec({ status: 'draft', enabled: false })],
+		['active but disabled', minimalSpec({ status: 'active', enabled: false })],
+		['disabled', minimalSpec({ status: 'disabled', enabled: false })],
+	])('makes no request for an enricher that is %s, and says why', async (state, spec) => {
+		const out = await turn(pluginWith(spec));
+		expect(requestUrl).not.toHaveBeenCalled();
+		expect(out).toContain(`Enricher \`t1\` is ${state}, so no request was made.`);
+		expect(out).toContain('"Set HTTP enricher enabled state"');
+		expect(out).toContain('No enricher HTTP requests succeeded (1 failed)');
+	});
+
+	it('runs an active enricher', async () => {
+		const out = await turn(pluginWith(minimalSpec()));
+		expect(requestUrl).toHaveBeenCalledTimes(1);
+		expect(out).toContain('Enricher Test succeeded');
+		expect(out).toContain('1 enricher call(s) completed');
+	});
+
+	it('refuses an active enricher with no request URL', async () => {
+		const spec = minimalSpec({ request: { method: 'GET', urlTemplate: '', headers: {} } });
+		await expect(executeEnricherTool(pluginWith(spec), 'ENRICH_t1', 'q', '', undefined))
+			.rejects.toThrow('has no request URL');
+		expect(requestUrl).not.toHaveBeenCalled();
 	});
 });

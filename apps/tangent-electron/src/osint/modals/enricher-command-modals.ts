@@ -21,9 +21,18 @@ function httpUrl(raw: string): string | null {
 	}
 }
 
+/**
+ * The state an enricher is in, from its status and its enabled flag together: an
+ * 'active' spec with enabled false does not run, and is shown as disabled.
+ */
+function effectiveState(spec: EnricherSpec): EnricherState | 'draft' {
+	if (spec.status === 'active' && spec.enabled) return 'active';
+	return spec.status === 'draft' ? 'draft' : 'disabled';
+}
+
 /** What the state dropdown offers first: the state the enricher is not in. */
 function oppositeState(spec: EnricherSpec | undefined): EnricherState {
-	return spec?.status === 'active' && spec.enabled ? 'disabled' : 'active';
+	return spec && effectiveState(spec) === 'active' ? 'disabled' : 'active';
 }
 
 /** The API documentation URL and what the enricher should do, for the draft command. */
@@ -134,7 +143,7 @@ export class EnricherStateModal extends Modal {
 		});
 
 		new Setting(contentEl).setName('Enricher').addDropdown((d) => {
-			for (const e of this.enrichers) d.addOption(e.id, `${e.name} (${e.id}) · ${e.status}`);
+			for (const e of this.enrichers) d.addOption(e.id, `${e.name} (${e.id}) · ${effectiveState(e)}`);
 			d.setValue(this.selectedId);
 			d.onChange((id) => {
 				this.selectedId = id;

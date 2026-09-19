@@ -38,7 +38,7 @@ The model must output **only** valid JSON:
 
 Optional per file: `frontmatter` as a string (YAML block) or omit for body-only notes.
 
-Paths are full vault paths, and must stay under **both** the agent’s `output_roots` **and** the global allowlist in **Settings → OSINT Copilot → Task agents**. A bare filename is written into the agent’s first `output_roots` folder.
+Paths are full vault paths, and must stay under **both** the agent’s `output_roots` **and** the global allowlist in **Settings → OSINT Copilot → Task agents**. A bare filename is written into the agent’s first allowed output folder.
 
 ## Settings
 

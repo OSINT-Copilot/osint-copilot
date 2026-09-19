@@ -259,6 +259,25 @@ describe('task agent output paths', () => {
     expect(res.errors).toEqual(['Not allowed: Elsewhere/x.md']);
   });
 
+  it.each([
+    // The first output root is outside the global allowlist.
+    [['Elsewhere', 'OSINTCopilot/custom/outputs/memos'], 'OSINTCopilot/custom/outputs/memos/memo.md'],
+    // The output root is wider than the global allowlist.
+    [['OSINTCopilot'], 'OSINTCopilot/custom/outputs/memo.md'],
+  ])('writes a bare filename into the first folder the model was told of (output roots %j)', async (outputRoots, expected) => {
+    const app = await createTestAppAsync();
+    const res = await applyVaultFilesV1(
+      app as unknown as App,
+      { version: 'vault_files_v1', files: [{ path: 'memo.md', body: '# Memo' }] },
+      outputRoots,
+      GLOBAL_ROOTS,
+    );
+    expect(effectiveOutputRoots(outputRoots, GLOBAL_ROOTS)[0]).toBe(expected.slice(0, expected.lastIndexOf('/')));
+    expect(res.errors).toEqual([]);
+    expect(res.created).toEqual([expected]);
+    expect(app.storage.peek(expected)).toBe('# Memo');
+  });
+
   it('tells the model the folders it may write to', async () => {
     const cli = cliReturning('{"version":"vault_files_v1","files":[]}');
     const runner = new TaskAgentRunner(

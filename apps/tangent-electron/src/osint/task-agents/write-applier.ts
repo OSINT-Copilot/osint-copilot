@@ -1,6 +1,6 @@
 import { App, normalizePath, Notice, TFile } from "obsidian";
 import type { VaultFileEntryV1, VaultFilesV1 } from "./types";
-import { isPathAllowedForWrite } from "./path-allowlist";
+import { effectiveOutputRoots, isPathAllowedForWrite } from "./path-allowlist";
 import { ensureFolderChainForFile } from "../utils/vault-bootstrap-fs";
 
 function buildNoteContent(entry: VaultFileEntryV1): string {
@@ -34,6 +34,8 @@ export async function applyVaultFilesV1(
 		return result;
 	}
 
+	// The folders the runner names to the model, the first one first.
+	const outputFolders = effectiveOutputRoots(agentOutputRoots, globalAllowlistRoots);
 	for (const file of data.files) {
 		if (!file.path || typeof file.path !== "string") {
 			result.errors.push("Skipping entry: missing path");
@@ -41,10 +43,12 @@ export async function applyVaultFilesV1(
 		}
 		let rel = normalizePath(file.path.replace(/\\/g, "/"));
 		// A bare filename can only mean the agent's own folder. The stock memo writer and
-		// report drafter used to ask for exactly that, and bootstrap never rewrites a file
-		// a vault already has. A path with folders is left alone, never prefixed twice.
-		if (!rel.includes("/") && agentOutputRoots.length > 0) {
-			rel = normalizePath(`${agentOutputRoots[0]}/${rel}`);
+		// report drafter used to ask for exactly that, and bootstrap leaves a copy the user
+		// has edited as it is. A path with folders is left alone, never prefixed twice.
+		// The folder is the first one the agent may write to: its first output root can
+		// lie outside the global allowlist, or be wider than it.
+		if (!rel.includes("/") && outputFolders.length > 0) {
+			rel = normalizePath(`${outputFolders[0]}/${rel}`);
 		}
 		if (!isPathAllowedForWrite(rel, agentOutputRoots, globalAllowlistRoots)) {
 			result.errors.push(`Not allowed: ${rel}`);

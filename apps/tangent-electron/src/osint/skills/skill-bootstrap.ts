@@ -1,7 +1,8 @@
 import { App, normalizePath } from "obsidian";
 import { SKILL_DEFAULT_FILES } from "../data/skill-defaults";
+import { SUPERSEDED_SKILL_DEFAULTS } from "../data/superseded-defaults";
 import { DEFAULT_SKILLS_FOLDER } from "../constants/vault-layout";
-import { createFileIfMissing } from "../utils/vault-bootstrap-fs";
+import { createOrUpgradeStockFile } from "../utils/vault-bootstrap-fs";
 
 export class SkillBootstrapService {
 	constructor(
@@ -13,7 +14,7 @@ export class SkillBootstrapService {
 		const root = normalizePath(this.getSkillsRoot().trim() || DEFAULT_SKILLS_FOLDER);
 		for (const def of SKILL_DEFAULT_FILES) {
 			const path = normalizePath(`${root}/${def.path}`);
-			await createFileIfMissing(this.app, path, def.content);
+			await createOrUpgradeStockFile(this.app, path, def.content, SUPERSEDED_SKILL_DEFAULTS[def.path]);
 		}
 	}
 }

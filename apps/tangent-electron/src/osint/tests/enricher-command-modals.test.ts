@@ -145,6 +145,16 @@ describe('EnricherStateModal', () => {
         expect(document.querySelector('.modal-container')).toBeNull();
     });
 
+    it('labels an active enricher that is not enabled as disabled, and offers to activate it', () => {
+        const modal = new EnricherStateModal({} as never, [spec('whois', 'active', false)], vi.fn());
+        modal.open();
+        const which = settingControl<HTMLSelectElement>(modal.contentEl, 'Enricher', 'select');
+        const state = settingControl<HTMLSelectElement>(modal.contentEl, 'New state', 'select');
+        expect(Array.from(which.options).map((o) => o.textContent)).toEqual(['WHOIS (whois) · disabled']);
+        expect(state.value).toBe('active');
+        modal.close();
+    });
+
     it('submits the state the user chose over the one offered', async () => {
         const onSubmit = vi.fn();
         const modal = new EnricherStateModal({} as never, [spec('rdap-domain', 'disabled', false)], onSubmit);
