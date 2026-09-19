@@ -9,6 +9,7 @@ What to enter in the Chrome Web Store developer dashboard, and what to check bef
 - [ ] Take screenshots: 1280×800 or 640×400, at least one. The side panel beside a page with a highlight, and the investigation in OSINT Copilot afterwards, show what it is for. Use a test investigation and a public page, not a real case.
 - [ ] A 128×128 icon is in the package (`icons/icon-128.png`). The store also wants a 440×280 small promotional tile if you want it featured; optional.
 - [ ] The app side needs nothing: OSINT Copilot pins whatever extension id pairs with it, so the store's id pairs like the development one.
+- [ ] The summary below is also the manifest's `description` (`static/manifest.json`), which is where the store takes it from: change the two together.
 
 ## Listing
 
@@ -16,7 +17,7 @@ What to enter in the Chrome Web Store developer dashboard, and what to check bef
 
 OSINT Copilot extension
 
-**Summary** (at most 132 characters)
+**Summary** (at most 132 characters; the store shows the manifest's `description`, which is this text)
 
 Send notes, entities, page captures and highlights from any web page into an OSINT Copilot investigation on this computer.
 
@@ -35,7 +36,7 @@ The OSINT Copilot extension is the browser half of OSINT Copilot, the desktop ap
 • Quick notes about the page you are on.
 • Entities from selected text: email addresses, phone numbers, usernames (kept apart by platform), domains, URLs, IP addresses and crypto wallets, each with the page as its source. An address the investigation already has gains a source instead of a duplicate.
 • Page captures: an MHTML archive of the page as you see it, a screenshot, and for a PDF the document itself, filed as evidence with the archive's SHA-256 digest.
-• Highlights with notes, found again when you come back to the page, even after it has moved around them.
+• Highlights with notes. If you allow it, they are found again when you come back to the page, even after it has moved around them.
 
 Everything lands straight in the investigation, marked as coming from the extension, and each item can be removed again from the application.
 
@@ -56,7 +57,7 @@ Collect material from web pages (notes, entities, page captures and highlights) 
 - `scripting`: Reads the user's selection, runs the highlight script that marks and finds the user's highlights on the page, and adds the highlight styles.
 - Host permission `http://127.0.0.1/*`: The only destination the extension sends data to: the OSINT Copilot application on the same computer.
 - Optional `pageCapture`: Saves the page the user asks to capture as an MHTML archive. Requested at the user's first capture.
-- Optional host permission `<all_urls>`: For a capture the user asks for, the screenshot of the visible page and, for a PDF, fetching the document; and, if the user allows it, finding their own highlights when they revisit a page. Requested at the first capture, or from the panel for highlights.
+- Optional host permission `<all_urls>`: For a capture the user asks for, the screenshot of the visible page and, for a PDF, fetching the document. And, only if the user separately turns it on in the panel, finding their own highlights when they revisit a page; granting the permission for capture does not turn that on. Requested at the first capture, or from the panel for highlights.
 
 **Remote code**
 

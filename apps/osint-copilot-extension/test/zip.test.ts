@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Probe Point Analytics LLC
 
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { crc32, inflateRawSync } from 'node:zlib';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error: a plain .mjs build script, without type declarations.
-import { zip } from '../scripts/zip.mjs';
+import { REQUIRED, packEntries, zip } from '../scripts/zip.mjs';
+
+type Entry = { name: string; data: Buffer };
 
 /** Reads a zip back through its central directory, as an unzip tool would. */
 function unzip(buf: Buffer): Array<{ name: string; data: Buffer; method: number; flags: number }> {
@@ -59,3 +65,49 @@ describe('the store package zip', () => {
 		expect(zip(entries).equals(zip(entries))).toBe(true);
 	});
 });
+
+describe('what goes into the store package', () => {
+	const staticManifest = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../static/manifest.json'), 'utf8'));
+	let dir: string;
+
+	/** A build folder: the required files, the real manifest, and whatever else is given. */
+	function build(extra: Record<string, string> = {}, leaveOut: string[] = []): string {
+		dir = mkdtempSync(join(tmpdir(), 'oc-zip-'));
+		const files: Record<string, string> = { ...Object.fromEntries(REQUIRED.map((n: string) => [n, `// ${n}`])), 'icons/icon-16.png': 'png', ...extra };
+		files['manifest.json'] = JSON.stringify(staticManifest);
+		for (const name of leaveOut) delete files[name];
+		for (const [name, text] of Object.entries(files)) {
+			mkdirSync(dirname(join(dir, name)), { recursive: true });
+			writeFileSync(join(dir, name), text);
+		}
+		return dir;
+	}
+
+	afterEach(() => {
+		if (dir) rmSync(dir, { recursive: true, force: true });
+	});
+
+	it('drops the development key from the manifest, and changes nothing else in it', async () => {
+		expect(staticManifest.key).toBeTruthy();
+		const { entries } = await packEntries(build());
+		const manifest = JSON.parse((entries as Entry[]).find((e) => e.name === 'manifest.json')!.data.toString('utf8'));
+		const { key: _key, ...rest } = staticManifest;
+		expect(manifest).toEqual(rest);
+	});
+
+	it('holds the build\'s files in sorted order, and leaves out dotfiles', async () => {
+		const { entries, skipped } = await packEntries(build({ '.DS_Store': 'x', 'icons/.icon-16.png.swp': 'x' }));
+		const names = (entries as Entry[]).map((e) => e.name);
+		expect(names).toEqual([...names].sort());
+		expect(names).toEqual(expect.arrayContaining([...REQUIRED, 'icons/icon-16.png']));
+		expect(names.some((n) => n.split('/').some((p) => p.startsWith('.')))).toBe(false);
+		expect(skipped).toEqual(['.DS_Store', 'icons/.icon-16.png.swp']);
+	});
+
+	it('refuses a build missing a file the extension needs, or holding a source map', async () => {
+		await expect(packEntries(build({}, ['content.js']))).rejects.toThrow('content.js is missing');
+		rmSync(dir, { recursive: true, force: true });
+		await expect(packEntries(build({ 'sw.js.map': '{}' }))).rejects.toThrow('source map');
+	});
+});
+

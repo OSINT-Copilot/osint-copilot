@@ -10,8 +10,12 @@
 // so a store copy pairs like any other.
 //
 // The zip is reproducible: entries in sorted order, each with the same fixed timestamp, so
-// the same source always gives the same bytes and the same digest. Written here with Node's
-// zlib rather than a zip command, which Windows does not have.
+// the same source built with the same Node version gives the same bytes and the same
+// digest (another zlib may deflate differently). Written here with Node's zlib rather than
+// a zip command, which Windows does not have.
+//
+// Nothing whose name begins with a dot goes in (.DS_Store, an editor's swap file): the
+// package holds what the build made, and the files it must have are checked.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
@@ -30,6 +34,9 @@ const MADE_BY = (3 << 8) | 20;
 const FILE_MODE = 0o100644;
 /** Bit 11: names are UTF-8. */
 const UTF8 = 0x0800;
+
+/** What a store package must hold: the manifest's entry points, and the licence files. */
+export const REQUIRED = ['manifest.json', 'sw.js', 'content.js', 'sidepanel.html', 'sidepanel.js', 'LICENSE', 'NOTICE'];
 
 async function files(dir) {
 	const out = [];
@@ -95,14 +102,19 @@ export function zip(entries) {
 	return Buffer.concat([...locals, cd, end]);
 }
 
-async function main() {
-	const built = spawnSync(process.execPath, [join(root, 'build.mjs')], { stdio: 'inherit' });
-	if (built.status !== 0) process.exit(built.status ?? 1);
-
-	const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+/**
+ * The package's entries from a build folder, in sorted order: the manifest without its
+ * "key", everything else as built, dotfiles left out (and returned as `skipped`).
+ */
+export async function packEntries(dir) {
 	const entries = [];
-	for (const path of (await files(dist)).sort()) {
-		const name = relative(dist, path).split(sep).join('/');
+	const skipped = [];
+	for (const path of (await files(dir)).sort()) {
+		const name = relative(dir, path).split(sep).join('/');
+		if (name.split('/').some((part) => part.startsWith('.'))) {
+			skipped.push(name);
+			continue;
+		}
 		let data = await readFile(path);
 		if (name === 'manifest.json') {
 			const manifest = JSON.parse(data.toString('utf8'));
@@ -112,9 +124,19 @@ async function main() {
 		if (name.endsWith('.map')) throw new Error(`${name}: a source map in the build; build without --watch`);
 		entries.push({ name, data });
 	}
-	for (const required of ['manifest.json', 'sw.js', 'content.js', 'sidepanel.html', 'sidepanel.js', 'LICENSE', 'NOTICE']) {
+	for (const required of REQUIRED) {
 		if (!entries.some((e) => e.name === required)) throw new Error(`${required} is missing from the build`);
 	}
+	return { entries, skipped };
+}
+
+async function main() {
+	const built = spawnSync(process.execPath, [join(root, 'build.mjs')], { stdio: 'inherit' });
+	if (built.status !== 0) process.exit(built.status ?? 1);
+
+	const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+	const { entries, skipped } = await packEntries(dist);
+	if (skipped.length > 0) console.log(`left out: ${skipped.join(', ')}`);
 
 	const out = join(root, 'release', `osint-copilot-extension-${pkg.version}.zip`);
 	await mkdir(dirname(out), { recursive: true });

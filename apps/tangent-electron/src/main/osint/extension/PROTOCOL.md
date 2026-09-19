@@ -485,7 +485,7 @@ The renderer then makes one Evidence entity keyed `evidence:<archive sha256>` (a
 
 ### 12.2 Highlights
 
-A highlight is filed in the page's Sources note (`OSINTCopilot/Sources/<slug>-<hash>.md`) as its own section: the quote and the note, shown inert. Every highlight on the page is also recorded, selectors and all, in `<same name>.annotations.json` beside it, so the investigation keeps what it needs to find each one again even if the browser's copy is lost. That record keeps the quote exactly as the page had it.
+A highlight is filed in the page's Sources note (`OSINTCopilot/Sources/<slug>-<hash>.md`) as its own section: the quote and the note, shown inert. Every highlight on the page is also recorded, selectors and all, in `<same name>.annotations.json` beside it: the investigation's full record of each one, with the quote exactly as the page had it. The extension does not read it back; it paints highlights from its own copy.
 
 An edit rewrites the highlight's one section in place. A delete cuts it and leaves a tombstone in the record; a later delete moves the tombstone forward. Remove in the app's activity takes a highlight out and leaves a tombstone too.
 

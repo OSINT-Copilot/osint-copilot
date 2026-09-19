@@ -8,7 +8,7 @@ The OSINT Copilot extension is made by Probe Point Analytics LLC. It lets you se
 
 - The extension sends what you choose to send **only to the OSINT Copilot application on the same computer**, over `127.0.0.1`. It has no server, no account and no analytics. Probe Point Analytics does not receive anything from it.
 - It acts when you ask it to: when you send a note or an entity, capture a page, or make a highlight.
-- The one exception you choose to allow: with permission to read the pages you visit, it looks for your own highlights on each page as the page loads, so it can show them again. That happens inside the browser. It sends nothing when it does.
+- The one exception is one you choose, in the side panel: if you allow your highlights to come back when you revisit a page, it looks for your own highlights on each page as the page loads, so it can show them again. That happens inside the browser. It sends nothing when it does. Allowing page capture does not turn this on, though Chrome asks for the same permission for both.
 
 ## What the extension handles
 
@@ -31,9 +31,10 @@ What the OSINT Copilot application does with an investigation afterwards is gove
 
 ## What is stored in your browser
 
-- **The pairing key** and your choice of investigation, in the extension's own storage (`chrome.storage.local`), readable only by the extension itself. The key is never synced to your Google account.
-- **Items waiting to be sent**, including a capture's files, in the extension's own IndexedDB storage, until the application confirms it has them. Then they are deleted.
-- **Your highlights**, in the extension's own IndexedDB storage, so they can be shown again when you revisit a page, until you delete them.
+- **The pairing key**, your choice of investigation, the names of your investigations as the application last listed them (so the panel can show them while the application is closed), and whether you allowed highlights on revisits. These are in the extension's own storage (`chrome.storage.local`), readable only by the extension itself. The key is never synced to your Google account. Unpairing deletes the key and the list.
+- **Text you right-click to send as an entity**, with the page's address and title, until the side panel takes it into its form. This is in `chrome.storage.session`, which the browser clears when it closes.
+- **Items waiting to be sent**, including a capture's files, in the extension's own IndexedDB storage, until the application confirms it has them. Then they are deleted. An item the application refuses stays, marked as not sent, until you retry or delete it.
+- **Your highlights**, in the extension's own IndexedDB storage, so they can be shown on the pages they belong to. They stay until you delete them. Deleting one in the side panel also deletes it from the investigation. **Delete highlights kept in this browser** deletes all of them here, for every investigation, and leaves the investigations' copies alone.
 
 Removing the extension deletes all of this from your browser. What was sent to the application stays in your investigation until you remove it there.
 
@@ -48,7 +49,7 @@ Removing the extension deletes all of this from your browser. What was sent to t
 | Scripting | Reading the selection, and running the highlight script that marks and finds highlights. |
 | Access to `127.0.0.1` | Talking to the OSINT Copilot application on your computer. |
 | Page capture (optional, asked for when you first capture) | Saving a page as an MHTML archive. |
-| Read and change your data on all websites (optional, asked for when you first capture, or from the panel for highlights) | Capturing a page and its screenshot, fetching a PDF you capture, and finding your highlights when you revisit a page. Used only for these. |
+| Read and change your data on all websites (optional, asked for when you first capture, or from the panel for highlights) | Capturing a page and its screenshot, and fetching a PDF you capture. And, only if you also allow it in the panel, finding your highlights when you revisit a page. Used only for these. |
 
 ## Changes
 

@@ -3,7 +3,7 @@
 	"name": "OSINT Copilot extension",
 	"short_name": "OSINT Copilot",
 	"version": "0.1.0",
-	"description": "Send notes and entities from web pages into an OSINT Copilot investigation on this computer.",
+	"description": "Send notes, entities, page captures and highlights from any web page into an OSINT Copilot investigation on this computer.",
 	"minimum_chrome_version": "140",
 	"key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwBRHdEupvi0VGk7oHJMpi+atrmuZ0jNwQH5l9W55vUiDK5mJBeqEj2+CRLsgUQjPkTAaTZEW1bIoDMJk+dKmICDV32SbnF0JG3gr+ryi/myRS/QaOnBohcdl8JI+LdCs0eEG1bok1NTqviL00WBgyLy60cCo793oTXXaMUUeRZAgwZ3FAfuNBBWJ3SEiJcrY4wej5I1E0ZUVSNqMl1glhHcLsGMSMi9ccvbI1EgwJE7vabP6qGIx1c5VrteJoAGuTkJuVGk7/FA5Mt/O9zrfa4otZrDfylzSYeV+dT1AIzWn9qiXGBgnxBQYQPTT9/vhORK7pmykueAg4DnLQfAWhwIDAQAB",
 	"background": {
