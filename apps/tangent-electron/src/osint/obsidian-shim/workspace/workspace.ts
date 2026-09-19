@@ -78,16 +78,20 @@ export class Workspace {
     }
 
     /**
-     * Opens a new tab immediately after `anchor`, in the same group: a second instance
-     * of an OSINT view, next to the first.
+     * Opens an empty tab immediately after `anchor`, in the same group, for the caller
+     * to set a view on: where an OSINT view opens next to another.
+     *
+     * This replaced a duplicateLeaf() that copied the anchor's view state. Its only
+     * caller set a different view straight after, so the copy -- a whole second
+     * GraphView, say -- was built, loaded and unloaded again while its onOpen() was still
+     * running, and went on running after its onClose().
      */
-    async duplicateLeaf(anchor: WorkspaceLeaf): Promise<WorkspaceLeaf> {
+    createLeafBeside(anchor: WorkspaceLeaf): WorkspaceLeaf {
         const group = anchor.parent as WorkspaceTabs | null;
         if (!(group instanceof WorkspaceTabs)) return this.getLeaf('tab');
 
         const leaf = new WorkspaceLeaf(new EmptyView(null as unknown as WorkspaceLeaf));
         this.attachLeaf(leaf, group, group.children.indexOf(anchor) + 1);
-        await leaf.setViewState(anchor.getViewState() as ViewState);
         return leaf;
     }
 

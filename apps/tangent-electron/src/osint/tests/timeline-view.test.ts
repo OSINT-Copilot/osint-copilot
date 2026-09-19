@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sortTimelineEventsForDisplay, type TimelineEvent } from '../views/timeline-view';
+import { isShownOnTimeline, sortTimelineEventsForDisplay, type TimelineEvent } from '../views/timeline-view';
 
 function ev(id: string, start: Date | null, end?: Date): TimelineEvent {
     return { id, label: id, start, end, color: '#000000' };
@@ -48,5 +48,19 @@ describe('sortTimelineEventsForDisplay', () => {
         const end = new Date('2024-01-05');
         const result = sortTimelineEventsForDisplay([ev('a', new Date('2024-01-01'), end)]);
         expect(result[0].end).toBe(end);
+    });
+});
+
+describe('isShownOnTimeline', () => {
+    it('keeps an Event on the timeline unless add_to_timeline says no', () => {
+        for (const value of [undefined, true, 'yes']) {
+            expect(isShownOnTimeline(value), String(value)).toBe(true);
+        }
+    });
+
+    it('takes it off for an explicit no, however it is spelt', () => {
+        for (const value of [false, 0, 'no', '0', '', 'false', ' FALSE ']) {
+            expect(isShownOnTimeline(value), JSON.stringify(value)).toBe(false);
+        }
     });
 });

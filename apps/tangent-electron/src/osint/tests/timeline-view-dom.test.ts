@@ -128,6 +128,25 @@ describe('TimelineView', () => {
         expect(refresh.textContent!.trim()).toBe('Refresh');
     });
 
+    it('dates an Event by the startDate and endDate the entity modal writes', async () => {
+        const { view, root } = makeView([
+            { id: 'e1', type: 'Event', label: 'FTM', properties: { startDate: '2024-03-03', endDate: '2024-03-04' } },
+        ]);
+        await view.onOpen();
+        const headers = Array.from(root.querySelectorAll('.graph_copilot-timeline-section-header'));
+        expect(headers.map((h) => h.textContent)).not.toContain('Undated (1)');
+        expect(root.querySelector('.graph_copilot-timeline-date')!.textContent).not.toBe('No date');
+        expect(root.querySelector('.graph_copilot-timeline-time')!.textContent).toContain('→');
+    });
+
+    it('reads last_seen when end_date is blank or unknown', async () => {
+        const { view, root } = makeView([
+            { id: 'e1', type: 'Event', label: 'x', properties: { start_date: '2024-03-03', end_date: 'unknown', last_seen: '2024-03-05' } },
+        ]);
+        await view.onOpen();
+        expect(root.querySelector('.graph_copilot-timeline-time')!.textContent).toContain('→');
+    });
+
     it('tells the user when removing an event from the timeline fails', async () => {
         const { view, root, entityManager } = makeView([event('a', '2024-03-01')]);
         await view.onOpen();

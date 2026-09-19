@@ -195,6 +195,19 @@ export function parseCoordinate(value: string | number | undefined, axis: 'lat' 
     return num;
 }
 
+/**
+ * Whether the map would plot this entity: a location type (Location, Address or
+ * GeoLocation, any casing) whose coordinates parseCoordinate accepts -- 0 included.
+ * The exact rule of refresh() and parseLocations, exported so the graph's double
+ * border, its "Show on Map" item and showEntityOnMap cannot promise a pin the map refuses.
+ */
+export function isMappableEntity(entity: Entity): boolean {
+    const p = entity.properties;
+    return isLocationEntityType(entity.type)
+        && parseCoordinate(p.latitude as string | number | undefined, 'lat') !== null
+        && parseCoordinate(p.longitude as string | number | undefined, 'lng') !== null;
+}
+
 export function createPopupContent(location: MapLocation): HTMLElement {
     const root = document.createElement('div');
     root.addClass('graph_copilot-map-popup');

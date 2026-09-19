@@ -1144,8 +1144,9 @@ Do not tell the user to run raw curl from Obsidian for this API; unified chat sh
     const trimmed = name.trim();
     if (!trimmed) return null;
     const id = `graph-${Date.now().toString(36)}`;
+    // Creating is not activating. The graph view's switch does that, after it has stored
+    // the current layout under the workspace it belongs to.
     this.settings.graphWorkspaces.push({ id, name: trimmed });
-    this.settings.activeGraphId = id;
     await this.saveSettings();
     return id;
   }

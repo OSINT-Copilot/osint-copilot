@@ -280,6 +280,29 @@ describe('EntityManager front matter escapes untrusted text', () => {
     });
 });
 
+describe('EntityManager.isGraphNotePath', () => {
+    const manager = new EntityManager({} as never, 'OSINTCopilot', null, () => ['conversations', 'custom', 'Sources']);
+
+    it('matches the notes loadEntitiesFromNotes reads', () => {
+        expect(manager.isGraphNotePath('OSINTCopilot/ftm/Person/a.md')).toBe(true);
+        expect(manager.isGraphNotePath('OSINTCopilot/Person/a.md')).toBe(true);
+        expect(manager.isGraphNotePath('OSINTCopilot/Connections/c.md')).toBe(true);
+        expect(manager.isGraphNotePath('OSINTCopilot\\ftm\\Person\\a.md')).toBe(true);
+    });
+
+    it('leaves out the folders the loader skips, notes in no type folder, and other files', () => {
+        expect(manager.isGraphNotePath('OSINTCopilot/conversations/c.md')).toBe(false);
+        expect(manager.isGraphNotePath('OSINTCopilot/custom/skills/s.md')).toBe(false);
+        expect(manager.isGraphNotePath('OSINTCopilot/Sources/page.md')).toBe(false);
+        expect(manager.isGraphNotePath('OSINTCopilot/schemas/ftm/Person.md')).toBe(false);
+        expect(manager.isGraphNotePath('OSINTCopilot/graph-yaml/Person/a.md')).toBe(false);
+        expect(manager.isGraphNotePath('OSINTCopilot/readme.md')).toBe(false);
+        expect(manager.isGraphNotePath('OSINTCopilot/graph-positions.json')).toBe(false);
+        expect(manager.isGraphNotePath('OSINTCopilotOther/Person/a.md')).toBe(false);
+        expect(manager.isGraphNotePath('Research/a.md')).toBe(false);
+    });
+});
+
 describe('sanitizeFilename', () => {
     it('leaves ordinary labels unchanged, so existing notes keep their paths', () => {
         for (const label of [

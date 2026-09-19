@@ -1,12 +1,19 @@
 import { Notice, WorkspaceLeaf } from 'obsidian';
-import { EntityType } from '../entities/types';
 import { GraphView, GRAPH_VIEW_TYPE } from '../views/graph-view';
 import { TimelineView, TIMELINE_VIEW_TYPE } from '../views/timeline-view';
-import { MapView, MAP_VIEW_TYPE } from '../views/map-view';
+import { MapView, MAP_VIEW_TYPE, isMappableEntity } from '../views/map-view';
 import { CHAT_VIEW_TYPE } from '../views/chat-view';
 import { TOOLS_SKILLS_REGISTRY_VIEW_TYPE } from '../views/tools-skills-registry-view';
-import { entityHasMapCoordinates } from '../ui/vault-op-previews';
 import type VaultAIPlugin from './vault-ai-plugin';
+
+/**
+ * Waits out a view's async onOpen(). A refresh that overlapped it ran a second load of
+ * the shared entity store alongside the view's own. A view whose onOpen() failed is
+ * refreshed anyway; its own guards make that a no-op.
+ */
+function opened(leaf: WorkspaceLeaf): Promise<void> {
+  return leaf.view.whenLoaded().catch(() => undefined);
+}
 
 /** OSINT pane placement: main leaf, graph/timeline/map/chat/tools views. */
 export class OsintWorkspaceController {
@@ -41,10 +48,14 @@ export class OsintWorkspaceController {
       ) {
         anchor = activeLeaf;
       }
+      // An empty tab beside the anchor, not a duplicate of it: duplicating built and
+      // loaded a second copy of the anchor's view (a whole GraphView when the map was
+      // opened from the graph), which the caller's setViewState then unloaded while its
+      // onOpen() was still running -- leaking it and racing its load of the entity store.
       try {
-        return await this.plugin.app.workspace.duplicateLeaf(anchor);
+        return this.plugin.app.workspace.createLeafBeside(anchor);
       } catch (e) {
-        console.warn('[VaultAIPlugin] duplicateLeaf(tab) failed; falling back to new root tab', e);
+        console.warn('[VaultAIPlugin] createLeafBeside failed; falling back to new root tab', e);
         return this.plugin.app.workspace.getLeaf('tab');
       }
     }
@@ -94,6 +105,7 @@ export class OsintWorkspaceController {
       const graphView = existing[0].view as GraphView;
       if (graphView && typeof graphView.refreshWithSavedPositions === 'function') {
         console.debug('[OSINT Copilot] Refreshing graph view with new entities...');
+        await opened(existing[0]);
         await graphView.refreshWithSavedPositions();
         if (!options?.silent) {
           new Notice('Graph view updated with new entities');
@@ -115,6 +127,7 @@ export class OsintWorkspaceController {
       for (const leaf of this.plugin.app.workspace.getLeavesOfType(GRAPH_VIEW_TYPE)) {
         const graphView = leaf.view as GraphView;
         if (graphView && typeof graphView.refreshWithSavedPositions === 'function') {
+          await opened(leaf);
           await graphView.refreshWithSavedPositions();
         }
       }
@@ -122,13 +135,14 @@ export class OsintWorkspaceController {
     for (const leaf of this.plugin.app.workspace.getLeavesOfType(TIMELINE_VIEW_TYPE)) {
       const timelineView = leaf.view as TimelineView;
       if (timelineView && typeof timelineView.refresh === 'function') {
+        await opened(leaf);
         await timelineView.refresh();
       }
     }
     for (const leaf of this.plugin.app.workspace.getLeavesOfType(MAP_VIEW_TYPE)) {
       const mapView = leaf.view as MapView;
       if (mapView && typeof mapView.refresh === 'function') {
-        void mapView.refresh();
+        void opened(leaf).then(() => mapView.refresh());
       }
     }
   }
@@ -194,18 +208,10 @@ export class OsintWorkspaceController {
       return;
     }
 
-    const mapCapable =
-      entity.type === EntityType.Location ||
-      entity.type === 'Address' ||
-      entityHasMapCoordinates(entity);
-
-    if (!mapCapable) {
-      new Notice('Map needs a Location or Address entity, or latitude/longitude on the entity.');
-      return;
-    }
-
-    if (!entityHasMapCoordinates(entity)) {
-      new Notice('Entity has no coordinates. Add latitude and longitude (e.g. in frontmatter) to show it on the map.');
+    // The map's own rule. Any entity with coordinates used to pass here, but the map only
+    // plots location types, so a Person with lat/lng ended in "not on the map yet".
+    if (!isMappableEntity(entity)) {
+      new Notice('Only Location, Address and GeoLocation entities with a valid latitude and longitude can be shown on the map.');
       return;
     }
 
@@ -225,9 +231,16 @@ export class OsintWorkspaceController {
     //
     // whenLoaded() resolves when the view's async onOpen() has finished, so the map
     // exists; refresh() is single-flight, so this awaits the run already in flight from
-    // onOpen() rather than starting a competing one.
-    await mapView.whenLoaded();
-    await mapView.refresh();
+    // onOpen() rather than starting a competing one. whenLoaded() rejects when onOpen()
+    // threw, which leaves no map to focus.
+    try {
+      await mapView.whenLoaded();
+      await mapView.refresh();
+    } catch (e) {
+      console.error('[VaultAIPlugin] the map view failed to load:', e);
+      new Notice('The map view failed to load.');
+      return;
+    }
 
     if (!mapView.focusLocation(entityId)) {
       new Notice('That entity is not on the map yet. Try refreshing the map view.');

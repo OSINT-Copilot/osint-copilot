@@ -3,7 +3,7 @@
  * Custom Graph View using Cytoscape.js for interactive graph visualization.
  */
 
-import { ItemView, WorkspaceLeaf, Notice, TFile, normalizePath } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, TAbstractFile, TFile, normalizePath } from 'obsidian';
 import {
     type Entity,
     type Connection,
@@ -19,7 +19,9 @@ import { GraphHistoryManager, type HistoryEntry, HistoryOperationType, type Node
 import { GeocodingService, GeocodingError } from '../services/geocoding-service';
 import { GRAPH_NODE_POSITIONS_FILE } from '../constants/vault-layout';
 import type { VaultLockService } from '../services/vault-lock-service';
-import { isEventEntityType } from './timeline-view';
+import { isEventEntityType, isShownOnTimeline } from './timeline-view';
+import { geocodeFieldsFor, geocodeResultUpdates, isLocationEntityType, isMappableEntity } from './map-view';
+import { entityHasMapCoordinates } from '../ui/vault-op-previews';
 import { GRAPH_NODE_SIZE, entityImagePath, graphNodeStyles, isGraphImageExtension } from './graph-node-visual';
 import { ENTITY_IMAGE_KEY } from '../services/entity-image-service';
 import { importedFileName } from '../canvas/canvas-runtime';
@@ -143,6 +145,13 @@ export class GraphView extends ItemView {
     private boxSelectMode: boolean = false;
     private boxSelectBtn: HTMLButtonElement | null = null;
 
+    // Vault watcher (see registerVaultWatcher). Browser `setTimeout` ids are numeric.
+    private vaultRefreshTimer: number | null = null;
+    /** A watcher refresh held back by connection or box-select mode, run when the mode ends. */
+    private vaultRefreshDeferred = false;
+    /** The refreshWithSavedPositions run in progress, which later calls join. */
+    private refreshInFlight: Promise<void> | null = null;
+
     // History manager for undo/redo
     private historyManager: GraphHistoryManager;
     private historyPanel: HTMLElement | null = null;
@@ -152,6 +161,12 @@ export class GraphView extends ItemView {
 
     // Node positions cache for tracking position changes
     private nodePositionsCache: Map<string, NodePosition> = new Map();
+    /**
+     * The workspace nodePositionsCache belongs to. Not the host's active id: the host
+     * moves first (a deleted workspace falls back to default before the view switches),
+     * and keying the cache on its id stored one workspace's layout under another's.
+     */
+    private positionsGraphId = 'default';
     /** Per-graph id → node id → position (persisted as JSON v2). */
     private allGraphPositions: Record<string, Record<string, NodePosition>> = {};
     /**
@@ -200,14 +215,12 @@ export class GraphView extends ItemView {
     }
 
     /**
-     * The only class a node carries: the double border that marks a Location or Address
-     * whose coordinates are known, styled by the `.has-coordinates` rule below.
+     * The only class a node carries: the double border that marks a location entity the
+     * map plots, styled by the `.has-coordinates` rule below.
      */
-    /** Location with real coordinates -- what the double-border marker means. */
+    /** An entity the map plots (see isMappableEntity) -- what the double-border marker means. */
     private entityHasCoordinates(entity: Entity): boolean {
-        return entity.type === EntityType.Location
-            && !!entity.properties.latitude
-            && !!entity.properties.longitude;
+        return isMappableEntity(entity);
     }
 
     /**
@@ -357,6 +370,7 @@ export class GraphView extends ItemView {
 
             this.initializeGraph();
             console.debug('[GraphView] Graph initialized');
+            this.registerVaultWatcher();
 
             // Load saved node positions from persistent storage
             await this.loadSavedPositions();
@@ -749,6 +763,10 @@ export class GraphView extends ItemView {
             document.removeEventListener('keydown', this._keyHandler);
         }
         this.unobserveCanvas();
+        if (this.vaultRefreshTimer !== null) {
+            window.clearTimeout(this.vaultRefreshTimer);
+            this.vaultRefreshTimer = null;
+        }
         // Dialogs and context menus are appended to document.body, so they outlive the
         // pane unless they are removed here -- a delete confirmation left on screen over
         // another view still had a live, wired-up Delete button.
@@ -844,11 +862,7 @@ export class GraphView extends ItemView {
                 this.app,
                 'Delete graph workspace?',
                 `Delete "${label}"? The saved layout for this workspace will be removed from graph-positions.json.`,
-                async () => {
-                    await this.graphHost.deleteGraphWorkspace(id);
-                    this.populateGraphSelect();
-                    await this.switchGraphWorkspace(this.graphHost.getActiveGraphId());
-                },
+                () => void this.removeGraphWorkspace(id),
                 undefined,
                 true,
             ).open();
@@ -1101,6 +1115,8 @@ export class GraphView extends ItemView {
         if (this.cy) {
             this.cy.nodes().removeClass('connection-source');
         }
+
+        if (this.vaultRefreshDeferred) this.runVaultRefresh();
     }
 
     /**
@@ -1166,6 +1182,8 @@ export class GraphView extends ItemView {
         }
 
         this.updateSelectionUI();
+
+        if (this.vaultRefreshDeferred) this.runVaultRefresh();
     }
 
     private populateGraphSelect(): void {
@@ -1180,17 +1198,38 @@ export class GraphView extends ItemView {
     }
 
     /**
+     * Delete a workspace, its layout and its membership, and go back to the one the host
+     * falls back to. The file is written at once, so it loses the layout the confirmation
+     * said it would.
+     */
+    private async removeGraphWorkspace(id: string): Promise<void> {
+        await this.graphHost.deleteGraphWorkspace(id);
+        delete this.allGraphPositions[id];
+        delete this.allGraphMembers[id];
+        this.populateGraphSelect();
+        await this.switchGraphWorkspace(this.graphHost.getActiveGraphId());
+        await this.savePositions();
+    }
+
+    /**
      * Persist current cache into allGraphPositions, switch active graph id, reload layout from file-backed map.
      */
     private async switchGraphWorkspace(newId: string): Promise<void> {
-        const prev = this.graphHost.getActiveGraphId();
-        this.allGraphPositions[prev] = Object.fromEntries(this.nodePositionsCache);
+        // The cache is stored under the workspace it was loaded for, and not at all when
+        // that workspace has just been deleted.
+        const prev = this.positionsGraphId;
+        if (this.graphHost.listGraphWorkspaces().some((g) => g.id === prev)) {
+            this.allGraphPositions[prev] = Object.fromEntries(this.nodePositionsCache);
+        }
         await this.graphHost.setActiveGraphId(newId);
         this.populateGraphSelect();
-        const slice = this.allGraphPositions[newId] || {};
+        // Whatever the host settled on: it ignores an id it does not know.
+        const activeId = this.graphHost.getActiveGraphId();
+        const slice = this.allGraphPositions[activeId] || {};
         this.nodePositionsCache = new Map(Object.entries(slice));
+        this.positionsGraphId = activeId;
         await this.refreshWithSavedPositions();
-        new Notice(`Switched to graph: ${this.graphHost.listGraphWorkspaces().find((g) => g.id === newId)?.name ?? newId}`);
+        new Notice(`Switched to graph: ${this.graphHost.listGraphWorkspaces().find((g) => g.id === activeId)?.name ?? activeId}`);
     }
 
     /** File paths for notes backing the current selection (entities + connections). */
@@ -2197,39 +2236,37 @@ export class GraphView extends ItemView {
         });
         menu.appendChild(editItem);
 
-        // Show on Map option (only for Location entities with coordinates)
-        if (entityType === EntityType.Location) {
-            const entity = this.entityManager.getEntity(entityId);
-            if (entity && entity.properties.latitude && entity.properties.longitude) {
-                const mapItem = this.createMenuItem('🗺️ Show on Map', () => {
-                    if (this.onShowOnMap) {
-                        this.onShowOnMap(entityId);
-                    } else {
-                        new Notice('Map view not available');
-                    }
-                    menu.remove();
-                });
-                menu.appendChild(mapItem);
-            }
+        // Show on Map option: only for an entity the map actually plots, by the map's own
+        // rule -- any location type, any casing, and coordinates it can parse (0 included).
+        const mapEntity = this.entityManager.getEntity(entityId);
+        if (mapEntity && isMappableEntity(mapEntity)) {
+            const mapItem = this.createMenuItem('🗺️ Show on Map', () => {
+                if (this.onShowOnMap) {
+                    this.onShowOnMap(entityId);
+                } else {
+                    new Notice('Map view not available');
+                }
+                menu.remove();
+            });
+            menu.appendChild(mapItem);
         }
 
-        // Geolocate option (for Location and Address entities without coordinates)
-        if (entityType === EntityType.Location || entityType === 'Address') {
-            const entity = this.entityManager.getEntity(entityId);
-            if (entity && !entity.properties.latitude && !entity.properties.longitude) {
-                const geolocateItem = this.createMenuItem('📍 Geolocate Address', () => {
-                    menu.remove();
-                    this.geolocateEntity(entityId);
-                });
-                menu.appendChild(geolocateItem);
-            }
+        // Geolocate option: a location type with no coordinates, the same test as the
+        // map's own geolocate dialog.
+        if (mapEntity && isLocationEntityType(mapEntity.type) && !entityHasMapCoordinates(mapEntity)) {
+            const geolocateItem = this.createMenuItem('📍 Geolocate Address', () => {
+                menu.remove();
+                this.geolocateEntity(entityId);
+            });
+            menu.appendChild(geolocateItem);
         }
 
         // Toggle Timeline option (all Event entities; undated ones show under "Undated" too)
         if (isEventEntityType(entityType as string)) {
             const entity = this.entityManager.getEntity(entityId);
             if (entity) {
-                const isOnTimeline = entity.properties.add_to_timeline === true;
+                // The timeline's rule: an Event is on it unless add_to_timeline says no.
+                const isOnTimeline = isShownOnTimeline(entity.properties.add_to_timeline);
                 const timelineLabel = isOnTimeline ? '📅 Remove from Timeline' : '📅 Add to Timeline';
                 const timelineItem = this.createMenuItem(timelineLabel, () => {
                     void (async () => {
@@ -2832,8 +2869,30 @@ export class GraphView extends ItemView {
     /**
      * Refresh the graph using saved positions (no automatic layout).
      * Only applies layout to new nodes that don't have saved positions.
+     *
+     * Single-flight, as MapView.refresh is: the vault watcher, the toolbar, a workspace
+     * switch and the plugin's refreshOpenInsightViews all land here, and two overlapping
+     * runs both clear and reload the shared entity store. A call made during a run joins
+     * it, and fits the view afterwards if it asked for that.
+     *
+     * @param options.fit fit the view to the nodes afterwards (the default). The vault
+     *   watcher passes false, so saving a note keeps the analyst's pan and zoom.
      */
-    async refreshWithSavedPositions(): Promise<void> {
+    async refreshWithSavedPositions(options: { fit?: boolean } = {}): Promise<void> {
+        if (!this.cy) return;
+        const fit = options.fit ?? true;
+        if (this.refreshInFlight) {
+            await this.refreshInFlight;
+            if (fit) this.fitToNodes();
+            return;
+        }
+        this.refreshInFlight = this.doRefreshWithSavedPositions(fit).finally(() => {
+            this.refreshInFlight = null;
+        });
+        return this.refreshInFlight;
+    }
+
+    private async doRefreshWithSavedPositions(fit: boolean): Promise<void> {
         if (!this.cy) return;
 
         console.debug(`[GraphView] refreshWithSavedPositions called, cache has ${this.nodePositionsCache.size} positions`);
@@ -2960,10 +3019,82 @@ export class GraphView extends ItemView {
             }, 600);
         }
 
-        // Fit view (empty secondary workspaces: no-op zoom)
-        if (this.cy.nodes().length > 0) {
+        this.restoreSelection();
+
+        if (fit) this.fitToNodes();
+    }
+
+    /** Fit the view to the nodes; a no-op on an empty graph (an empty secondary workspace). */
+    private fitToNodes(): void {
+        if (this.cy && this.cy.nodes().length > 0) {
             this.cy.fit();
         }
+    }
+
+    /**
+     * After a rebuild: drop selected ids whose element is gone, and give the rest back
+     * the 'multi-selected' class that removing the elements took off. Without this the
+     * selection count and Delete Selected still included items no longer on the graph,
+     * while the ones still there showed no highlight.
+     */
+    private restoreSelection(): void {
+        const cy = this.cy;
+        if (!cy) return;
+        for (const ids of [this.selectedNodes, this.selectedEdges]) {
+            for (const id of [...ids]) {
+                const element = cy.getElementById(id);
+                if (element.length > 0) element.addClass('multi-selected');
+                else ids.delete(id);
+            }
+        }
+        this.updateSelectionUI();
+    }
+
+    /**
+     * Reload when entity notes change on disk: edited, renamed or deleted in the editor,
+     * the file tree, git or another window, or written by the Timeline and Map, which
+     * refresh only themselves. Those two views watched the vault; the graph showed
+     * stale entities until Refresh. Debounced as theirs are, and filtered with
+     * isGraphNotePath so a chat save does not rebuild the graph.
+     */
+    private registerVaultWatcher(): void {
+        const schedule = (path: string): void => {
+            if (!this.entityManager.isGraphNotePath(path)) return;
+            if (this.vaultRefreshTimer !== null) {
+                window.clearTimeout(this.vaultRefreshTimer);
+            }
+            this.vaultRefreshTimer = window.setTimeout(() => {
+                this.vaultRefreshTimer = null;
+                this.runVaultRefresh();
+            }, 400);
+        };
+        const onFile = (f: TAbstractFile): void => {
+            if (f instanceof TFile) schedule(f.path);
+        };
+
+        this.registerEvent(this.app.vault.on('modify', onFile));
+        this.registerEvent(this.app.vault.on('create', onFile));
+        this.registerEvent(this.app.vault.on('delete', onFile));
+        this.registerEvent(
+            this.app.vault.on('rename', (f, oldPath) => {
+                onFile(f);
+                if (typeof oldPath === 'string') schedule(oldPath);
+            }),
+        );
+    }
+
+    /**
+     * The watcher's refresh, without a fit. Held back while connection or box-select mode
+     * is on, since a rebuild mid-gesture replaces the elements the gesture is working on;
+     * leaving the mode runs it.
+     */
+    private runVaultRefresh(): void {
+        if (this.connectionMode || this.boxSelectMode) {
+            this.vaultRefreshDeferred = true;
+            return;
+        }
+        this.vaultRefreshDeferred = false;
+        void this.refreshWithSavedPositions({ fit: false });
     }
 
     /** Arrange nodes on a broad ring using Cytoscape's built-in circular layout. */
@@ -3233,6 +3364,8 @@ export class GraphView extends ItemView {
      * Load saved node positions from persistent storage.
      */
     private async loadSavedPositions(): Promise<void> {
+        // The cache is the active workspace's from here on, even when there is no file yet.
+        this.positionsGraphId = this.graphHost.getActiveGraphId();
         try {
             console.debug(`[GraphView] Looking for positions file at: ${NODE_POSITIONS_FILE} `);
             const file = this.app.vault.getAbstractFileByPath(NODE_POSITIONS_FILE);
@@ -3264,7 +3397,7 @@ export class GraphView extends ItemView {
                         this.allGraphMembers[graphId] = new Set(storedMembers[graphId] as string[]);
                     }
                 }
-                const activeId = this.graphHost.getActiveGraphId();
+                const activeId = this.positionsGraphId;
                 const slice = this.allGraphPositions[activeId] || {};
                 this.nodePositionsCache.clear();
                 for (const [nodeId, pos] of Object.entries(slice)) {
@@ -3288,7 +3421,9 @@ export class GraphView extends ItemView {
      */
     private async savePositions(): Promise<void> {
         try {
-            const activeId = this.graphHost.getActiveGraphId();
+            // positionsGraphId, not the host's active id: a debounced save that lands after
+            // a switch has begun must not file the old cache under the new workspace.
+            const activeId = this.positionsGraphId;
             this.allGraphPositions[activeId] = Object.fromEntries(this.nodePositionsCache);
 
             // Positioning a node on a named graph still implies membership -- that is how
@@ -3784,7 +3919,7 @@ export class GraphView extends ItemView {
     }
 
     /**
-     * Geolocate an entity (Location or Address) by converting its address to coordinates.
+     * Geolocate a location entity (Location, Address or GeoLocation) by converting its address to coordinates.
      */
     private async geolocateEntity(entityId: string): Promise<void> {
         const entity = this.entityManager.getEntity(entityId);
@@ -3793,24 +3928,11 @@ export class GraphView extends ItemView {
             return;
         }
 
-        // Extract address components based on entity type
-        let address: string | undefined;
-        let city: string | undefined;
-        let state: string | undefined;
-        let country: string | undefined;
-
-        if (entity.type === EntityType.Location) {
-            // Location entity uses 'address' property
-            address = entity.properties.address as string;
-            city = entity.properties.city as string;
-            country = entity.properties.country as string;
-        } else if (entity.type === 'Address') {
-            // Address entity uses FTM schema properties
-            address = entity.properties.street as string || entity.properties.full as string;
-            city = entity.properties.city as string;
-            state = entity.properties.state as string;
-            country = entity.properties.country as string;
-        }
+        // The map's own field picker, so an `address`-typed or GeoLocation note is read
+        // the way the map's geolocate dialog reads it instead of falling through to "no
+        // address information".
+        const fields = geocodeFieldsFor(entity);
+        const { address, city, state, country } = fields;
 
         // Validate we have at least some address information
         if (!address && !city && !country) {
@@ -3831,27 +3953,8 @@ export class GraphView extends ItemView {
                 }
             );
 
-            // Update entity with coordinates
-            const updates: Record<string, unknown> = {
-                latitude: result.latitude,
-                longitude: result.longitude
-            };
-
-            // Also update address components if they were found and not already set
-            if (result.city && !city) {
-                updates.city = result.city;
-            }
-            if (result.state && !state && entity.type === 'Address') {
-                updates.state = result.state;
-            }
-            if (result.country && !country) {
-                updates.country = result.country;
-            }
-            if (result.postalCode && entity.type === 'Address' && !entity.properties.postalCode) {
-                updates.postalCode = result.postalCode;
-            }
-
-            await this.entityManager.updateEntity(entityId, updates);
+            // Coordinates, and any address components the note left blank.
+            await this.entityManager.updateEntity(entityId, geocodeResultUpdates(entity, fields, result));
 
             // Update the node in the graph
             const updatedEntity = this.entityManager.getEntity(entityId);

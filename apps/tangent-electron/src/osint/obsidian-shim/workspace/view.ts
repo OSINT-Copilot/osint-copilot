@@ -43,8 +43,13 @@ export abstract class View extends Component {
 
     async onClose(): Promise<void> { /* subclasses override */ }
 
-    onload(): void {
-        void this.onOpen();
+    /**
+     * Returned, not voided: Component.load keeps the promise, so whenLoaded() waits for
+     * onOpen() to finish (and rejects if it threw). With `void` it resolved at once, and
+     * a caller that awaited it to find the view's state set up got there first.
+     */
+    onload(): Promise<void> {
+        return this.onOpen();
     }
 
     // ------------------------------------------------------------------ attachment

@@ -276,6 +276,26 @@ export class EntityManager {
     }
 
     /**
+     * Whether a change at this vault path can change what loadEntitiesFromNotes() reads:
+     * a .md note in a folder under the base path that the loader does not skip (the
+     * reserved folders, schemas, graph-yaml). For views that reload on note changes. A
+     * plain base-path prefix is not enough: conversations live under the same root, so it
+     * rebuilt the graph on every chat save.
+     */
+    isGraphNotePath(path: string): boolean {
+        const normalized = normalizePath(path.replace(/\\/g, '/'));
+        if (!normalized.endsWith('.md')) return false;
+        const prefix = `${normalizePath(this.basePath)}/`;
+        if (!normalized.startsWith(prefix)) return false;
+        const segments = normalized.slice(prefix.length).split('/');
+        // A note directly in the base folder is in no type folder, and never loaded.
+        if (segments.length < 2) return false;
+        const top = segments[0];
+        if (top === 'schemas' || top === GRAPH_YAML_FOLDER_NAME) return false;
+        return !this.getReservedTopLevelFolderNames().includes(top);
+    }
+
+    /**
      * Initialize the entity manager and load existing entities.
      */
     async initialize(): Promise<void> {

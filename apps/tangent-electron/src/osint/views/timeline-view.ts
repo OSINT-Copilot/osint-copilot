@@ -25,8 +25,24 @@ function isExplicitlyOffTimeline(value: unknown): boolean {
     return false;
 }
 
-function pickFirstTimelineDateProperty(properties: Record<string, unknown>): string | undefined {
-    const keys = ['start_date', 'first_seen', 'first_seen_precise', 'date', 'published', 'first_observed', 'modified'];
+/**
+ * Whether an Event with this add_to_timeline value is on the timeline: every Event is,
+ * unless the value says no. Exported so the graph's "Add to / Remove from Timeline"
+ * item reads the same rule the timeline draws with.
+ */
+export function isShownOnTimeline(value: unknown): boolean {
+    return !isExplicitlyOffTimeline(value);
+}
+
+/**
+ * Start keys: startDate (the OIDSF Interval field the entity modal offers) goes before
+ * date, as the more specific start of the two.
+ */
+const TIMELINE_START_KEYS = ['start_date', 'startDate', 'first_seen', 'first_seen_precise', 'date', 'published', 'first_observed', 'modified'];
+const TIMELINE_END_KEYS = ['end_date', 'endDate', 'last_seen'];
+
+/** The first key holding a usable date string; blank, 'unknown' and 'n/a' are skipped. */
+function pickFirstTimelineDateProperty(properties: Record<string, unknown>, keys: readonly string[]): string | undefined {
     for (const k of keys) {
         const v = properties[k];
         if (typeof v === 'string' && v.trim() && !['unknown', 'n/a'].includes(v.trim().toLowerCase())) {
@@ -234,14 +250,14 @@ export class TimelineView extends ItemView {
         const events: TimelineEvent[] = [];
 
         for (const entity of entities) {
-            if (isExplicitlyOffTimeline(entity.properties.add_to_timeline)) continue;
+            if (!isShownOnTimeline(entity.properties.add_to_timeline)) continue;
 
-            const startRaw = pickFirstTimelineDateProperty(entity.properties as Record<string, unknown>);
+            const props = entity.properties as Record<string, unknown>;
+            const startRaw = pickFirstTimelineDateProperty(props, TIMELINE_START_KEYS);
             const startDate = this.parseDate(startRaw); // null is kept (shown as undated), not dropped
 
-            const endRaw =
-                typeof entity.properties.end_date === 'string' ? entity.properties.end_date : entity.properties.last_seen;
-            const endDate = this.parseDate(typeof endRaw === 'string' ? endRaw : undefined);
+            // Picked like the start, so a blank or 'unknown' end_date no longer hides last_seen.
+            const endDate = this.parseDate(pickFirstTimelineDateProperty(props, TIMELINE_END_KEYS));
 
             events.push({
                 id: entity.id,
@@ -311,7 +327,7 @@ export class TimelineView extends ItemView {
             emptyEl.createEl('p', { text: 'No events added to the timeline yet.' });
             emptyEl.createEl('p', {
                 cls: 'graph_copilot-timeline-empty-hint',
-                text: 'Create an entity with type Event and a start_date (or first_seen / date). '
+                text: 'Create an entity with type Event and a start_date (or startDate / first_seen / date). '
                     + 'Use Refresh if you just edited notes. '
                     + 'Set add_to_timeline: false to hide a note from this view.',
             });

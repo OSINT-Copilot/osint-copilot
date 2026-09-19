@@ -3,6 +3,7 @@ import {
     createPopupContent,
     isAddressEntityType,
     isLocationEntityType,
+    isMappableEntity,
     parseCoordinate,
     shouldClaimBaseLayer,
     GRID_LAYER_NAME,
@@ -135,6 +136,27 @@ describe('entityHasMapCoordinates', () => {
         expect(entityHasMapCoordinates(at(undefined, -0.12))).toBe(false);
         expect(entityHasMapCoordinates(at('', ''))).toBe(false);
         expect(entityHasMapCoordinates(at(undefined, undefined))).toBe(false);
+    });
+});
+
+describe('isMappableEntity', () => {
+    const entity = (type: string, latitude: unknown, longitude: unknown) =>
+        ({ id: 'e', type, label: 'e', properties: { latitude, longitude } }) as any;
+
+    it('admits every location type the map plots, in any casing', () => {
+        expect(isMappableEntity(entity('Address', '51.5', '-0.12'))).toBe(true);
+        expect(isMappableEntity(entity('address', 51.5, -0.12))).toBe(true);
+        expect(isMappableEntity(entity('GeoLocation', '48.85', '2.35'))).toBe(true);
+    });
+
+    it('counts 0,0 as coordinates', () => {
+        expect(isMappableEntity(entity('Location', 0, 0))).toBe(true);
+    });
+
+    it('refuses what the map refuses: other types, and coordinates it cannot parse', () => {
+        expect(isMappableEntity(entity('Person', '51.5', '-0.12'))).toBe(false);
+        expect(isMappableEntity(entity('Location', '12,5', '3'))).toBe(false);
+        expect(isMappableEntity(entity('Location', '51.5', undefined))).toBe(false);
     });
 });
 

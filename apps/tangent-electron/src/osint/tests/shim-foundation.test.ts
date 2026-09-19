@@ -8,6 +8,7 @@ import { MemoryStorage } from '../obsidian-shim/testing/memory-storage';
 import { Plugin } from '../obsidian-shim/core/plugin';
 import { TFile } from '../obsidian-shim/vault/tfile';
 import { createTestAppAsync } from '../obsidian-shim/testing/create-test-app';
+import { ItemView } from '../obsidian-shim/workspace/view';
 import type { StatDto, WatchEvent } from '../host/types';
 
 const fakeApp = {} as never;
@@ -271,5 +272,40 @@ describe('Plugin.loadData', () => {
         const plugin = new P(app as never, { id: 'osint-copilot', name: 'x', version: '0' });
         expect(await plugin.loadData()).toBeNull();
         expect(app.vault.getFiles().some((f) => f.path.includes('corrupt'))).toBe(false);
+    });
+});
+
+describe('View.whenLoaded', () => {
+    const flush = () => new Promise((r) => setTimeout(r, 0));
+
+    it('waits for an async onOpen, so what it sets up is there', async () => {
+        let release!: () => void;
+        const gate = new Promise<void>((r) => { release = r; });
+        class Slow extends ItemView {
+            ready = false;
+            getViewType() { return 'slow'; }
+            async onOpen() { await gate; this.ready = true; }
+        }
+        const view = new Slow(null as never);
+        view.load();
+        let settled = false;
+        const loaded = view.whenLoaded().then(() => { settled = true; });
+        await flush();
+        // It used to resolve at once, before onOpen had got past its first await.
+        expect(settled).toBe(false);
+
+        release();
+        await loaded;
+        expect(view.ready).toBe(true);
+    });
+
+    it('rejects when onOpen throws', async () => {
+        class Broken extends ItemView {
+            getViewType() { return 'broken'; }
+            async onOpen() { throw new Error('no canvas'); }
+        }
+        const view = new Broken(null as never);
+        view.load();
+        await expect(view.whenLoaded()).rejects.toThrow('no canvas');
     });
 });
