@@ -25,6 +25,7 @@ import {
 	fetchLinkPreview, displayHost, isFetchableUrl,
 	LINK_TITLE_KEY, LINK_DESCRIPTION_KEY, LINK_IMAGE_KEY, LINK_SITE_KEY, LINK_FETCHED_KEY,
 } from './canvas-link-preview'
+import { canvasColorCss } from './canvas-colors'
 import {
 	defaultViewport, screenToWorld, worldToScreen, zoomAbout, scaleFromWheel, panBy,
 	visibleWorldRect, cullToViewport, fitToRects, rectFromCorners, rectsIntersect,
@@ -175,6 +176,11 @@ function onSurfacePointerDown(event: PointerEvent) {
 	// pan branch below it, and shift+right-click started a marquee.
 	if (event.button !== LEFT_BUTTON && event.button !== MIDDLE_BUTTON) return
 	if (gesturePointerId !== null) return
+	// The inspector and the picker are drawn inside the surface, so their pointerdowns
+	// bubble here too. Taken as a press on empty board, one cleared the selection -- which
+	// closed the inspector under the pointer -- and captured the pointer, so the click that
+	// followed never reached the swatch or button that was pressed.
+	if ((event.target as HTMLElement | null)?.closest('.CanvasInspector, .CanvasPickerBackdrop')) return
 
 	if (isPanTrigger(event)) {
 		beginGesture(event, { kind: 'pan', lastX: event.clientX, lastY: event.clientY })
@@ -641,15 +647,8 @@ function geometryFor(
 	}
 }
 
-/** JSON Canvas preset colours, so an edge looks the same here as in Obsidian. */
-const PRESET_CSS: Record<string, string> = {
-	'1': '#e5534b', '2': '#e08c39', '3': '#d9a406',
-	'4': '#4a9d5f', '5': '#3d9fa8', '6': '#8b62c9',
-}
-
 function edgeStroke(edge: CanvasEdge): string {
-	if (!edge.color) return 'var(--text-faint, var(--text-muted))'
-	return PRESET_CSS[edge.color] ?? edge.color
+	return canvasColorCss(edge.color) ?? 'var(--text-faint, var(--text-muted))'
 }
 
 /**
@@ -729,6 +728,8 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 			<div
 				class="canvas-group"
 				class:selected={docState.selectedNodes.has(node.id)}
+				class:colored={!!canvasColorCss(node.color)}
+				style:--card-color={canvasColorCss(node.color)}
 				style:left="{box.left}px" style:top="{box.top}px"
 				style:width="{box.width}px" style:height="{box.height}px"
 				style:transform="scale({box.scale})"
@@ -786,6 +787,8 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 				class="canvas-card type-{node.type}"
 				class:selected={docState.selectedNodes.has(node.id)}
 				class:is-entity={!!entity}
+				class:colored={!!canvasColorCss(node.color)}
+				style:--card-color={canvasColorCss(node.color)}
 				style:left="{box.left}px" style:top="{box.top}px"
 				style:width="{box.width}px" style:height="{box.height}px"
 				style:transform="scale({box.scale})"
@@ -858,16 +861,22 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 					<div class="card-text">{(node as CanvasTextNode).text}</div>
 				{:else if node.type === 'link'}
 					{@const url = (node as CanvasLinkNode).url}
-					{@const thumb = typeof node.extra[LINK_IMAGE_KEY] === 'string'
-						? treeNodeFor(node.extra[LINK_IMAGE_KEY] as string) : null}
+					{@const thumbPath = typeof node.extra[LINK_IMAGE_KEY] === 'string'
+						? node.extra[LINK_IMAGE_KEY] as string : null}
+					{@const thumb = thumbPath ? treeNodeFor(thumbPath, directoryVersion) : null}
 					<div class="card-link">
-						{#if thumb}
+						{#if thumbPath && thumb}
 							<!--
 							  The thumbnail is the vault copy, never the remote URL. Pointing an
 							  <img> at the origin would fetch it straight from the renderer, outside
 							  net-guard, and re-tell the site every time the board was opened.
+							  A plain <img> as on an image card: NodePreview drew the asset as a
+							  file embed, with its hash name for a header, positioned over the
+							  whole card and the link's text.
 							-->
-							<div class="link-thumb"><NodePreview item={thumb} layout="fill" background="none" /></div>
+							<div class="link-thumb">
+								<img src={fileUrl(thumbPath, thumb)} alt="" loading="lazy" draggable="false" />
+							</div>
 						{/if}
 						<div class="link-body">
 							<!-- textContent, never markup: these came from a page we do not control. -->
@@ -1052,6 +1061,12 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 	flex-direction: column;
 	box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
 }
+/* A card's own colour, drawn as Obsidian draws it: the border, and a light tint. Before
+   .selected, so the selection outline still wins. */
+.canvas-card.colored {
+	border-color: var(--card-color);
+	background: color-mix(in srgb, var(--card-color) 8%, var(--background-primary-alt, var(--background-primary)));
+}
 .canvas-card.selected {
 	border-color: var(--text-accent);
 	box-shadow: 0 0 0 2px var(--text-accent);
@@ -1106,8 +1121,12 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 .card-text { white-space: pre-wrap; font-size: 13px; }
 
 .card-link { display: flex; flex-direction: column; overflow: hidden; height: 100%; }
-.link-thumb { flex: 0 0 55%; min-height: 0; overflow: hidden; }
-.link-body { padding: 8px 10px 10px; overflow: hidden; }
+/* The text takes the room it needs and the picture gets what is left, so a short card
+   shrinks the thumbnail rather than hiding the title. cover, unlike an evidence image:
+   this is the page's decorative picture, and the page itself is the source. */
+.link-thumb { flex: 1 1 0; min-height: 0; overflow: hidden; background: var(--background-primary); }
+.link-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.link-body { flex: 0 0 auto; padding: 8px 10px 10px; overflow: hidden; }
 .link-title { display: block; font-size: 13px; line-height: 1.3; }
 .link-desc {
 	margin: 4px 0 0;
@@ -1142,11 +1161,18 @@ function hasArrow(value: string | undefined, fallback: 'none' | 'arrow'): boolea
 	background: var(--background-modifier-hover);
 	opacity: .5;
 }
+/* Tinted more strongly than a card, so a coloured region reads at a glance. The group is
+   drawn at half opacity, so this is about 15% on screen. */
+.canvas-group.colored {
+	border-color: var(--card-color);
+	background: color-mix(in srgb, var(--card-color) 30%, transparent);
+}
 .canvas-group.selected { border-color: var(--text-accent); }
 .canvas-group-label {
 	position: absolute; top: -22px; left: 4px;
 	font-size: 12px; color: var(--text-muted);
 }
+.canvas-group.colored .canvas-group-label { color: var(--card-color); }
 
 .connect-handle {
 	position: absolute;

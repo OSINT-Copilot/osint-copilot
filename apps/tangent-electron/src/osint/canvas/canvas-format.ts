@@ -106,7 +106,7 @@ export interface CanvasParseResult {
  * cosmetic -- Obsidian and this renderer would disagree about it, and a board is meant to
  * look the same in both.
  */
-function normalizeCanvasColor(value: unknown): CanvasColor | undefined {
+export function normalizeCanvasColor(value: unknown): CanvasColor | undefined {
     if (typeof value !== 'string') return undefined;
     const text = value.trim();
     if (!text) return undefined;

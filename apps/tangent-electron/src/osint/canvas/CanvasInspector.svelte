@@ -12,6 +12,7 @@
 import type { CanvasDocumentStore } from './canvas-document'
 import type { CanvasNode, CanvasEdge, CanvasSide, CanvasEnd } from './canvas-format'
 import { displayHost } from './canvas-link-preview'
+import { CANVAS_COLOR_PRESETS } from './canvas-colors'
 
 export let store: CanvasDocumentStore
 export let node: CanvasNode | null = null
@@ -25,18 +26,11 @@ const ENDS: CanvasEnd[] = ['none', 'arrow']
 /**
  * JSON Canvas presets "1".."6" plus a cleared state.
  *
- * The preset numbers are written rather than hex, because Obsidian renders those with its
- * own theme-aware palette -- writing hex would pin the colour to whatever theme we happened
- * to be in and look wrong in the other app.
+ * The preset numbers are written rather than hex; see CANVAS_COLOR_PRESETS for why.
  */
 const PRESETS: { value: string | undefined, label: string, css: string }[] = [
 	{ value: undefined, label: 'None', css: 'transparent' },
-	{ value: '1', label: 'Red', css: '#e5534b' },
-	{ value: '2', label: 'Orange', css: '#e08c39' },
-	{ value: '3', label: 'Yellow', css: '#d9a406' },
-	{ value: '4', label: 'Green', css: '#4a9d5f' },
-	{ value: '5', label: 'Cyan', css: '#3d9fa8' },
-	{ value: '6', label: 'Purple', css: '#8b62c9' },
+	...CANVAS_COLOR_PRESETS,
 ]
 
 function setEdge(changes: Partial<CanvasEdge>) {
