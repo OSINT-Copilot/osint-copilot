@@ -41,7 +41,7 @@ import { resolveLink } from 'common/markdownModel/links';
 import type { Annotation } from 'common/nodeReferences';
 import { ForwardingStore, subscribeUntil } from 'common/stores'
 import type { NoteViewState } from 'app/model/nodeViewStates';
-import { getActiveSentenceRange } from 'common/markdownModel/line';
+import { extendFocusedLines, getActiveSentenceRange, lineContinuesParagraphFocus } from 'common/markdownModel/line';
 import paths from 'common/paths';
 import TagAutocompleter from '../autocomplete/TagAutocompleter';
 import TagAutocompleteMenu from '../autocomplete/TagAutocompleteMenu.svelte';
@@ -668,13 +668,7 @@ function applyFocusDecorations(doc: TextDocument) {
 		let isValidLine: (line: Line) => boolean = null
 
 		if (lines.length && focusLevel === FocusLevel.Paragraph) {
-			isValidLine = (line: Line) => {
-				const attr = line.attributes
-				return (!attr.empty && !attr.whitespace)
-					|| attr.code
-					|| attr.front_matter
-					|| attr.math
-			}
+			isValidLine = lineContinuesParagraphFocus
 		}
 		else if (lines.length && focusLevel > FocusLevel.Paragraph) {
 			// These are always extended when in focus
@@ -687,45 +681,7 @@ function applyFocusDecorations(doc: TextDocument) {
 		}
 
 		if (isValidLine) {
-			// Extend focus to adjacent qualifying lines
-			const first = lines[0]
-			if (isValidLine(first)) {
-				const linesToAdd: Line[] = []
-				let lineIndex = doc.lines.indexOf(first) - 1
-				for (; lineIndex >= 0; lineIndex--) {
-					const line = doc.lines[lineIndex]
-					if (isValidLine(line)) {
-						linesToAdd.push(line)
-					}
-					else {
-						break
-					}
-				}
-
-				if (linesToAdd.length) {
-					linesToAdd.reverse()
-					lines = [...linesToAdd, ...lines]
-				}
-			}
-
-			const last = lines[lines.length - 1]
-			if (isValidLine(last)) {
-				const linesToAdd: Line[] = []
-				let lineIndex = doc.lines.indexOf(first) + 1
-				for (; lineIndex < doc.lines.length; lineIndex++) {
-					const line = doc.lines[lineIndex]
-					if (isValidLine(line)) {
-						linesToAdd.push(line)
-					}
-					else {
-						break
-					}
-				}
-
-				if (linesToAdd.length) {
-					lines = [...lines, ...linesToAdd]
-				}
-			}
+			lines = extendFocusedLines(doc, lines, isValidLine)
 		}
 
 		for (const line of lines) {

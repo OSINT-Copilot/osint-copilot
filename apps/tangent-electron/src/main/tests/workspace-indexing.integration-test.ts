@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll, afterAll, afterEach } from 'vitest'
+import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 
 import path from 'path'
 import fs from 'fs'
@@ -777,6 +777,36 @@ Hello there, I am a note and I link to [[Some Missing Image.png]]`)
 		// Removing the active observer should delete it
 		workspace.dropFile(observer, fileNode.path)
 		expect(workspace.contentsStore.get(rawFilePath)).toBeFalsy()
+	})
+
+	test('A folder removed before the watcher reaches it should not stop folders made later from being watched', async () => {
+		const watchedNotePath = getRootPath('Watched Note.md')
+		const gonePath = getRootPath('Gone Folder')
+		const laterPath = getRootPath('Later Folder')
+		const laterNotePath = path.join(laterPath, 'Later Note.md')
+		newPaths.push(watchedNotePath, gonePath, laterPath)
+
+		// The watcher is watching the workspace once it reports a new note
+		await fileOp(fs.promises.writeFile(watchedNotePath, 'Watched', 'utf8'))
+		await expect.poll(() => workspace.contentsStore.get(watchedNotePath)).toBeTruthy()
+
+		// The folder is deleted just as the watcher gets to watching it
+		const watch = fs.watch
+		const watchSpy = vi.spyOn(fs, 'watch').mockImplementation(((target: fs.PathLike, ...rest: any[]) => {
+			if (target === gonePath) fs.rmSync(gonePath, { recursive: true, force: true })
+			return (watch as any)(target, ...rest)
+		}) as typeof fs.watch)
+		try {
+			await fileOp(fs.promises.mkdir(gonePath))
+			await expect.poll(() => watchSpy.mock.calls.some(([target]) => target === gonePath)).toBe(true)
+		}
+		finally {
+			watchSpy.mockRestore()
+		}
+
+		await fileOp(fs.promises.mkdir(laterPath))
+		await fileOp(fs.promises.writeFile(laterNotePath, 'Written into a folder made later', 'utf8'))
+		await expect.poll(() => workspace.contentsStore.get(laterNotePath), { timeout: 3000 }).toBeTruthy()
 	})
 
 	describe('Node Deletion', () => {

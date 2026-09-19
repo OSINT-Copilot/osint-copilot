@@ -394,7 +394,7 @@ test('build the demo investigation', async ({ tangent }) => {
 			// The painted highlight, not the selection that made it; and the panel beside it.
 			await site.evaluate(() => getSelection()!.removeAllRanges())
 			await site.screenshot({ path: path.join(shots, 'browser-forum-highlight.png') })
-			await panel.evaluate(() => window.scrollTo(0, 0))
+			await panel.evaluate(() => globalThis.scrollTo(0, 0))
 			await panel.screenshot({ path: path.join(shots, 'extension-side-panel.png') })
 			await capture()
 

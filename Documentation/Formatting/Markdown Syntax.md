@@ -28,3 +28,6 @@ Tabs or spaces at the beginning of lines simply indents those lines. This grants
 
 ## [[Lists]]
 Lists support both the `1.`, `2.` standard as well as supporting `A.`, `B.` and `a.`, `b.` as the starts for ordered lists. This gives you more expression and customization in your lists.
+
+## [[Comments#HTML Comments]]
+A `<!-- -->` comment written on one line is hidden until your text cursor reaches it. A comment that spans several lines is shown as text rather than hidden.

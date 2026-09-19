@@ -5,7 +5,7 @@
  * The built extension in a real Chromium, against the desktop app's real server and inbox
  * running under node over a throwaway workspace (the app's extension-harness.ts, with the
  * pairing confirm answered yes). It pairs from the side panel, picks the investigation,
- * sends a note and an entity, and checks both bundles landed in the workspace's
+ * sends a note and two entities, and checks the three bundles landed in the workspace's
  * .osint-inbox/pending with MACs that verify. It captures a page the same way, through
  * the three-step upload, and checks the committed archive's digest. It also checks that an ordinary web page
  * cannot read the app's port. It makes highlights, and checks when they are shown again:
@@ -150,7 +150,7 @@ async function pendingCount(): Promise<number> {
 	return (await harness.pending()).length;
 }
 
-test('pairs from the side panel and sends a note and an entity into the investigation', async () => {
+test('pairs from the side panel and sends a note and two entities into the investigation', async () => {
 	const id = await extensionId();
 	const site = await context.newPage();
 	await site.goto(website.url);
@@ -206,6 +206,20 @@ test('pairs from the side panel and sends a note and an entity into the investig
 	await panel.selectOption('#entity-kind', 'username');
 	await expect(panel.locator('#entity-platform')).toHaveValue('127.0.0.1');
 
+	// A new selection taken from the page starts afresh too: a platform typed by hand and a
+	// chain chosen for the last value do not carry over to it.
+	await panel.fill('#entity-platform', 'github.com');
+	await panel.selectOption('#entity-kind', 'wallet');
+	await panel.selectOption('#entity-chain', 'eth');
+	await selectText(site, 'alice@example.com');
+	await panel.click('#use-selection');
+	await expect(panel.locator('#entity-value')).toHaveValue('alice@example.com');
+	await expect(panel.locator('#entity-kind')).toHaveValue('email');
+	await panel.selectOption('#entity-kind', 'wallet');
+	await expect(panel.locator('#entity-chain')).toHaveValue('btc');
+	await panel.selectOption('#entity-kind', 'username');
+	await expect(panel.locator('#entity-platform')).toHaveValue('127.0.0.1');
+
 	const bundles = await harness.pending();
 	for (const bundle of bundles) expect(bundle.macOk, `mac of ${bundle.bundleId}`).toBe(true);
 	const stored = bundles.map(b => b.stored as Record<string, any>);
@@ -225,7 +239,7 @@ test('pairs from the side panel and sends a note and an entity into the investig
 	});
 	expect(username?.entity).toEqual({ kind: 'username', value: 'alice', platform: 'github.com' });
 
-	// Both delivered, so the extension's queue is empty again.
+	// All three delivered, so the extension's queue is empty again.
 	await expect(panel.locator('#queue li.hint')).toBeVisible();
 });
 

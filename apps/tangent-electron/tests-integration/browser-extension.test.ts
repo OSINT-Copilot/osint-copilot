@@ -457,6 +457,14 @@ test('the real extension sends an entity, a note and a page capture into the rea
 			await expect(line).toHaveText(/^<!-- \/?oc:bundle [^ ]+ -->$/)
 			expect((await line.boundingBox())!.height).toBeLessThan(1)
 		}
+		// Paragraph focus takes in the lines beside the caret's, but not a marker line
+		const focusLevel = await app.evaluate(() => (document as any).workspace.viewState.tangent.focusLevel.value)
+		await window.setFocusLevel(3) // FocusLevel.Paragraph
+		const sectionHeading = markerLines.first().locator('xpath=following-sibling::*[1]')
+		await sectionHeading.click()
+		await expect(sectionHeading).toHaveAttribute('data-focus', 'focused')
+		expect((await markerLines.first().boundingBox())!.height).toBeLessThan(1)
+		await window.setFocusLevel(focusLevel)
 
 		// ---- OSINTCopilot/Evidence/, on disk
 		const placed: { role: string, path: string, sha256: string, created: boolean }[] = captureItem.outcome.placedFiles

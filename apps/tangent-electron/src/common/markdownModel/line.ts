@@ -152,6 +152,64 @@ export function getActiveSentenceRange(doc: TextDocument, line: Line, selection:
 	return [start, end]
 }
 
+/**
+ * Whether a line belongs to the focused paragraph in paragraph focus mode.
+ * A line holding only a hidden comment does not: focusing it would open it as an empty row.
+ */
+export function lineContinuesParagraphFocus(line: Line) {
+	const attr = line.attributes
+	return (!attr.empty && !attr.whitespace && !attr.commentLine)
+		|| attr.code
+		|| attr.front_matter
+		|| attr.math
+}
+
+/**
+ * Extends the focused lines to the adjacent lines that qualify
+ */
+export function extendFocusedLines(doc: TextDocument, lines: Line[], isValidLine: (line: Line) => boolean): Line[] {
+	const first = lines[0]
+	if (isValidLine(first)) {
+		const linesToAdd: Line[] = []
+		let lineIndex = doc.lines.indexOf(first) - 1
+		for (; lineIndex >= 0; lineIndex--) {
+			const line = doc.lines[lineIndex]
+			if (isValidLine(line)) {
+				linesToAdd.push(line)
+			}
+			else {
+				break
+			}
+		}
+
+		if (linesToAdd.length) {
+			linesToAdd.reverse()
+			lines = [...linesToAdd, ...lines]
+		}
+	}
+
+	const last = lines[lines.length - 1]
+	if (isValidLine(last)) {
+		const linesToAdd: Line[] = []
+		let lineIndex = doc.lines.indexOf(first) + 1
+		for (; lineIndex < doc.lines.length; lineIndex++) {
+			const line = doc.lines[lineIndex]
+			if (isValidLine(line)) {
+				linesToAdd.push(line)
+			}
+			else {
+				break
+			}
+		}
+
+		if (linesToAdd.length) {
+			lines = [...lines, ...linesToAdd]
+		}
+	}
+
+	return lines
+}
+
 export function lineFormatEscapeMode(line: Line) {
 	const attr = line.attributes
 	if (attr.blockquote) {

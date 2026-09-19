@@ -170,6 +170,9 @@ export default class Workspace {
 			}
 		})
 		watcher.on('all', (eventType, fileName) => this.onFileWatchEvent(eventType, fileName))
+		// A folder that cannot be watched (e.g. a new one deleted before the watcher got to it) is
+		// reported as an error. Unlistened, that error is thrown and no folder made later is watched.
+		watcher.on('error', error => log.warn('File watcher error:', error))
 		this.watcher = watcher
 	}
 

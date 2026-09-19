@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 
 import * as parser from './parser'
+import { extendFocusedLines, lineContinuesParagraphFocus } from './line'
 import { buildOpsFromInsertList } from 'common/typewriterUtils'
 
 const PUNCTUATION_ATTRIBUTES = {
@@ -140,5 +141,17 @@ describe('Comments', () => {
 		]))
 		expect(line.content.ops.some(op => op.attributes?.t_link)).toBe(false)
 		expect(line.attributes.commentLine).toBe(true)
+	})
+
+	it('Should keep comment lines out of the focused paragraph', () => {
+		const doc = parser.markdownToTextDocument(`Before\n<!-- oc:bundle 1 -->\nFirst line\nSecond line\n<!-- oc:bundle 2 -->\nAfter`)
+		const text = (lines) => lines.map(line => doc.getText(doc.getLineRange(line)).trim())
+
+		const focused = extendFocusedLines(doc, [doc.lines[2]], lineContinuesParagraphFocus)
+		expect(text(focused)).toEqual(['First line', 'Second line'])
+
+		// The caret on the comment line focuses that line alone
+		const onComment = extendFocusedLines(doc, [doc.lines[1]], lineContinuesParagraphFocus)
+		expect(onComment).toEqual([doc.lines[1]])
 	})
 })
