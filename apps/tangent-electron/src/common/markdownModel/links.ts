@@ -464,6 +464,13 @@ export function parseRawLink(char: string, parser: NoteParser): boolean {
 			href: feed.substring(lastLetterIndex, feed.index),
 			form: 'raw'
 		}
+		// OSINT fork: raw links carry their note like wiki and md links do, so a hover or
+		// auto-embed can tell a bare URL in an investigated page's note from one elsewhere
+		// and skip the network preview (osint/integration/link-previews.ts). Resolving a
+		// raw link ignores `from`.
+		if (parser.filepath) {
+			t_link.from = parser.filepath
+		}
 
 		// Rewind back from invalid terminating characters
 		let lastChar = feed.peek(-1)

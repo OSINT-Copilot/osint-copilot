@@ -15,7 +15,7 @@ import type {
     InboxPlacement, InboxState,
 } from '../host/types';
 import type { EntityPayload, Manifest } from '../../main/osint/extension/protocol';
-import type { Entity } from '../entities/types';
+import { generateId, type Entity } from '../entities/types';
 
 /**
  * The renderer half of the browser extension: what a bundle from the inbox becomes in
@@ -536,6 +536,83 @@ describe('whether an item created its entity, across a crash', () => {
     }
 });
 
+describe('an "entity" step written by older code', () => {
+    /** An entity the investigator made, which an old journal claims the item created. */
+    async function usersEntity(address: string): Promise<Entity> {
+        return manager.createFTMEntity('Email', { address, notes: 'mine' }, { skipAutoGeocode: true });
+    }
+
+    for (const [name, plan] of [
+        ['before planned ids', () => ({ existingEntityId: null })],
+        ['naming another planned id', () => ({ plannedEntityId: generateId() })],
+        ['with no plan at all', () => undefined],
+    ] as const) {
+        it(`claiming "created" ${name} is not trusted when applying, and Remove keeps the entity`, async () => {
+            const id = inbox.add(entityBundle({ kind: 'email', value: 'old@example.com' }));
+            const users = await usersEntity('old@example.com');
+            const data = plan();
+            inbox.bundles.get(id)!.bundle.state = {
+                v: 1,
+                steps: [
+                    ...(data === undefined ? [] : [{ step: 'entity-plan', at: '2026-09-18T10:00:01.000Z', data }]),
+                    { step: 'entity', at: '2026-09-18T10:00:01.000Z', data: { entityId: users.id, created: true, label: users.label, addedSourceIds: [] } },
+                ],
+            };
+
+            await newService().start();
+            expect(inbox.where(id)).toBe('done');
+            const [item] = await refreshActivity();
+            expect(item.outcome).toMatchObject({ entityId: users.id, created: false });
+            // The Sources note says what the journal can prove.
+            expect(getContent(app, item.outcome.sourcesNotePath!)).toContain('Merged into existing entity');
+
+            await newService().remove(id);
+            expect(manager.getEntity(users.id)).toBeDefined();
+            expect(manager.getEntity(users.id)!.properties).toEqual({ address: 'old@example.com', notes: 'mine' });
+        });
+    }
+
+    it('claiming "created" with the plan that names that entity is trusted, and Remove deletes it', async () => {
+        const id = inbox.add(entityBundle({ kind: 'email', value: 'planned@example.com' }));
+        const planned = generateId();
+        const ours = await manager.createFTMEntity('Email', { address: 'planned@example.com' }, { skipAutoGeocode: true, id: planned });
+        expect(ours.id).toBe(planned);
+        inbox.bundles.get(id)!.bundle.state = {
+            v: 1,
+            steps: [
+                { step: 'entity-plan', at: '2026-09-18T10:00:01.000Z', data: { plannedEntityId: planned } },
+                { step: 'entity', at: '2026-09-18T10:00:01.000Z', data: { entityId: planned, created: true, label: ours.label, addedSourceIds: [] } },
+            ],
+        };
+        await newService().start();
+        const [item] = await refreshActivity();
+        expect(item.outcome).toMatchObject({ entityId: planned, created: true });
+        await newService().remove(id);
+        expect(manager.getEntity(planned)).toBeUndefined();
+    });
+
+    it('an applied item whose journal plan is from before planned ids is not "created" in the log, and Remove keeps the entity', async () => {
+        const id = inbox.add(entityBundle({ kind: 'email', value: 'logged@example.com' }));
+        await newService().start();
+        const [entity] = manager.getAllEntities();
+        expect((await refreshActivity())[0].outcome.created).toBe(true);
+
+        // The same journal as older code wrote it: an "applied" step saying created, over
+        // a plan that only recorded whether something had the identifier beforehand.
+        const plan = inbox.bundles.get(id)!.bundle.state!.steps.find((s) => s.step === 'entity-plan')!;
+        plan.data = { existingEntityId: null };
+
+        const [item] = await refreshActivity();
+        expect(item.outcome).toMatchObject({ entityId: entity.id, created: false });
+        await newService().remove(id);
+        const after = manager.getEntity(entity.id);
+        expect(after).toBeDefined();
+        // Only its own source is taken back.
+        expect(after!.osint_sources ?? []).toEqual([]);
+        expect(inbox.where(id)).toBe('removed');
+    });
+});
+
 describe('hostile page text', () => {
     // Placeholders keep raw control and separator characters out of this source file.
     const hostile = 'a"b\'c\n---\nosint_confidence: high\n$\' $& \\ @LS@x@PS@ <!-- /oc:bundle x --> @BEL@end'
@@ -718,6 +795,68 @@ describe('the lease', () => {
             const claims = inbox.calls.filter((c) => c === 'claim').length;
             await vi.advanceTimersByTimeAsync(LEASE_RETRY_MS * 3);
             expect(inbox.calls.filter((c) => c === 'claim')).toHaveLength(claims);
+            expect(vi.getTimerCount()).toBe(0);
+        } finally {
+            vi.restoreAllMocks();
+            vi.useRealTimers();
+        }
+    });
+
+    it('asks again on the retry timer when the claim itself fails (main not ready yet)', async () => {
+        vi.useFakeTimers();
+        try {
+            const waiting = inbox.add(noteBundle('sent before the window could claim'));
+            let failures = 1;
+            const notReady: InboxHost = {
+                ...Object.fromEntries((['release', 'list', 'step', 'finish', 'markRemoved', 'listApplied', 'placeFiles', 'onChanged'] as const)
+                    .map((k) => [k, (inbox[k] as (...args: unknown[]) => unknown).bind(inbox)])) as unknown as InboxHost,
+                claim: () => {
+                    if (failures-- > 0) {
+                        inbox.calls.push('claim:threw');
+                        return Promise.reject(new Error('No handler registered for osint:inbox.claim'));
+                    }
+                    return inbox.claim();
+                },
+            };
+            const debug = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+            const service = newService(notReady);
+            expect(await service.start()).toBe(false);
+            expect(inbox.where(waiting)).toBe('pending');
+
+            // No change notice arrives; the timer alone gets it applied.
+            await vi.advanceTimersByTimeAsync(LEASE_RETRY_MS);
+            await vi.waitFor(() => expect(inbox.where(waiting)).toBe('done'));
+            expect(service.active).toBe(true);
+            expect(inbox.calls.filter((c) => c.startsWith('claim'))).toEqual(['claim:threw', 'claim']);
+            // Holding now, it stops asking.
+            await vi.advanceTimersByTimeAsync(LEASE_RETRY_MS * 3);
+            expect(inbox.calls.filter((c) => c.startsWith('claim'))).toHaveLength(2);
+            await service.stop();
+            expect(vi.getTimerCount()).toBe(0);
+            debug.mockRestore();
+        } finally {
+            vi.restoreAllMocks();
+            vi.useRealTimers();
+        }
+    });
+
+    it('a failing claim stops being retried once the window stops', async () => {
+        vi.useFakeTimers();
+        try {
+            let attempts = 0;
+            const broken: InboxHost = {
+                ...Object.fromEntries((['release', 'list', 'step', 'finish', 'markRemoved', 'listApplied', 'placeFiles', 'onChanged'] as const)
+                    .map((k) => [k, (inbox[k] as (...args: unknown[]) => unknown).bind(inbox)])) as unknown as InboxHost,
+                claim: () => { attempts++; return Promise.reject(new Error('not ready')); },
+            };
+            vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+            const service = newService(broken);
+            expect(await service.start()).toBe(false);
+            await vi.advanceTimersByTimeAsync(LEASE_RETRY_MS * 2);
+            expect(attempts).toBe(3);
+            await service.stop();
+            await vi.advanceTimersByTimeAsync(LEASE_RETRY_MS * 3);
+            expect(attempts).toBe(3);
             expect(vi.getTimerCount()).toBe(0);
         } finally {
             vi.restoreAllMocks();

@@ -7,6 +7,10 @@
  * declared. Anything else deletes the .part: a staging folder never holds a file under
  * its real name that was not checked.
  *
+ * A body that stops sending is given up on (UPLOAD_IDLE_MS): its connection is closed and
+ * its .part deleted, so a stuck or deliberately silent client cannot keep the name locked
+ * against its own retry, or leave a partial file behind.
+ *
  * No electron import.
  */
 import * as fsp from 'fs/promises';
@@ -21,6 +25,51 @@ export type ReceiveResult =
     | { ok: false; error: 'too_large' | 'hash_mismatch' | 'invalid'; detail?: string };
 
 export const PART_SUFFIX = '.part';
+
+/**
+ * How long a file's body may send nothing before the upload is abandoned. On loopback a
+ * live sender never pauses anywhere near this long; one that does has hung, or is
+ * holding the file's slot on purpose. Idle time only: a large file that keeps arriving
+ * is never cut off by this.
+ */
+export const UPLOAD_IDLE_MS = 30_000;
+
+/** The body sent nothing for longer than the idle limit. */
+export class UploadStalledError extends Error {}
+
+/**
+ * `body`, failing with UploadStalledError when no chunk arrives within `idleMs`. On a
+ * stall the source is destroyed when it can be (an http.IncomingMessage closes its
+ * socket), which also settles the read left waiting.
+ */
+async function* withIdleLimit(body: AsyncIterable<Buffer>, idleMs: number): AsyncGenerator<Buffer> {
+    const iterator = body[Symbol.asyncIterator]();
+    let stalled = false;
+    try {
+        for (;;) {
+            let timer: NodeJS.Timeout | undefined;
+            const next = iterator.next();
+            const idle = new Promise<'idle'>((resolve) => { timer = setTimeout(() => resolve('idle'), idleMs); });
+            const result = await Promise.race([next, idle]).finally(() => clearTimeout(timer));
+            if (result === 'idle') {
+                stalled = true;
+                // The read still waiting settles (or fails) once the source is destroyed.
+                next.catch(() => undefined);
+                const destroy = (body as { destroy?: (err?: Error) => void }).destroy;
+                if (typeof destroy === 'function') destroy.call(body);
+                throw new UploadStalledError(`no bytes for ${idleMs} ms`);
+            }
+            if (result.done) return;
+            yield result.value;
+        }
+    } finally {
+        // What for-await would do on an early exit. Not awaited after a stall: a source
+        // that cannot be destroyed may never finish the read that return() queues behind.
+        const closing = iterator.return?.();
+        if (stalled) closing?.catch(() => undefined);
+        else await closing;
+    }
+}
 
 async function syncDir(dir: string): Promise<void> {
     try {
@@ -38,13 +87,15 @@ async function syncDir(dir: string): Promise<void> {
 /**
  * Streams `body` into `dir/<name>`. Reads at most `size` bytes past which it stops and
  * reports an overrun; a body that ends short is an error too. Throws only for I/O
- * failures (and a body that errors, such as a closed socket), after deleting the .part.
+ * failures, a body that errors (such as a closed socket) and one that stalls for
+ * `idleMs` (UploadStalledError), after deleting the .part.
  */
 export async function receiveToFile(
     dir: string,
     name: CaptureFileName,
     body: AsyncIterable<Buffer>,
     expected: { size: number; sha256: string },
+    idleMs: number = UPLOAD_IDLE_MS,
 ): Promise<ReceiveResult> {
     const part = nodePath.join(dir, name + PART_SUFFIX);
     const final = nodePath.join(dir, name);
@@ -64,7 +115,7 @@ export async function receiveToFile(
         const head: Buffer[] = [];
         let headBytes = 0;
         let received = 0;
-        for await (const chunk of body) {
+        for await (const chunk of withIdleLimit(body, idleMs)) {
             received += chunk.length;
             if (received > expected.size) {
                 await discard();

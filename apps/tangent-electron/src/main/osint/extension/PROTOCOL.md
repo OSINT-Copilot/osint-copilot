@@ -262,6 +262,8 @@ It then streams the body to `<name>.part` (created exclusively), hashing as it g
 | The same file is being received on another connection | `409 conflict` |
 | Unlicensed | `403 unlicensed` |
 
+A body that sends no bytes for 30 seconds is abandoned: the app closes the connection without a reply and deletes the partial file, and the name is free again at once. The extension sends the file again as a new request.
+
 ### 7.6 `POST /v1/bundles/<bundleId>/commit` (signed)
 
 The body is JSON `{}`. The app hashes every declared file again (a file changed on disk since it was received is deleted and counts as missing), writes the stored manifest last, and moves the capture from staging to `pending/` in one step.

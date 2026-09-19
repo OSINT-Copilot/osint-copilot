@@ -6,6 +6,7 @@ import type { UrlData } from 'common/urlData'
 import Workspace from './Workspace'
 import { deepEqual } from 'fast-equals'
 import { isExternalLink } from 'common/links'
+import { linkPreviewSuppressedFor, PREVIEW_SUPPRESSED_MESSAGE } from 'osint/integration/link-previews'
 
 type MaybeSubscribableNode = TreeNode & { subscribe?: any }
 export type HandleResult = string | MaybeSubscribableNode | MaybeSubscribableNode[] | UrlData
@@ -76,7 +77,14 @@ export default class NodeHandle {
 			const requestId = this._requestId += 1
 
 			if (typeof newValue === 'string') {
-				if (isExternalLink(newValue)) {
+				if (isExternalLink(newValue) && linkPreviewSuppressedFor(this.link?.from)) {
+					// OSINT fork: fetching a preview would contact the investigated site on a
+					// mere hover (see osint/integration/link-previews.ts). An error value
+					// shows the plain URL and embeds nothing.
+					this.value = { mediaType: 'error', message: PREVIEW_SUPPRESSED_MESSAGE }
+					this.dirty = true
+				}
+				else if (isExternalLink(newValue)) {
 					// Get information about the external link
 					this.workspace.api.links.getUrlData(newValue).then(result => {
 						if (this._requestId === requestId && !deepEqual(this.value, result)) {

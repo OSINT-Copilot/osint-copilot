@@ -142,6 +142,10 @@ export function activityItemFor(bundle: InboxAppliedBundle): ExtensionActivityIt
     const applied = steps.find((s) => s.step === APPLIED_STEP);
     const outcome = normalizeActivityOutcome(applied?.data);
     if (!applied || !outcome) return null;
+    // What Remove acts on: "created" only when the plan proves it (see planProvesCreated).
+    if (outcome.created && !planProvesCreated(steps.find((s) => s.step === 'entity-plan')?.data, outcome.entityId)) {
+        outcome.created = false;
+    }
     let kind: ExtensionActivityItem['kind'];
     let summary: string;
     let entityKind: string | undefined;
@@ -456,6 +460,16 @@ function isEntityStep(v: unknown): v is EntityStep {
     return !!o && typeof o === 'object' && isString(o.entityId) && Array.isArray(o.addedSourceIds);
 }
 
+/**
+ * Whether a journal proves the item created `entityId`: its plan names that very id.
+ * A recorded `created: true` alone does not. Code from before planned ids wrote it when
+ * nothing had the identifier beforehand, which an entity the investigator or the
+ * assistant made in the meantime also satisfies, and Remove would delete theirs.
+ */
+function planProvesCreated(plan: unknown, entityId: string | null): boolean {
+    return entityId !== null && isEntityPlan(plan) && plan.plannedEntityId === entityId;
+}
+
 export interface InboxServiceDeps {
     app: App;
     entityManager: EntityManager;
@@ -526,6 +540,10 @@ export class InboxService {
                 result = await this.deps.inbox.claim();
             } catch (e) {
                 console.debug('[osint] browser extension inbox unavailable:', e instanceof Error ? e.message : e);
+                // Main's inbox may not be ready yet (its handlers wait on the extension
+                // channel's setup). Without asking again, this window would apply nothing
+                // until the next bundle arrived, however long that is.
+                this.retryClaim();
                 return false;
             }
             if (this.stopped) {
@@ -535,7 +553,7 @@ export class InboxService {
                 return false;
             }
             if (!result.ok) {
-                this.retryWhileHeldElsewhere();
+                this.retryClaim();
                 if (!this.toldHeld) {
                     this.toldHeld = true;
                     console.debug('[osint] another window applies this investigation\'s browser extension inbox; this one will not.');
@@ -552,7 +570,8 @@ export class InboxService {
         return attempt;
     }
 
-    private retryWhileHeldElsewhere(): void {
+    /** Asks for the lease again every LEASE_RETRY_MS, until held or stopped. */
+    private retryClaim(): void {
         if (this.retryTimer || this.stopped) return;
         this.retryTimer = setInterval(() => {
             if (!this.held && !this.stopped) void this.claim();
@@ -735,8 +754,11 @@ export class InboxService {
         receivedAt: string,
     ): Promise<EntityStep> {
         const done = journal.get('entity');
-        if (isEntityStep(done)) return done;
         let plan = journal.get('entity-plan');
+        if (isEntityStep(done)) {
+            // A step this code wrote always agrees with its plan; an older one may not.
+            return done.created && !planProvesCreated(plan, done.entityId) ? { ...done, created: false } : done;
+        }
         if (!isEntityPlan(plan)) {
             // Recorded before anything can be created with it (see the header).
             plan = { plannedEntityId: generateId() };

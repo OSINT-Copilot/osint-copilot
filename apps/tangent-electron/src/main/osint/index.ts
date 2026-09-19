@@ -40,7 +40,7 @@ import type { ConfirmPairing } from './extension/pairing'
 import { registerExtensionHandlers, registerInboxHandlers } from './inbox/ipc'
 import { tangentInboxHost, workspacePathOf } from './inbox/tangent-host'
 import { utilityParserRunner } from './capture/utility-runner'
-import { renderArchive } from './capture/capture-surface'
+import { RENDER_PARTITION, renderArchive, renderSessionStats } from './capture/capture-surface'
 import type { ExecOptions, HttpRequest, PlatformInfo, SecretRef } from '../../osint/host/types'
 
 setWorkspaceRootsProvider(() => [...workspaceMap.keys()])
@@ -255,6 +255,17 @@ extensionReady.then(controller => {
 }, err => {
 	Logger.error('[osint] the browser extension channel could not be set up:', err)
 })
+
+/**
+ * The integration tests' way to render an archive in this real main process
+ * (tests-integration/capture-render.test.ts): the render's network isolation is only
+ * provable in a real Chromium. A global, not an IPC channel, so no page can reach it;
+ * and webpack replaces process.env.NODE_ENV in a production build, which drops this
+ * block from the shipped bundle altogether.
+ */
+if (process.env.NODE_ENV !== 'production' && process.env.INTEGRATION_TEST && !app.isPackaged) {
+	;(globalThis as any).__osintCaptureRenderTest = { renderArchive, renderSessionStats, RENDER_PARTITION }
+}
 
 registerInboxHandlers({
 	handle,

@@ -3,8 +3,9 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { createHash, randomBytes, randomUUID } from 'crypto'
-import { Readable } from 'stream'
+import { PassThrough, Readable } from 'stream'
 import { InboxWriter, type InboxWriterDeps } from './inbox-writer'
+import { UploadStalledError } from './capture-files'
 import { verifySealedManifest } from './manifest-mac'
 import { workspaceIdFor } from '../extension/signing'
 import type { BundleContext } from '../extension/server'
@@ -194,6 +195,59 @@ describe('capture upload', () => {
 		expect(await send(s.writer, m.bundleId, 'viewport.png', PNG, { body: endless() })).toEqual({ error: 'too_large' })
 		expect(pulled).toBe(2)
 		expect(fs.readdirSync(stagingOf(s.root, m.bundleId))).toEqual(['upload.json'])
+	})
+
+	it('abandons a body that stops sending: the .part is deleted, the source destroyed, and the file can be sent again', async () => {
+		const s = setup({ uploadIdleMs: 60 })
+		const m = captureManifest(s.id, { 'page.mhtml': MHTML })
+		await s.writer.acceptBundle(m, ctx())
+		// A socket that sent the first part of the file and then went quiet.
+		const stuck = new PassThrough()
+		stuck.write(MHTML.subarray(0, 1000))
+		const started = Date.now()
+		await expect(send(s.writer, m.bundleId, 'page.mhtml', MHTML, { body: stuck })).rejects.toBeInstanceOf(UploadStalledError)
+		expect(Date.now() - started).toBeLessThan(5000)
+		expect(stuck.destroyed).toBe(true)
+		expect(fs.readdirSync(stagingOf(s.root, m.bundleId))).toEqual(['upload.json'])
+		// The name is not held: the client's retry is received, not refused as a conflict.
+		expect(await send(s.writer, m.bundleId, 'page.mhtml', MHTML)).toEqual({ received: true })
+	})
+
+	it('abandons a silent body even when it cannot be destroyed', async () => {
+		const s = setup({ uploadIdleMs: 40 })
+		const m = captureManifest(s.id, { 'page.mhtml': MHTML })
+		await s.writer.acceptBundle(m, ctx())
+		const silent: AsyncIterable<Buffer> = {
+			[Symbol.asyncIterator]: () => {
+				let sent = false
+				return {
+					next: () => {
+						if (!sent) { sent = true; return Promise.resolve({ done: false, value: MHTML.subarray(0, 10) }) }
+						return new Promise<IteratorResult<Buffer>>(() => undefined)
+					},
+				}
+			},
+		}
+		await expect(send(s.writer, m.bundleId, 'page.mhtml', MHTML, { body: silent })).rejects.toBeInstanceOf(UploadStalledError)
+		expect(fs.readdirSync(stagingOf(s.root, m.bundleId))).toEqual(['upload.json'])
+	})
+
+	it('does not cut off a slow body that keeps sending, however long it takes in all', async () => {
+		const s = setup({ uploadIdleMs: 80 })
+		const m = captureManifest(s.id, { 'page.mhtml': MHTML })
+		await s.writer.acceptBundle(m, ctx())
+		const pieces = 8
+		const size = Math.ceil(MHTML.length / pieces)
+		async function* trickle() {
+			for (let i = 0; i < MHTML.length; i += size) {
+				await new Promise(resolve => setTimeout(resolve, 30))
+				yield MHTML.subarray(i, i + size)
+			}
+		}
+		const started = Date.now()
+		expect(await send(s.writer, m.bundleId, 'page.mhtml', MHTML, { body: trickle() })).toEqual({ received: true })
+		// Well past the idle limit in total, never past it between chunks.
+		expect(Date.now() - started).toBeGreaterThan(80)
 	})
 
 	it('answers a second, identical upload of a file with received, without reading it', async () => {

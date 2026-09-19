@@ -165,6 +165,8 @@ export interface InboxWriterDeps {
      * at commit, and for any pending capture found without derived.json.
      */
     derive?: (root: string, bundleId: string) => void;
+    /** How long a file upload may send nothing before it is abandoned (UPLOAD_IDLE_MS). */
+    uploadIdleMs?: number;
 }
 
 interface Investigation {
@@ -720,7 +722,8 @@ export class InboxWriter implements InboxBackend, DeriveStore {
         if (!('dir' in prepared)) return prepared;
 
         try {
-            const result = await receiveToFile(prepared.dir, name, upload.body, prepared);
+            // A stalled body throws after its .part is gone; the finally frees the name.
+            const result = await receiveToFile(prepared.dir, name, upload.body, prepared, this.deps.uploadIdleMs);
             return 'error' in result ? { error: result.error, detail: result.detail } : { received: true };
         } finally {
             this.receiving.delete(lock);
