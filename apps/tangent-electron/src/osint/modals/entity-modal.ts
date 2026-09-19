@@ -656,7 +656,12 @@ export class EntityCreationModal extends Modal {
             if (this.entityId) {
                 // Update existing entity
                 entity = await this.entityManager.updateEntity(this.entityId, this.properties);
-                new Notice(`Updated ${this.entityType}: ${entity?.label}`);
+                if (!entity) {
+                    // The note is locked, or the entity is gone. Keep the form open with the edits.
+                    new Notice(`Could not update this ${this.entityType}.`);
+                    return;
+                }
+                new Notice(`Updated ${this.entityType}: ${entity.label}`);
             } else {
                 // Create new entity
                 // Skip auto-geocoding for manual creation - user should click the Geocode button explicitly
@@ -3137,14 +3142,16 @@ const NON_ENDPOINT_ENTITY_PROPERTIES = new Set(['addressEntity', 'proof']);
 
 /**
  * Edge direction (from, to) for the bundled types whose featured list names the
- * endpoints to-first. FollowTheMoney declares each edge's source and target, but the
+ * endpoints to-first. The FTM/OIDSF schemas declare an edge's source and target, but the
  * bundled snapshot does not carry them, so featured order stood in for it and ran these
  * backwards: an employee works for an employer, a participant takes part in a project,
- * a trip goes from its start location to its end location.
+ * a contract is awarded to its supplier. Trip declares no edge; it runs from its start
+ * location to its end location because that is what a trip does.
  */
 const INTERVAL_EDGE_DIRECTION: Record<string, [string, string]> = {
     Employment: ['employee', 'employer'],
     ProjectParticipant: ['participant', 'project'],
+    ContractAward: ['contract', 'supplier'],
     Trip: ['startLocation', 'endLocation'],
 };
 

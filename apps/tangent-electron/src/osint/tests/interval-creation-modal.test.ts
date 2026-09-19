@@ -13,7 +13,7 @@ vi.mock('obsidian', async (importOriginal) => {
 /**
  * The form that creates an FTM connection. It used to drop every field the user typed,
  * link the wrong pair of entities for types like Payment (and the right pair backwards
- * for Employment and Trip), leave out the dragged entities
+ * for Employment, ProjectParticipant, ContractAward and Trip), leave out the dragged entities
  * whenever the range was an abstract parent (LegalEntity, Organization, Thing), and refuse
  * every custom connection type outright.
  */
@@ -154,10 +154,11 @@ describe('FTMIntervalCreationModal', () => {
     });
 
     // Their featured lists name the endpoints to-first; the edge still runs from the
-    // employee, the participant and the start location.
+    // employee, the participant, the contract and the start location.
     it.each([
         ['Employment', ann, acme, ['Employee *', 'Employer *']],
         ['ProjectParticipant', acme, entity('pr1', 'Project', 'Bridge'), ['Participant *', 'Project *']],
+        ['ContractAward', entity('k1', 'Contract', 'Road works'), acme, ['Contract *', 'Supplier *']],
         ['Trip', entity('a1', 'Address', 'Home'), entity('a2', 'Address', 'Office'), ['Start location *', 'End location *']],
     ] as const)('%s runs from the entity its edge starts at', async (schema, from, to, labels) => {
         const { manager, root } = openModal(schema, [from, to], from.id, to.id);

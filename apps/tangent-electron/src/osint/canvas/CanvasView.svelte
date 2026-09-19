@@ -147,11 +147,24 @@ function worldPoint(event: { clientX: number, clientY: number }) {
  * Both are drawn inside the surface, so everything that happens in them bubbles here too,
  * and taken as board input it went wrong: a press cleared the selection -- closing the
  * inspector under the pointer -- and captured the pointer, so the click that followed
- * never reached the swatch or button that was pressed; the wheel zoomed the board instead
- * of scrolling the picker's list; and a drop on the picker put its file on the board behind.
+ * never reached the swatch or button that was pressed; and the wheel zoomed the board
+ * instead of scrolling the picker's list. A drop is dropZone's.
  */
 function isOverlayTarget(event: Event) {
 	return !!(event.target as Element | null)?.closest?.('.CanvasInspector, .CanvasPickerBackdrop')
+}
+
+/**
+ * What a drop at the event's target does. The inspector refuses one, and the picker's text
+ * field takes it itself. Anywhere else on the picker it is a pick: the picker covers the
+ * whole board and invites a drag from the sidebar or the desktop, so it closes and the
+ * file goes on the board where it was dropped. It used to stay open over the new card.
+ */
+function dropZone(event: DragEvent): 'board' | 'pick' | 'refuse' {
+	const target = event.target as Element | null
+	if (target?.closest?.('.CanvasInspector')) return 'refuse'
+	if (!target?.closest?.('.CanvasPickerBackdrop')) return 'board'
+	return target.closest('input, textarea') ? 'refuse' : 'pick'
 }
 
 function onWheel(event: WheelEvent) {
@@ -194,8 +207,8 @@ function onSurfacePointerDown(event: PointerEvent) {
 	if (isOverlayTarget(event)) return
 	// A control inside a card: onCardPointerDown leaves it alone, so the press bubbles on to
 	// here, where it started a selection box and captured the pointer -- and the click
-	// that followed went to the board instead of the control.
-	if (isInteractiveTarget(event)) return
+	// that followed went to the board instead of the control. A pan still starts on one.
+	if (!isPanTrigger(event) && isInteractiveTarget(event)) return
 
 	if (isPanTrigger(event)) {
 		beginGesture(event, { kind: 'pan', lastX: event.clientX, lastY: event.clientY })
@@ -207,10 +220,14 @@ function onSurfacePointerDown(event: PointerEvent) {
 	if (!event.shiftKey) store.clearSelection()
 }
 
-/** True for anything inside a card the user should be able to click or type into. */
+/**
+ * True for anything inside a card the user should be able to click or type into, a media
+ * card's player included: its controls are drawn by the element itself. The card still
+ * drags by its name and its edge.
+ */
 function isInteractiveTarget(event: PointerEvent) {
 	const target = event.target as HTMLElement | null
-	return !!target?.closest('input, textarea, select, a, button:not(.connect-handle):not(.resize-handle)')
+	return !!target?.closest('input, textarea, select, a, video, audio, button:not(.connect-handle):not(.resize-handle)')
 }
 
 function onCardPointerDown(event: PointerEvent, node: CanvasNode) {
@@ -218,8 +235,8 @@ function onCardPointerDown(event: PointerEvent, node: CanvasNode) {
 	if (gesturePointerId !== null) return
 	// Capturing unconditionally meant nothing inside a card could ever be interacted with:
 	// the surface swallowed the pointer before the control saw it. The surface skips these
-	// presses as well, for the same reason.
-	if (isInteractiveTarget(event)) return
+	// presses as well, for the same reason. A pan is not a click, so it starts anywhere.
+	if (!isPanTrigger(event) && isInteractiveTarget(event)) return
 	event.stopPropagation()
 
 	if (isPanTrigger(event)) {
@@ -457,9 +474,9 @@ async function importDroppedFiles(files: FileList, at: { x: number, y: number })
 }
 
 function onDragOver(event: DragEvent) {
-	// Not cancelled, so a text field in the overlay takes the drop itself and anywhere else
-	// in it refuses one.
-	if (isOverlayTarget(event)) { dropActive = false; return }
+	// Not cancelled, so a text field in the picker takes the drop itself and the inspector
+	// refuses one.
+	if (dropZone(event) === 'refuse') { dropActive = false; return }
 	event.preventDefault()
 	dropActive = true
 	if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
@@ -471,7 +488,9 @@ function onDragLeave(event: DragEvent) {
 }
 
 async function onDrop(event: DragEvent) {
-	if (isOverlayTarget(event)) return
+	const zone = dropZone(event)
+	if (zone === 'refuse') return
+	if (zone === 'pick') picker = null
 	event.preventDefault()
 	dropActive = false
 	const at = worldPoint(event)

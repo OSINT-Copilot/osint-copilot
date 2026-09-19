@@ -191,7 +191,9 @@ export function extendFocusedLines(doc: TextDocument, lines: Line[], isValidLine
 	const last = lines[lines.length - 1]
 	if (isValidLine(last)) {
 		const linesToAdd: Line[] = []
-		let lineIndex = doc.lines.indexOf(first) + 1
+		// After the last line: from the first, a selection over several lines added its own
+		// lines again and stopped at the first one inside it that does not qualify.
+		let lineIndex = doc.lines.indexOf(last) + 1
 		for (; lineIndex < doc.lines.length; lineIndex++) {
 			const line = doc.lines[lineIndex]
 			if (isValidLine(line)) {

@@ -166,6 +166,23 @@ describe('EntityManager graph-yaml mirror on a routine reload', () => {
         expect(getContent(app, carlYaml)).toBeUndefined();
     });
 
+    it('brings up to date an entry a write left stale: a new note path, a renamed endpoint', async () => {
+        const acme = await manager.createFTMEntity('Company', { name: 'Acme' }, { skipAutoGeocode: true });
+        const bob = await manager.createFTMEntity('Person', { name: 'Bob' }, { skipAutoGeocode: true });
+        const link = (await manager.createConnection(bob.id, acme.id, 'Employment'))!;
+        await manager.updateEntity(bob.id, { name: 'Robert' });
+        const before = getContent(app, yamlPath(link.id)!)!;
+        expect(before).not.toContain('notePath:');
+        expect(before).toContain('fromLabel: Bob');
+
+        await manager.loadEntitiesFromNotes({ graphYaml: 'changed' });
+
+        const after = getContent(app, yamlPath(link.id)!)!;
+        expect(after).toContain(`notePath: ${manager.getConnection(link.id)!.filePath}`);
+        expect(after).toContain('fromLabel: Robert');
+        expect(getContent(app, yamlPath(bob.id)!)).toContain(`notePath: ${manager.getEntity(bob.id)!.filePath}`);
+    });
+
     it('rewrites every entry on a full reload', async () => {
         const { acme, bob, link, written } = await vault();
 

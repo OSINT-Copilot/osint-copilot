@@ -45,6 +45,8 @@ describe('MapView geolocate dialog: coordinates the note did not take', () => {
         await vi.waitFor(() => expect(row.textContent).not.toBe('Geocoding…'));
         expect(entityManager.updateEntity).toHaveBeenCalled();
         expect(row.textContent).toBe('Failed');
+        // The place was found; only the save was refused. The graph's geolocate says the same.
+        expect(vi.mocked(Notice).mock.calls.map((c) => c[0])).toEqual(['Could not save the coordinates of 1 Main St.']);
     });
 
     it('counts it failed in a batch', async () => {

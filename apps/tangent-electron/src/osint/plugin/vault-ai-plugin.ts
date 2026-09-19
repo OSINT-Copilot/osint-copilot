@@ -574,7 +574,7 @@ export default class VaultAIPlugin extends Plugin {
             this.skillRegistry?.invalidate();
             this.enricherRegistry?.invalidate();
             this.attachVaultSkillFromVault();
-            new Notice("Missing default prompt, skills, enricher, and task-agent folders/files were created (existing files unchanged).");
+            new Notice("Missing default prompt, skill, enricher and task-agent folders and files were created, and stock skill and task-agent files you had not edited were updated to the current defaults. Your edits are unchanged.");
           } catch (e) {
             new Notice(`Failed: ${e instanceof Error ? e.message : String(e)}`, 5000);
           }

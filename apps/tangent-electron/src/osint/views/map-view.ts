@@ -1347,6 +1347,9 @@ type GeolocateRowState = 'idle' | 'busy' | 'done' | 'failed';
 /**
  * Modal to show and geolocate locations without coordinates.
  */
+/** A place was found, but updateEntity wrote nothing: the note is locked or the entity is gone. */
+class GeocodeNotSavedError extends Error {}
+
 class GeolocateMissingModal extends Modal {
     private locations: Entity[];
     private geocodingService: GeocodingService;
@@ -1498,7 +1501,10 @@ class GeolocateMissingModal extends Modal {
             this.setRowState(entity.id, 'done');
         } catch (error) {
             this.setRowState(entity.id, 'failed');
-            if (error instanceof GeocodingError) {
+            if (error instanceof GeocodeNotSavedError) {
+                // Found, but not written: the graph's geolocate says the same.
+                new Notice(`Could not save the coordinates of ${entity.label}.`);
+            } else if (error instanceof GeocodingError) {
                 new Notice(`Failed to geocode ${entity.label}: ${error.message}`);
             } else {
                 new Notice(`Failed to geocode ${entity.label}`);
@@ -1512,7 +1518,7 @@ class GeolocateMissingModal extends Modal {
      */
     private async saveGeocodeResult(entity: Entity, fields: GeocodeFields, result: GeocodingResult): Promise<void> {
         const updated = await this.entityManager.updateEntity(entity.id, geocodeResultUpdates(entity, fields, result));
-        if (!updated) throw new Error(`${entity.label} was not updated`);
+        if (!updated) throw new GeocodeNotSavedError(`${entity.label} was not updated`);
     }
 
     private async geolocateAll(): Promise<void> {

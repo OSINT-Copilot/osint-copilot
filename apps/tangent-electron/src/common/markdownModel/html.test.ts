@@ -154,4 +154,13 @@ describe('Comments', () => {
 		const onComment = extendFocusedLines(doc, [doc.lines[1]], lineContinuesParagraphFocus)
 		expect(onComment).toEqual([doc.lines[1]])
 	})
+
+	it('extends a selection over several lines from its last line', () => {
+		const doc = parser.markdownToTextDocument(`A1\nA2\n<!-- oc:bundle 1 -->\nB1\nB2\n\nC1`)
+		const text = (lines) => lines.map(line => doc.getText(doc.getLineRange(line)).trim())
+
+		// A2 to B1 selected: the paragraph after it goes on to B2, and no line comes twice.
+		const focused = extendFocusedLines(doc, doc.lines.slice(1, 4), lineContinuesParagraphFocus)
+		expect(text(focused)).toEqual(['A1', 'A2', '<!-- oc:bundle 1 -->', 'B1', 'B2'])
+	})
 })

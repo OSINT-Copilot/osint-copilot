@@ -2902,8 +2902,8 @@ export class GraphView extends ItemView {
      *
      * Single-flight, as MapView.refresh is: the vault watcher, the toolbar, a workspace
      * switch and the plugin's refreshOpenInsightViews all land here, and two overlapping
-     * runs both clear and reload the shared entity store. A call made during a run joins
-     * it, and fits the view afterwards if it asked for that.
+     * runs would read every note twice for one result. A call made during a run joins it,
+     * and fits the view afterwards if it asked for that.
      *
      * @param options.fit fit the view to the nodes afterwards (the default). The vault
      *   watcher passes false, so saving a note keeps the analyst's pan and zoom.

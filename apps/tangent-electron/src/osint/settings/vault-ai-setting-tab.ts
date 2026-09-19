@@ -388,13 +388,13 @@ export class VaultAISettingTab extends PluginSettingTab {
 			});
 		new Setting(containerEl)
 			.setName("Install missing default task-agent files")
-			.setDesc("Creates README + sample agents when missing. Does not overwrite edits.")
+			.setDesc("Creates the README and sample agents when missing, and updates the ones you have not edited to the current defaults. Does not overwrite edits.")
 			.addButton((btn) =>
 				btn.setButtonText("Install missing").onClick(async () => {
 					try {
 						await new TaskAgentBootstrapService(this.plugin.app, () => this.plugin.settings.taskAgentsFolder).ensureDefaultsInstalled();
 						this.plugin.taskAgentRegistry?.invalidate();
-						new Notice("Task-agent defaults installed where missing.");
+						new Notice("Task-agent defaults installed where missing, and unedited ones updated.");
 						this.display();
 					} catch (e) {
 						new Notice(`Failed: ${e instanceof Error ? e.message : String(e)}`, 5000);

@@ -177,6 +177,13 @@ export class EntityManager {
     private loadInMemory = 0;
     /** The graph-yaml syncs run one after another, so an older one cannot land last. */
     private graphYamlSync: Promise<void> = Promise.resolve();
+    /**
+     * Each graph-yaml file this class wrote, by path, with the document it wrote there (as
+     * JSON). A routine reload compares with this rather than with the entities it replaces:
+     * those are changed in place by updateEntity, and a new note's entry is written before
+     * its note path is known, so only the files themselves show what is stale.
+     */
+    private graphYamlWritten = new Map<string, string>();
     private vaultLockService: VaultLockService | null = null;
     private schemaCatalog: SchemaCatalogService | null = null;
     private waybackArchiveService: WaybackArchiveService | null = null;
@@ -429,7 +436,6 @@ export class EntityManager {
             else connections.delete(id);
         }
 
-        const previous = { entities: this.entities, connections: this.connections };
         this.entities = entities;
         this.connections = connections;
         this.identifierIndex.clear();
@@ -440,7 +446,7 @@ export class EntityManager {
 
         const current = { entities, connections };
         const sync = this.graphYamlSync.then(() => options.graphYaml === 'changed'
-            ? this.syncChangedGraphYaml(previous, current)
+            ? this.syncChangedGraphYaml(current)
             : this.syncAllGraphYamlFromMemory());
         this.graphYamlSync = sync;
         await sync;
@@ -2850,16 +2856,7 @@ ${this.buildConnectionPropertiesSection(connection)}
     private async writeEntityYamlFile(entity: Entity): Promise<void> {
         const path = this.entityYamlFilePath(entity);
         await this.ensureParentFolderForVaultFile(path);
-        const header =
-            '# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.\n';
-        const body = stringifyYaml(this.entityToYamlDocument(entity), { lineWidth: 120 });
-        const content = `${header}${body}\n`;
-        const existing = this.app.vault.getAbstractFileByPath(path);
-        if (existing instanceof TFile) {
-            await this.app.vault.modify(existing, content);
-        } else {
-            await this.app.vault.create(path, content);
-        }
+        await this.writeYamlDocument(path, this.entityToYamlDocument(entity));
     }
 
     private async writeConnectionYamlFile(
@@ -2868,19 +2865,24 @@ ${this.buildConnectionPropertiesSection(connection)}
     ): Promise<void> {
         const path = this.connectionYamlFilePath(connection.id);
         await this.ensureFolderExists(normalizePath(`${this.graphYamlRoot()}/connections`));
+        await this.writeYamlDocument(path, this.connectionToYamlDocument(connection, entities));
+    }
+
+    private async writeYamlDocument(path: string, document: Record<string, unknown>): Promise<void> {
         const header =
             '# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.\n';
-        const body = stringifyYaml(this.connectionToYamlDocument(connection, entities), { lineWidth: 120 });
-        const content = `${header}${body}\n`;
+        const content = `${header}${stringifyYaml(document, { lineWidth: 120 })}\n`;
         const existing = this.app.vault.getAbstractFileByPath(path);
         if (existing instanceof TFile) {
             await this.app.vault.modify(existing, content);
         } else {
             await this.app.vault.create(path, content);
         }
+        this.graphYamlWritten.set(path, JSON.stringify(document));
     }
 
     private async deleteYamlFileIfExists(path: string): Promise<void> {
+        this.graphYamlWritten.delete(path);
         const f = this.app.vault.getAbstractFileByPath(path);
         if (f instanceof TFile) {
             await this.app.fileManager.trashFile(f);
@@ -2945,40 +2947,35 @@ ${this.buildConnectionPropertiesSection(connection)}
     }
 
     /**
-     * The graph-yaml mirror after a routine reload: write the entries whose entity or
-     * connection the reload changed or added, and remove the ones it dropped. A write made
-     * through this class has already updated its entry, so what is left is what changed on
-     * disk behind its back (the editor, the file tree, git). The full sync rewrote every
-     * file of the mirror each time, and the views reload after every note save.
+     * The graph-yaml mirror after a routine reload: write the entries that differ from what
+     * this class last wrote there (a note changed on disk behind its back, by the editor,
+     * the file tree or git; a note path or an endpoint's label a write left out of date),
+     * and remove the ones whose entity or connection is gone or has moved. The full sync
+     * rewrote every file of the mirror each time, and the views reload after every note
+     * save. A file this class never wrote is left to the full sync, which the reload
+     * commands and every plugin load run.
      */
-    private async syncChangedGraphYaml(previous: GraphMaps, current: GraphMaps): Promise<void> {
-        const same = (a: Record<string, unknown>, b: Record<string, unknown>): boolean =>
-            JSON.stringify(a) === JSON.stringify(b);
+    private async syncChangedGraphYaml(current: GraphMaps): Promise<void> {
+        const wanted = new Set<string>();
+        const stale = (path: string, document: Record<string, unknown>): boolean => {
+            wanted.add(path);
+            return this.graphYamlWritten.get(path) !== JSON.stringify(document)
+                || !(this.app.vault.getAbstractFileByPath(path) instanceof TFile);
+        };
         try {
             for (const entity of current.entities.values()) {
-                const before = previous.entities.get(entity.id);
-                if (before && same(this.entityToYamlDocument(before), this.entityToYamlDocument(entity))) continue;
-                // A new type or family moves the entry.
-                const oldPath = before ? this.entityYamlFilePath(before) : null;
-                if (oldPath && oldPath !== this.entityYamlFilePath(entity)) {
-                    await this.deleteYamlFileIfExists(oldPath);
+                if (stale(this.entityYamlFilePath(entity), this.entityToYamlDocument(entity))) {
+                    await this.writeEntityYamlFile(entity);
                 }
-                await this.writeEntityYamlFile(entity);
             }
-            for (const [id, before] of previous.entities) {
-                if (!current.entities.has(id)) await this.deleteYamlFileIfExists(this.entityYamlFilePath(before));
-            }
-            // Compared with each side's own entities, since an entry carries its endpoints' labels.
             for (const connection of current.connections.values()) {
-                const before = previous.connections.get(connection.id);
-                if (before && same(
-                    this.connectionToYamlDocument(before, previous.entities),
-                    this.connectionToYamlDocument(connection, current.entities),
-                )) continue;
-                await this.writeConnectionYamlFile(connection, current.entities);
+                const document = this.connectionToYamlDocument(connection, current.entities);
+                if (stale(this.connectionYamlFilePath(connection.id), document)) {
+                    await this.writeConnectionYamlFile(connection, current.entities);
+                }
             }
-            for (const id of previous.connections.keys()) {
-                if (!current.connections.has(id)) await this.deleteYamlFileIfExists(this.connectionYamlFilePath(id));
+            for (const path of [...this.graphYamlWritten.keys()]) {
+                if (!wanted.has(path)) await this.deleteYamlFileIfExists(path);
             }
         } catch (err) {
             console.warn('[EntityManager] graph-yaml sync failed:', err);

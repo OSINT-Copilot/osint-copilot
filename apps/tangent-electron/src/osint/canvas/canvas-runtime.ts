@@ -187,8 +187,8 @@ export function entitiesByNotePath(): Map<string, string> {
 }
 
 export function allEntities(): MinimalEntity[] {
-    // Read, never loaded: loadEntitiesFromNotes() clears the shared store AND rewrites the
-    // whole graph-yaml mirror, which is not something opening a board should do.
+    // Read, never loaded: loadEntitiesFromNotes() reads every note AND rewrites the whole
+    // graph-yaml mirror, which is not something opening a board should do.
     return runtime()?.plugin?.entityManager?.getAllEntities() ?? [];
 }
 

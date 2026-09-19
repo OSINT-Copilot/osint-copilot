@@ -203,6 +203,60 @@ test('a drop on the open picker is the picker\'s, not the board\'s', async ({ ta
 	await expect(page.locator('.canvas-card')).toHaveCount(3)
 })
 
+test('a file dropped anywhere else on the open picker is picked', async ({ tangent }) => {
+	test.setTimeout(120_000)
+	const { page } = await tangent.firstWindow()
+	await openBoard(page)
+
+	await page.locator('.canvas-toolbar button', { hasText: '+ image' }).click()
+	// The picker covers the whole board and says a file can be dragged in from the
+	// sidebar, but it refused every drop, so following its hint did nothing.
+	const dropTaken = await page.locator('.CanvasPicker .note').evaluate(async (el, thumb) => {
+		const data = new DataTransfer()
+		data.setData('text/plain', thumb)
+		el.dispatchEvent(new DragEvent('dragover', { dataTransfer: data, bubbles: true, cancelable: true }))
+		const drop = new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true })
+		el.dispatchEvent(drop)
+		return drop.defaultPrevented
+	}, THUMB)
+	expect(dropTaken, 'the drop on the picker was refused').toBe(true)
+	await expect(page.locator('.CanvasPicker')).toHaveCount(0)
+	await expect(page.locator('.canvas-card.type-file .card-image img')).toHaveCount(1)
+})
+
+test('a media card\'s player takes a press, and a middle-drag on it still pans the board', async ({ tangent }) => {
+	test.setTimeout(120_000)
+	const { page } = await tangent.firstWindow()
+	const CLIP = 'OSINTCopilot/boards/assets/clip.webm'
+	await openBoard(page, {
+		nodes: [{ id: 'clip', type: 'file', file: CLIP, x: 460, y: 220, width: 320, height: 220 }],
+		notes: { [CLIP]: 'not a real video' },
+	})
+	const card = page.locator('.canvas-card.type-file')
+	const video = card.locator('video')
+	await expect(video).toBeVisible({ timeout: 30_000 })
+	const start = (await card.boundingBox())!
+	const box = (await video.boundingBox())!
+	const x = box.x + box.width / 2
+	const y = box.y + box.height / 2
+
+	// The player's controls are the element's own. A press on them started moving the card
+	// and took the pointer, so play and seek never got their click.
+	await page.mouse.move(x, y)
+	await page.mouse.down()
+	await page.mouse.move(x + 80, y + 60, { steps: 5 })
+	await page.mouse.up()
+	expect(await card.boundingBox(), 'the card moved under a press on its player').toEqual(start)
+
+	// A pan is not a click on the control, so it starts there as anywhere else.
+	await page.mouse.move(x, y)
+	await page.mouse.down({ button: 'middle' })
+	await page.mouse.move(x + 80, y + 60, { steps: 5 })
+	await page.mouse.up({ button: 'middle' })
+	await expect.poll(async () => (await card.boundingBox())!.x, { message: 'the board did not pan' })
+		.toBeGreaterThan(start.x + 40)
+})
+
 test('a button inside a card takes its click', async ({ tangent }) => {
 	test.setTimeout(120_000)
 	const { page } = await tangent.firstWindow()
@@ -224,4 +278,15 @@ test('a button inside a card takes its click', async ({ tangent }) => {
 	// pointer, so the click went to the board instead of the button.
 	await button.click()
 	await expect(button).toHaveAttribute('data-clicked', '')
+
+	// A middle-drag that starts on the button still pans the board.
+	const start = (await card.boundingBox())!
+	await card.locator('.line', { hasText: 'Findings' }).hover({ position: { x: 5, y: 5 } })
+	const at = (await button.boundingBox())!
+	await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2)
+	await page.mouse.down({ button: 'middle' })
+	await page.mouse.move(at.x + 80, at.y + 60, { steps: 5 })
+	await page.mouse.up({ button: 'middle' })
+	await expect.poll(async () => (await card.boundingBox())!.x, { message: 'the board did not pan' })
+		.toBeGreaterThan(start.x + 40)
 })
