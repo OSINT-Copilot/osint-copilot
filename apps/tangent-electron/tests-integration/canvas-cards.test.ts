@@ -18,6 +18,7 @@ test.use({ workspace, resetWorkspace: true })
 
 const BOARD = 'OSINTCopilot/boards/Cards.canvas'
 const THUMB = 'OSINTCopilot/boards/assets/thumb.png'
+const NOTE = 'OSINTCopilot/boards/Sections.md'
 
 const board = {
 	nodes: [
@@ -38,10 +39,13 @@ async function indexed(page: Page, relative: string) {
 		{ timeout: 30_000, message: `Tangent never indexed ${relative}` }).toBe(true)
 }
 
-async function openBoard(page: Page) {
+/** Opens the board, with any extra cards on it and the notes those cards show. */
+async function openBoard(page: Page, extra: { nodes?: object[], notes?: Record<string, string> } = {}) {
+	const nodes = [...board.nodes, ...(extra.nodes ?? [])]
+	const notes = extra.notes ?? {}
 	await expect.poll(() => page.evaluate(() => !!(globalThis as any).osint?.app?.vault?.adapter),
 		{ timeout: 30_000, message: 'the OSINT runtime never started' }).toBe(true)
-	await page.evaluate(async ({ board, boardPath, thumbPath }) => {
+	await page.evaluate(async ({ board, boardPath, thumbPath, notes }) => {
 		const adapter = (globalThis as any).osint.app.vault.adapter
 		for (const folder of ['OSINTCopilot', 'OSINTCopilot/boards', 'OSINTCopilot/boards/assets']) {
 			if (!(await adapter.exists(folder))) await adapter.mkdir(folder)
@@ -52,16 +56,19 @@ async function openBoard(page: Page) {
 		g.fillRect(0, 0, canvas.width, canvas.height)
 		const blob = await canvas.convertToBlob({ type: 'image/png' })
 		await adapter.writeBinary(thumbPath, await blob.arrayBuffer())
+		for (const [notePath, text] of Object.entries(notes)) await adapter.write(notePath, text)
 		await adapter.write(boardPath, board)
-	}, { board: JSON.stringify(board, null, 2), boardPath: BOARD, thumbPath: THUMB })
+	}, { board: JSON.stringify({ ...board, nodes }, null, 2), boardPath: BOARD, thumbPath: THUMB, notes })
 	await indexed(page, THUMB)
+	for (const note of Object.keys(notes)) await indexed(page, note)
 	await indexed(page, BOARD)
 	await page.evaluate(p => {
 		const ws = (document as any).workspace
 		const node = ws.directoryStore.get(p)
 		ws.viewState.tangent.updateThread({ thread: [node], currentNode: node })
 	}, path.join(workspace, BOARD))
-	await expect(page.locator('.canvas-card')).toHaveCount(3, { timeout: 30_000 })
+	await expect(page.locator('.canvas-card')).toHaveCount(nodes.filter(n => (n as any).type !== 'group').length,
+		{ timeout: 30_000 })
 }
 
 test('a link card shows its saved thumbnail without covering its text', async ({ tangent }) => {
@@ -142,4 +149,79 @@ test('the image picker takes a click', async ({ tangent }) => {
 	await page.locator('.CanvasPicker button', { hasText: 'thumb.png' }).click()
 	await expect(page.locator('.CanvasPicker')).toHaveCount(0)
 	await expect(page.locator('.canvas-card.type-file .card-image img')).toHaveCount(1)
+})
+
+
+test('the picker\'s list scrolls under the wheel, and the board behind it stays put', async ({ tangent }) => {
+	test.setTimeout(120_000)
+	const { page } = await tangent.firstWindow()
+	await openBoard(page)
+	// Enough files that the list is longer than the picker.
+	await page.evaluate(async () => {
+		const vault = (globalThis as any).osint.app.vault
+		if (!vault.getAbstractFileByPath('Leads')) await vault.createFolder('Leads')
+		for (let i = 1; i <= 60; i++) await vault.create(`Leads/Lead ${i}.md`, `Lead ${i}`)
+	})
+	const card = page.locator('.canvas-card.type-text', { hasText: 'Plain card' })
+	const before = await card.boundingBox()
+
+	await page.locator('.canvas-toolbar button', { hasText: '+ file' }).click()
+	const list = page.locator('.CanvasPicker ul')
+	await expect.poll(() => list.evaluate(el => el.scrollHeight > el.clientHeight),
+		{ message: 'the list never got long enough to scroll' }).toBe(true)
+
+	// The board took every wheel event for its zoom, so the list could not be scrolled
+	// and the board zoomed behind the picker instead.
+	const box = (await list.boundingBox())!
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+	await page.mouse.wheel(0, 400)
+	await expect.poll(() => list.evaluate(el => el.scrollTop), { message: 'the list did not scroll' })
+		.toBeGreaterThan(0)
+	expect(await card.boundingBox(), 'the board zoomed behind the picker').toEqual(before)
+})
+
+test('a drop on the open picker is the picker\'s, not the board\'s', async ({ tangent }) => {
+	test.setTimeout(120_000)
+	const { page } = await tangent.firstWindow()
+	await openBoard(page)
+
+	await page.locator('.canvas-toolbar button', { hasText: '+ file' }).click()
+	// A vault path, as a file dragged in from the sidebar carries it, dropped on the
+	// search box. The board used to take it, cancelling the drop the box would have
+	// taken, and put the file on the board behind the still-open picker.
+	const dropTaken = await page.locator('.CanvasPicker input').evaluate(async (el, thumb) => {
+		const data = new DataTransfer()
+		data.setData('text/plain', thumb)
+		el.dispatchEvent(new DragEvent('dragover', { dataTransfer: data, bubbles: true, cancelable: true }))
+		const drop = new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true })
+		el.dispatchEvent(drop)
+		return drop.defaultPrevented
+	}, THUMB)
+	expect(dropTaken, 'the board cancelled the drop on the search box').toBe(false)
+	await expect(page.locator('.canvas-surface')).not.toHaveClass(/drop-active/)
+	await expect(page.locator('.CanvasPicker')).toHaveCount(1)
+	await expect(page.locator('.canvas-card')).toHaveCount(3)
+})
+
+test('a button inside a card takes its click', async ({ tangent }) => {
+	test.setTimeout(120_000)
+	const { page } = await tangent.firstWindow()
+	await openBoard(page, {
+		nodes: [{ id: 'note', type: 'file', file: NOTE, x: 460, y: 220, width: 420, height: 260 }],
+		notes: { [NOTE]: '# Findings\n\nThe first finding.\n\n# Leads\n\nA lead to follow.\n' },
+	})
+	const card = page.locator('.canvas-card.type-file')
+	await expect(card.getByText('The first finding.')).toBeVisible({ timeout: 30_000 })
+
+	// The note preview's own control: a heading shows its section button while the
+	// pointer is at the heading's start.
+	await card.locator('.line', { hasText: 'Findings' }).hover({ position: { x: 5, y: 5 } })
+	const button = card.locator('button.collapse')
+	await expect(button).toBeVisible()
+	await button.evaluate(el => el.addEventListener('click', () => el.setAttribute('data-clicked', ''), { once: true }))
+
+	// The press used to go on to the board, which started a selection box and took the
+	// pointer, so the click went to the board instead of the button.
+	await button.click()
+	await expect(button).toHaveAttribute('data-clicked', '')
 })

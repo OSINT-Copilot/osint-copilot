@@ -141,7 +141,22 @@ function worldPoint(event: { clientX: number, clientY: number }) {
 	return screenToWorld(viewport, screenPoint(event))
 }
 
+/**
+ * True for an event inside the inspector or the picker.
+ *
+ * Both are drawn inside the surface, so everything that happens in them bubbles here too,
+ * and taken as board input it went wrong: a press cleared the selection -- closing the
+ * inspector under the pointer -- and captured the pointer, so the click that followed
+ * never reached the swatch or button that was pressed; the wheel zoomed the board instead
+ * of scrolling the picker's list; and a drop on the picker put its file on the board behind.
+ */
+function isOverlayTarget(event: Event) {
+	return !!(event.target as Element | null)?.closest?.('.CanvasInspector, .CanvasPickerBackdrop')
+}
+
 function onWheel(event: WheelEvent) {
+	// Before preventDefault, which is what stopped an overlay from scrolling.
+	if (isOverlayTarget(event)) return
 	event.preventDefault()
 	// Anchored on the cursor: the point under the pointer must not move, or zooming feels
 	// like the board is sliding away.
@@ -176,11 +191,11 @@ function onSurfacePointerDown(event: PointerEvent) {
 	// pan branch below it, and shift+right-click started a marquee.
 	if (event.button !== LEFT_BUTTON && event.button !== MIDDLE_BUTTON) return
 	if (gesturePointerId !== null) return
-	// The inspector and the picker are drawn inside the surface, so their pointerdowns
-	// bubble here too. Taken as a press on empty board, one cleared the selection -- which
-	// closed the inspector under the pointer -- and captured the pointer, so the click that
-	// followed never reached the swatch or button that was pressed.
-	if ((event.target as HTMLElement | null)?.closest('.CanvasInspector, .CanvasPickerBackdrop')) return
+	if (isOverlayTarget(event)) return
+	// A control inside a card: onCardPointerDown leaves it alone, so the press bubbles on to
+	// here, where it started a selection box and captured the pointer -- and the click
+	// that followed went to the board instead of the control.
+	if (isInteractiveTarget(event)) return
 
 	if (isPanTrigger(event)) {
 		beginGesture(event, { kind: 'pan', lastX: event.clientX, lastY: event.clientY })
@@ -202,7 +217,8 @@ function onCardPointerDown(event: PointerEvent, node: CanvasNode) {
 	if (event.button !== LEFT_BUTTON && event.button !== MIDDLE_BUTTON) return
 	if (gesturePointerId !== null) return
 	// Capturing unconditionally meant nothing inside a card could ever be interacted with:
-	// the surface swallowed the pointer before the control saw it.
+	// the surface swallowed the pointer before the control saw it. The surface skips these
+	// presses as well, for the same reason.
 	if (isInteractiveTarget(event)) return
 	event.stopPropagation()
 
@@ -441,6 +457,9 @@ async function importDroppedFiles(files: FileList, at: { x: number, y: number })
 }
 
 function onDragOver(event: DragEvent) {
+	// Not cancelled, so a text field in the overlay takes the drop itself and anywhere else
+	// in it refuses one.
+	if (isOverlayTarget(event)) { dropActive = false; return }
 	event.preventDefault()
 	dropActive = true
 	if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
@@ -452,6 +471,7 @@ function onDragLeave(event: DragEvent) {
 }
 
 async function onDrop(event: DragEvent) {
+	if (isOverlayTarget(event)) return
 	event.preventDefault()
 	dropActive = false
 	const at = worldPoint(event)
