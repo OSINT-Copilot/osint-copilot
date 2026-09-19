@@ -46,6 +46,8 @@ export interface PageDeps {
 
 interface Tracked {
 	highlight: ContentHighlight;
+	/** Made here (content.add), as the n-th: kept through the answer to a load already asked. */
+	added?: number;
 	status: HighlightStatus;
 	/** Where it is painted, when found. */
 	range: Range | null;
@@ -88,6 +90,8 @@ export class PageHighlights {
 	private pending = false;
 	/** Each load's number; only the latest may fill in the page. */
 	private loads = 0;
+	/** How many highlights were made here. */
+	private adds = 0;
 	/** The page text last searched for highlights not found; not searched again until it changes. */
 	private searched: string | null = null;
 	/** The tab's address is no longer the one the document was loaded from, and nothing was asked for it. */
@@ -156,10 +160,11 @@ export class PageHighlights {
 	}
 
 	/** Shows exactly these highlights, found in the page as it is now. */
-	private show(highlights: ContentHighlight[]): void {
+	private show(highlights: ContentHighlight[], made: Tracked[] = []): void {
+		const added = new Map(made.map((t) => [t.highlight.id, t.added]));
 		this.tracked.clear();
 		this.deps.painter?.clear();
-		for (const h of highlights) this.tracked.set(h.id, { highlight: h, status: 'orphan', range: null, text: '' });
+		for (const h of highlights) this.tracked.set(h.id, { highlight: h, added: added.get(h.id), status: 'orphan', range: null, text: '' });
 		if (this.tracked.size > 0) this.place([...this.tracked.values()], buildTextModel(this.body));
 		this.report();
 	}
@@ -168,6 +173,7 @@ export class PageHighlights {
 	async load(): Promise<void> {
 		const load = ++this.loads;
 		const key = this.key;
+		const addsBefore = this.adds;
 		let reply: ContentReady | undefined;
 		try {
 			reply = await this.deps.send({ type: 'content.ready', names: this.deps.painter?.names ?? null }) as ContentReady | undefined;
@@ -182,7 +188,12 @@ export class PageHighlights {
 			return;
 		}
 		this.navigated = reply?.navigated === true;
-		this.show(Array.isArray(reply?.highlights) ? reply.highlights : []);
+		const highlights = Array.isArray(reply?.highlights) ? reply.highlights : [];
+		// Made here while the answer was on its way (the script is put into a page to make
+		// one, and asks for the page's highlights as it starts): the answer may not have it.
+		const ids = new Set(highlights.map((h) => h.id));
+		const madeSince = [...this.tracked.values()].filter((t) => (t.added ?? 0) > addsBefore && !ids.has(t.highlight.id));
+		this.show([...highlights, ...madeSince.map((t) => t.highlight)], madeSince);
 	}
 
 	/** Something in the page changed, or its URL did: looked at once the changes settle. */
@@ -254,7 +265,7 @@ export class PageHighlights {
 			case 'content.describeSelection':
 				return this.describeSelection();
 			case 'content.add': {
-				const t: Tracked = { highlight: message.highlight, status: 'orphan', range: null, text: '' };
+				const t: Tracked = { highlight: message.highlight, added: ++this.adds, status: 'orphan', range: null, text: '' };
 				this.tracked.set(message.highlight.id, t);
 				this.place([t], buildTextModel(this.body));
 				this.report();

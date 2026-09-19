@@ -304,6 +304,23 @@ test('captures a page into the investigation: create, upload, commit', async () 
 	}
 });
 
+/**
+ * Goes to a URL, once more if the browser itself aborted the navigation. Helium ships
+ * uBlock Origin built in (--disable-extensions-except does not turn it off), and it holds
+ * back requests until its filter lists are loaded, a second or so after launch, then
+ * reloads the tabs that tried: a navigation in that window ends in ERR_ABORTED without
+ * reaching the site. Chromium and Brave never do this.
+ */
+async function goto(page: Page, url: string): Promise<void> {
+	try {
+		await page.goto(url);
+	} catch (err) {
+		if (!String(err).includes('net::ERR_ABORTED')) throw err;
+		await page.waitForLoadState();
+		await page.goto(url);
+	}
+}
+
 /** Selects `phrase` in the page, as a user dragging across it would. */
 async function selectText(page: Page, phrase: string): Promise<void> {
 	await page.evaluate((text) => {
@@ -377,7 +394,7 @@ test('highlights a selection, files it, paints it again on a revisit, and lists 
 	try {
 		const site = await ctx.newPage();
 		const storyUrl = `${website.origin}/story`;
-		await site.goto(storyUrl);
+		await goto(site, storyUrl);
 		const panel = await pairedPanel(ctx);
 		// The extension may read pages (as after page capture), but revisits were not allowed.
 		await expect(panel.locator('#highlight-revisit')).toBeVisible();
@@ -474,7 +491,7 @@ test('on a single-page site, shows the highlights of an address the page moved t
 	const ctx = await launch(spaProfile, granted);
 	try {
 		const site = await ctx.newPage();
-		await site.goto(`${website.origin}/spa/two`);
+		await goto(site, `${website.origin}/spa/two`);
 		const panel = await pairedPanel(ctx);
 		await panel.click('#highlight-grant');
 		await expect(panel.locator('#highlight-revisit-on')).toBeVisible();
@@ -488,7 +505,7 @@ test('on a single-page site, shows the highlights of an address the page moved t
 		await expect.poll(() => painted(site), { timeout: 10_000 }).toEqual([phrase]);
 
 		// The first address, loaded; then the site's own link moves it to the second.
-		await site.goto(`${website.origin}/spa`);
+		await goto(site, `${website.origin}/spa`);
 		await expect(panel.locator('#page .page-url')).toHaveText(`${website.origin}/spa`);
 		await site.click('#to-two');
 		await expect(site).toHaveURL(`${website.origin}/spa/two`);

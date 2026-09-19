@@ -126,6 +126,20 @@ describe('loading a page\'s highlights', () => {
 		expect(h.reports()).toEqual([[{ id: 'new', status: 'exact' }]]);
 	});
 
+	it('keeps a highlight made while the page\'s first answer was on its way', async () => {
+		document.body.innerHTML = '<p>alpha beta</p>';
+		let answer!: (v: ContentReady) => void;
+		const h = harness([new Promise((resolve) => { answer = resolve; })]);
+		// Put into the page to make a highlight: it asks for the page's highlights as it starts.
+		const loading = h.page.load();
+		h.page.handle({ type: 'content.add', highlight: highlightOf('beta', 'new') });
+		// The answer was read before the new one was stored.
+		answer({ highlights: [highlightOf('alpha', 'old')] });
+		await loading;
+		expect(h.painted().sort()).toEqual(['alpha', 'beta']);
+		expect(h.reports().at(-1)).toEqual([{ id: 'old', status: 'exact' }, { id: 'new', status: 'exact' }]);
+	});
+
 	it('drops an answer for the page the tab has since navigated away from, and looks again', async () => {
 		document.body.innerHTML = '<p>alpha beta</p>';
 		let answer!: (v: { highlights: ContentHighlight[] }) => void;
