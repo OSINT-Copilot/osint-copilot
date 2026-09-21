@@ -57,35 +57,85 @@ Git submodules.
 * [typewriter-document](./lib/typewriter-document/README.md) — Tangent's fork of Typewriter's
   document model.
 
-## Building locally
+## Running the released app
+
+Builds are at
+[osint-copilot-releases](https://github.com/OSINT-Copilot/osint-copilot-releases/releases/latest):
+an **AppImage** (portable, x64 and arm64) and a **.deb**. Linux is the only platform built today.
+
+```bash
+chmod +x osint-copilot-0.14.0-x86_64.AppImage
+./osint-copilot-0.14.0-x86_64.AppImage --ozone-platform=x11
+```
+
+Or install the .deb, which adds a menu entry that already carries that flag:
+
+```bash
+sudo apt install ./osint-copilot_0.14.0_amd64.deb
+"/opt/OSINT Copilot/osint-copilot" --ozone-platform=x11   # from a terminal
+```
+
+The X11 flag is there because Electron's Wayland backend segfaults on some systems the moment a
+window opens — no error, no window. [Running on Linux](./Documentation/Running%20on%20Linux.md)
+covers that and the other two things that reliably go wrong: FUSE, and Chromium's sandbox under
+AppArmor.
+
+On first run the app asks for a licence key, and takes either a subscription key or an offline
+`OSINT-...` key.
+
+## Building and running from source
 
 1. `git submodule init && git submodule update`
 2. `npm ci` at the repository root.
 3. `npm run build` at the root (or `npm run build:tangent-electron` for just the app).
-4. `npm run dev` in `./apps/tangent-electron` (`dev:win` on Windows).
+4. `cd apps/tangent-electron && npm run start`
 
-### Linux
+`npm run start` goes through `scripts/launch.mjs`, which handles the three Linux problems for
+you: it defaults to the X11 backend, falls back to `--no-sandbox` (loudly) where AppArmor blocks
+the sandbox, and strips `ELECTRON_RUN_AS_NODE`. That variable, if you have it exported, silently
+makes the Electron binary run as plain Node — no window ever opens, and `electron --version`
+prints the Node version.
 
-See [Running on Linux](./Documentation/Running%20on%20Linux.md) for installing and running
-the released AppImage or .deb, and for the three things that reliably go wrong: the Wayland
-crash, FUSE, and Chromium's sandbox under AppArmor.
+While working on the app, `npm run dev` (`dev:win` on Windows) rebuilds as you edit. It does not
+go through that launcher, so on Linux pass the flag yourself:
 
-`npm run start` handles all three for you while developing. The notes below cover the rest.
-
-### Linux: blank window or an immediate crash
-
-If the app dies the moment it opens a window, your system's Wayland backend may not work with
-Electron's renderer. Force the X11 backend:
-
-```
+```bash
 npm run dev -- --ozone-platform=x11
-# or, running the built app directly:
-electron . --ozone-platform=x11
 ```
 
-Also make sure `ELECTRON_RUN_AS_NODE` is not exported in your shell — it silently makes the
-Electron binary run as plain Node, so no window ever opens and `electron --version` prints the
-Node version.
+If the build is killed part-way it ran out of memory; give it more with
+`NODE_OPTIONS=--max-old-space-size=4096`.
+
+### Running without a licence key
+
+A **development** build starts without a key when `OSINT_SKIP_LICENSE=1` is set:
+
+```bash
+npm run build:dev                       # in apps/tangent-electron
+OSINT_SKIP_LICENSE=1 npm run start
+```
+
+`npm run dev` builds in development mode too, so `OSINT_SKIP_LICENSE=1 npm run dev` works the
+same way; the integration test harness sets the variable itself. The check is compiled into a
+production build, so there the variable does nothing and the key is asked for whatever the
+environment says: a shipped application must never treat an environment variable as a way past
+the gate.
+
+### Packaging your own installers
+
+```bash
+cd apps/tangent-electron && npm run package:linux
+```
+
+The AppImage and .deb land in `apps/tangent-electron/dist/`, and nothing is uploaded.
+
+Publishing a release is a separate, manual step. After a `Release X.Y.Z` commit on `main`
+(version in `apps/tangent-electron/package.json`, `OSINT_VERSION` in `src/osint/version.ts`, a
+`Documentation/Changelog/vX.Y.Z.md`) and a pushed `vX.Y.Z` tag, build in production mode and run
+`GH_TOKEN=... npm run publish:linux`. That uploads a **draft** release to the public
+`OSINT-Copilot/osint-copilot-releases` repository, which is where the in-app updater looks; the
+draft reaches users only once it is published. The `release.yml` workflow does not do this: it
+triggers on upstream's `tangent-v*` tags, so our `vX.Y.Z` tags never reach it.
 
 ## Staying current with upstream
 

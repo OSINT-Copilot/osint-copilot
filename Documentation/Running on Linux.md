@@ -7,8 +7,8 @@ Downloads live at
 # Running the AppImage
 
 ```bash
-chmod +x osint-copilot-0.13.0-x86_64.AppImage
-./osint-copilot-0.13.0-x86_64.AppImage --ozone-platform=x11
+chmod +x osint-copilot-0.14.0-x86_64.AppImage
+./osint-copilot-0.14.0-x86_64.AppImage --ozone-platform=x11
 ```
 
 That is the whole thing on most machines. The rest of this page is what to do when it is not.
@@ -31,7 +31,7 @@ AppImages mount themselves with FUSE. Where FUSE 2 is missing -- common on newer
 distributions, which ship FUSE 3 -- unpack and run instead:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.13.0-x86_64.AppImage --ozone-platform=x11
+APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.0-x86_64.AppImage --ozone-platform=x11
 ```
 
 The equivalent `--appimage-extract-and-run` flag also works. Neither appears in
@@ -70,7 +70,7 @@ ELECTRON_RUN_AS_NODE` and try again.
 # Running the .deb
 
 ```bash
-sudo apt install ./osint-copilot_0.13.0_amd64.deb
+sudo apt install ./osint-copilot_0.14.0_amd64.deb
 ```
 
 It installs to `/opt/OSINT Copilot` and adds a menu entry that already carries the X11
