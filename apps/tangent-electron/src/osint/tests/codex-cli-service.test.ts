@@ -11,9 +11,24 @@ class TestCodexCliService extends CodexCliService {
     }
 }
 
+/**
+ * The Flatpak fallback is read through host.platform.isFlatpak, which is Linux plus
+ * FLATPAK_ID. Stubbing the variable alone left the test passing only on Linux: on the
+ * macOS CI runner isFlatpak stayed false and the arguments came back without the flag.
+ */
+function stubPlatform(value: NodeJS.Platform): () => void {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { ...original, value });
+    return () => Object.defineProperty(process, 'platform', original);
+}
+
 describe('CodexCliService', () => {
+    let restorePlatform: (() => void) | null = null;
+
     afterEach(() => {
         vi.unstubAllEnvs();
+        restorePlatform?.();
+        restorePlatform = null;
     });
 
     it('uses safe non-interactive defaults and places the global approval flag before exec', () => {
@@ -84,6 +99,7 @@ describe('CodexCliService', () => {
     });
 
     it('uses the read-only Landlock backend when Obsidian runs inside Flatpak', () => {
+        restorePlatform = stubPlatform('linux');
         vi.stubEnv('FLATPAK_ID', 'test.flatpak.App');
         const service = new TestCodexCliService();
 

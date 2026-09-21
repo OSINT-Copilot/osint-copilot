@@ -779,7 +779,10 @@ Hello there, I am a note and I link to [[Some Missing Image.png]]`)
 		expect(workspace.contentsStore.get(rawFilePath)).toBeFalsy()
 	})
 
-	test('A folder removed before the watcher reaches it should not stop folders made later from being watched', async () => {
+	// Linux watches each folder of the tree on its own, which is where a folder that vanishes
+	// first can fail to be watched. macOS gets one recursive watch on the root from the OS, so
+	// fs.watch is never called for a subfolder and the race cannot happen there.
+	test.skipIf(process.platform === 'darwin')('A folder removed before the watcher reaches it should not stop folders made later from being watched', async () => {
 		const watchedNotePath = getRootPath('Watched Note.md')
 		const gonePath = getRootPath('Gone Folder')
 		const laterPath = getRootPath('Later Folder')
