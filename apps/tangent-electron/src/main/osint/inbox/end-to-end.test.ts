@@ -203,5 +203,7 @@ describe('extension to inbox, end to end', () => {
 		} finally {
 			await controller.stop()
 		}
-	})
+	// A real server, a real pairing and three signed requests: about 5s of work, which the
+	// default 5s timeout lost whenever the rest of the suite was running beside it.
+	}, 30_000)
 })
