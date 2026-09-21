@@ -63,22 +63,79 @@ Builds are at
 [osint-copilot-releases](https://github.com/OSINT-Copilot/osint-copilot-releases/releases/latest):
 an **AppImage** (portable, x64 and arm64) and a **.deb**. Linux is the only platform built today.
 
+### The .deb — the one that needs no setup
+
+```bash
+sudo apt install ./osint-copilot_0.14.0_amd64.deb
+```
+
+Then start it from the applications menu. Installing sorts out the two things that otherwise
+bite on Ubuntu 24.04 and later: the package installs an AppArmor profile that lets the app open
+the user namespace its Chromium sandbox needs, and its menu entry already passes
+`--ozone-platform=x11`. To run it from a terminal, pass that flag yourself:
+
+```bash
+"/opt/OSINT Copilot/osint-copilot" --ozone-platform=x11
+```
+
+### The AppImage
+
 ```bash
 chmod +x osint-copilot-0.14.0-x86_64.AppImage
 ./osint-copilot-0.14.0-x86_64.AppImage --ozone-platform=x11
 ```
 
-Or install the .deb, which adds a menu entry that already carries that flag:
+On Ubuntu 24.04 and later that aborts before any window appears:
 
-```bash
-sudo apt install ./osint-copilot_0.14.0_amd64.deb
-"/opt/OSINT Copilot/osint-copilot" --ozone-platform=x11   # from a terminal
+```
+FATAL:sandbox/linux/suid/client/setuid_sandbox_host.cc:166] The SUID sandbox helper binary
+was found, but is not configured correctly. Rather than run without sandboxing I'm aborting
+now. You need to make sure that /tmp/.mount_osint-XXXXXX/chrome-sandbox is owned by root and
+has mode 4755.
 ```
 
-The X11 flag is there because Electron's Wayland backend segfaults on some systems the moment a
-window opens — no error, no window. [Running on Linux](./Documentation/Running%20on%20Linux.md)
-covers that and the other two things that reliably go wrong: FUSE, and Chromium's sandbox under
-AppArmor.
+Ubuntu sets `kernel.apparmor_restrict_unprivileged_userns=1`, which stops an unconfined program
+opening the user namespace Chromium's sandbox normally uses, so Chromium falls back to its
+setuid helper — and that helper can never work from inside an AppImage, because the filesystem
+an AppImage mounts itself on is `nosuid`, where the setuid bit is ignored. **`chmod 4755` on the
+`.AppImage` file does nothing for this**: the path in the message is a file inside that mount,
+not the file you ran. Pick one of these instead.
+
+**Allow the user namespace.** Keeps the sandbox; one system-wide setting:
+
+```bash
+sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+# and to survive a reboot:
+echo kernel.apparmor_restrict_unprivileged_userns=0 \
+  | sudo tee /etc/sysctl.d/60-apparmor-namespace.conf
+```
+
+**Or unpack the AppImage and give the helper its bit.** Keeps the sandbox, changes nothing
+system-wide, and the unpacked copy is on your own filesystem, where setuid is honoured:
+
+```bash
+./osint-copilot-0.14.0-x86_64.AppImage --appimage-extract
+sudo chown root:root squashfs-root/chrome-sandbox
+sudo chmod 4755 squashfs-root/chrome-sandbox
+./squashfs-root/osint-copilot --ozone-platform=x11
+```
+
+Run `squashfs-root/osint-copilot`, not `squashfs-root/AppRun`: AppRun expects variables that
+only the AppImage runtime sets, and exits with `/osint-copilot: No such file or directory`.
+
+**Or install the .deb**, which does all of this for you.
+
+`--no-sandbox` also starts the app, and is the option to avoid: OSINT Copilot renders model
+output, enricher responses and captured web pages, none of which it wrote.
+
+If the AppImage refuses to mount at all — `Cannot mount AppImage, please check your FUSE setup`
+— run it as `APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.0-x86_64.AppImage
+--ozone-platform=x11`, or install `libfuse2`.
+
+The `--ozone-platform=x11` flag is there because Electron's Wayland backend segfaults on some
+systems the moment a window opens — no error, no window, and it is why nothing appears if you
+leave the flag off. [Running on Linux](./Documentation/Running%20on%20Linux.md) goes through all
+of this in more detail.
 
 On first run the app asks for a licence key, and takes either a subscription key or an offline
 `OSINT-...` key.
