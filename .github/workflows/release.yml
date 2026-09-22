@@ -43,8 +43,11 @@ jobs:
 
       - uses: ./.github/actions/setup-and-build
 
+      # Both: the headless shell runs the browser-mode unit tests, and the full Chromium is
+      # what the real-extension test drives -- a headless shell cannot load an extension, so
+      # with only that one installed the test waits for a service worker that never comes.
       - name: Install Playwright Chromium
-        run: npx playwright install chromium --with-deps --only-shell
+        run: npx playwright install --with-deps chromium chromium-headless-shell
 
       - name: Unit tests
         run: npx vitest run
@@ -91,8 +94,11 @@ jobs:
 
       - uses: ./.github/actions/setup-and-build
 
+      # Both: the headless shell runs the browser-mode unit tests, and the full Chromium is
+      # what the real-extension test drives -- a headless shell cannot load an extension, so
+      # with only that one installed the test waits for a service worker that never comes.
       - name: Install Playwright Chromium
-        run: npx playwright install chromium --with-deps --only-shell
+        run: npx playwright install --with-deps chromium chromium-headless-shell
 
       - name: Test
         run: npm run test
