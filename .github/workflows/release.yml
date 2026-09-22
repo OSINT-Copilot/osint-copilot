@@ -43,8 +43,14 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install chromium --with-deps --only-shell
 
+      # `npm run test`, not `test:no-build`: it builds in development mode before the
+      # end-to-end run. The setup action above builds for production, and only a
+      # development build honours OSINT_SKIP_LICENSE -- so against a production build on a
+      # runner that has no licence, every window is the licence gate and all 23 tests time
+      # out waiting for the workspace. A developer's own machine hides this, because their
+      # profile holds a real licence.
       - name: Test
-        run: npm run test:no-build
+        run: npm run test
         working-directory: apps/tangent-electron
 
   build:
