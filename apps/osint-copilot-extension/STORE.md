@@ -2,6 +2,31 @@
 
 What to enter in the Chrome Web Store developer dashboard, and what to check before submitting. The same package and most of the text also serve Microsoft Edge Add-ons.
 
+## To do, to get it listed
+
+Chrome Web Store, in order:
+
+- [ ] Register a Chrome Web Store developer account for Probe Point Analytics (one-off
+      5 USD), and verify the publisher's email address.
+- [ ] Fill in the contact address in `PRIVACY.md` (line 60 is a placeholder) and publish it
+      at a public URL. The store form requires that URL, and this extension has to give one
+      because it handles website content.
+- [ ] Decide the version to submit. The manifest says 0.1.0; a store version can only ever
+      go up, so if 1.0.0 is what the listing should start at, change it before the first
+      upload, not after.
+- [ ] Build the package with `npm run zip` and submit it, with the listing text below.
+- [ ] Take the screenshots the listing needs (see the checklist under "Before submitting").
+- [ ] Expect a slow review. `<all_urls>` and `pageCapture` put an extension in the class
+      that gets read by a human, and the single-purpose and permission justifications below
+      are what that review turns on.
+- [ ] Once it is listed, put its link on the releases page's README, which today tells
+      people to install the zip by hand.
+
+Microsoft Edge Add-ons takes the same package: a free Partner Center account, its own
+review, and the same listing text. Worth doing at the same time.
+
+Firefox is **not** a submission but a port. See "Firefox" at the end.
+
 ## Before submitting
 
 - [ ] Fill in the contact address in `PRIVACY.md`, and publish that page at a public URL (the store asks for one).
@@ -74,6 +99,34 @@ Certify: data is not sold to third parties, not used or transferred for purposes
 **Privacy policy URL**
 
 Where `PRIVACY.md` is published.
+
+## Firefox
+
+There is no Firefox build, and the package here cannot become one. The extension is built on
+four things Firefox does not have or does differently, so a listing on addons.mozilla.org
+needs a port first:
+
+| What the extension uses | Firefox |
+| --- | --- |
+| `chrome.pageCapture`, for the MHTML archive that is a capture's evidence | No equivalent. A capture would have to be rebuilt on a DOM serialiser, which changes what the evidence *is* and what its SHA-256 covers. This is the real work, and the reason the plan ruled Firefox out to begin with. |
+| `chrome.sidePanel`, the whole user interface | `sidebar_action`, a different manifest key and a different lifecycle. |
+| `background.service_worker` | Firefox MV3 runs an event page (`background.scripts`). |
+| Nothing declares a Gecko id | `browser_specific_settings.gecko.id` is required before AMO will take an upload. |
+
+If it is worth doing:
+
+- [ ] Decide what a Firefox capture is, given no MHTML. Same question for its digest, which
+      the app records as the evidence's identity.
+- [ ] Port the manifest (event page, `sidebar_action`, Gecko id) and the side panel.
+- [ ] Get the end-to-end suite running against Firefox, or accept that the Firefox build is
+      only covered by the unit tests.
+- [ ] Register an addons.mozilla.org account, submit, and expect a source-code request:
+      AMO asks for buildable sources when a submission ships bundled JavaScript, which
+      ours does (esbuild). That means handing Mozilla reviewers this package's source.
+
+That last point is worth deciding before any of the work: the application's source is
+private, and while the extension is a separate package under Apache-2.0, an AMO submission
+means giving its source to reviewers under their confidentiality terms.
 
 ## Browsers
 

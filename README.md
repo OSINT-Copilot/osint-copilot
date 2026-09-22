@@ -140,6 +140,23 @@ of this in more detail.
 On first run the app asks for a licence key, and takes either a subscription key or an offline
 `OSINT-...` key.
 
+### Installing the browser extension
+
+`osint-copilot-extension-<version>.zip` is on the same release page. It runs in Chrome 140+ and
+other Chromium browsers — Edge, Brave and Helium — and there is **no Firefox build**: page
+capture is built on `chrome.pageCapture`, which Firefox does not have. `STORE.md` in the
+extension's folder says what a port would involve.
+
+It is not in a web store yet, so install it by hand: unzip it somewhere permanent (deleting the
+folder uninstalls it), open `chrome://extensions`, turn on **Developer mode**, and choose **Load
+unpacked**. From a source build, load `apps/osint-copilot-extension/dist` instead, after
+`npm run build` there.
+
+Then pair it: in the OSINT settings, under **Browser extension**, turn on **Accept items from
+the browser extension**, choose **Pair new extension**, and paste the `ocpair1.` string it shows
+into the extension's side panel. [Browser Extension](./Documentation/Browser%20Extension.md) has
+the rest — what you can send, where it lands, and what stays private.
+
 ## Building and running from source
 
 1. `git submodule init && git submodule update`
