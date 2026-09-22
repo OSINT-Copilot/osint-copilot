@@ -186,13 +186,49 @@ cd apps/tangent-electron && npm run package:linux
 
 The AppImage and .deb land in `apps/tangent-electron/dist/`, and nothing is uploaded.
 
-Publishing a release is a separate, manual step. After a `Release X.Y.Z` commit on `main`
-(version in `apps/tangent-electron/package.json`, `OSINT_VERSION` in `src/osint/version.ts`, a
-`Documentation/Changelog/vX.Y.Z.md`) and a pushed `vX.Y.Z` tag, build in production mode and run
-`GH_TOKEN=... npm run publish:linux`. That uploads a **draft** release to the public
-`OSINT-Copilot/osint-copilot-releases` repository, which is where the in-app updater looks; the
-draft reaches users only once it is published. The `release.yml` workflow does not do this: it
-triggers on upstream's `tangent-v*` tags, so our `vX.Y.Z` tags never reach it.
+### Releasing
+
+A release starts with a `Release X.Y.Z` commit on `main` — the version in
+`apps/tangent-electron/package.json`, `OSINT_VERSION` in `src/osint/version.ts`, and a
+`Documentation/Changelog/vX.Y.Z.md` — and a pushed `vX.Y.Z` tag.
+
+That tag runs [`.github/workflows/release.yml`](./.github/workflows/release.yml), which tests on
+macOS and then builds on all three platforms natively. The same workflow can be started by hand
+(**Actions → Release → Run workflow**) to build a branch without minting a version.
+
+What it does with the builds depends on one secret:
+
+* **`RELEASES_TOKEN` set** — each platform publishes into a **draft** release in the public
+  `OSINT-Copilot/osint-copilot-releases` repository, which is where the in-app updater looks.
+  Nothing reaches users until that draft is published by hand. The token has to be a personal
+  access token with contents:write on *that* repository; the automatic `GITHUB_TOKEN` is scoped
+  to this one and cannot write there.
+* **not set** — each platform only packages, and the installers are attached to the workflow
+  run for 14 days. That is the mode to stay in while the builds are unsigned.
+
+Releases can also be built by hand, which is how every release so far was made:
+`npm run build:tangent-electron` at the root, then `GH_TOKEN=... npm run publish:linux` in
+`apps/tangent-electron`. macOS cannot be built this way from Linux at all.
+
+#### Code signing
+
+Both platforms that need it are switchable, and off until the secrets exist:
+
+| Secret | Effect |
+|---|---|
+| `APPLE_CSC_LINK`, `APPLE_CSC_KEY_PASSWORD` | Signs the macOS build with a Developer ID certificate (base64 `.p12` and its password). |
+| `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_ID_PASSWORD` | Notarizes it, through `build/after-sign.js`. |
+| `AZURE_KEY_VAULT_URL`, `AZURE_CERT_NAME`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID` | Signs the Windows build through AzureSignTool, in `build/sign-windows.js`. |
+
+Without them the build is unsigned rather than broken. Unsigned installers do run, with
+consequences worth knowing: Windows SmartScreen warns until a download reputation builds, macOS
+refuses to open the app without a trip through Privacy & Security, and electron-updater cannot
+update an unsigned macOS app at all. So unsigned builds are for testing on those platforms, not
+for publishing.
+
+Upstream's `build/jsign.js` and `build/notarize.js` are left untouched: the first signs against
+Tangent's own YubiKey, and the second fails a build when Apple's credentials are absent. Our two
+hooks above wrap that behaviour instead of editing theirs.
 
 ## Staying current with upstream
 

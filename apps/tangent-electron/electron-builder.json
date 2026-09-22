@@ -76,7 +76,9 @@
 			}
 		],
 		"signtoolOptions": {
-			"sign": "./build/jsign.js"
+			// Ours, not upstream's build/jsign.js, which signs against Tangent's own
+			// YubiKey. Unconfigured it leaves the build unsigned rather than failing it.
+			"sign": "./build/sign-windows.js"
 		},
 		"fileAssociations": [
 			{
@@ -195,5 +197,6 @@
 		}
 	],
 
-	"afterSign": "build/notarize.js"
+	// Calls build/notarize.js when Apple's credentials are set, and says why when they are not.
+	"afterSign": "build/after-sign.js"
 }

@@ -1,15 +1,34 @@
-# This workflow is intended create build artifacts
-# on the native platforms. Will likely be mandatory
-# once Rosetta is fully deprecated.
+# Builds OSINT Copilot on each platform natively, which macOS in particular requires.
+#
+# Two modes, chosen by whether RELEASES_TOKEN is set:
+#
+#   * with it, each job publishes into a draft release in the public releases repository
+#     (see `publish` in apps/tangent-electron/electron-builder.json), which is what the
+#     in-app updater reads. A draft reaches nobody until it is published by hand.
+#   * without it, each job only packages, and attaches the installers to this run. That is
+#     the mode to use before the signing certificates exist: the builds are unsigned, and
+#     unsigned builds should not go to users.
+#
+# GITHUB_TOKEN cannot be used for the publish: it is scoped to this repository, and the
+# releases live in another one. RELEASES_TOKEN must be a token with contents:write there.
+#
+# Signing is likewise switchable, and off while the secrets are absent:
+#   * macOS: APPLE_CSC_LINK (base64 .p12) and APPLE_CSC_KEY_PASSWORD sign it; APPLE_ID,
+#     APPLE_TEAM_ID and APPLE_ID_PASSWORD notarize it (build/after-sign.js).
+#   * Windows: AZURE_KEY_VAULT_URL and the four variables beside it sign through
+#     AzureSignTool (build/sign-windows.js).
 name: Release
 
 on:
   push:
     tags:
-      - 'tangent-v*'
+      - 'v*'
+  # Build the three platforms from any branch without minting a version. Publishing still
+  # depends on RELEASES_TOKEN, so a manual run normally just leaves artifacts behind.
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -28,9 +47,24 @@ jobs:
         run: npm run test:no-build
         working-directory: apps/tangent-electron
 
-  build-mac:
+  build:
     needs: test
-    runs-on: macos-26
+    strategy:
+      # One platform failing should not cancel the other two: an unsigned Windows build is
+      # still worth having when macOS is what broke.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: mac
+            runs-on: macos-26
+          - platform: win
+            runs-on: windows-latest
+          - platform: linux
+            runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runs-on }}
+    env:
+      RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+      AZURE_KEY_VAULT_URL: ${{ secrets.AZURE_KEY_VAULT_URL }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -38,64 +72,58 @@ jobs:
 
       - uses: ./.github/actions/setup-and-build
 
-      - name: Publish (macOS)
-        run: npm run publish:mac
+      # Only needed once Windows signing is configured; build/sign-windows.js calls it.
+      - name: Install AzureSignTool
+        if: matrix.platform == 'win' && env.AZURE_KEY_VAULT_URL != ''
+        run: dotnet tool install --global AzureSignTool
+
+      - name: Publish ${{ matrix.platform }}
+        if: env.RELEASES_TOKEN != ''
+        run: npm run publish:${{ matrix.platform }}
         working-directory: apps/tangent-electron
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Apple code signing — CSC_LINK should be a base64-encoded .p12 certificate
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           CSC_LINK: ${{ secrets.APPLE_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.APPLE_CSC_KEY_PASSWORD }}
-          # Apple notarization
+          # Without a certificate, build unsigned rather than hunting for an identity that
+          # is not on the runner.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.APPLE_CSC_LINK != '' }}
+          AZURE_KEY_VAULT_URL: ${{ secrets.AZURE_KEY_VAULT_URL }}
+          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          # S3 publish
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
 
-  build-windows:
-    needs: test
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          submodules: recursive
-
-      - uses: ./.github/actions/setup-and-build
-
-      # AzureSignTool is used by build/jsign.js for Azure Trusted Signing.
-      # .NET is pre-installed on windows-latest runners.
-      - name: Install AzureSignTool
-        run: dotnet tool install --global AzureSignTool
-
-      - name: Publish (Windows)
-        run: npm run publish:win
+      - name: Package ${{ matrix.platform }} (no releases token, so nothing is published)
+        if: env.RELEASES_TOKEN == ''
+        run: npm run package:${{ matrix.platform }}
         working-directory: apps/tangent-electron
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # S3 publish
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          CSC_LINK: ${{ secrets.APPLE_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CSC_KEY_PASSWORD }}
+          # Without a certificate, build unsigned rather than hunting for an identity that
+          # is not on the runner.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.APPLE_CSC_LINK != '' }}
+          AZURE_KEY_VAULT_URL: ${{ secrets.AZURE_KEY_VAULT_URL }}
+          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
 
-  build-linux:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
+      # The installers themselves, not the unpacked trees electron-builder leaves beside
+      # them, and not the blockmaps the updater generates.
+      - uses: actions/upload-artifact@v4
         with:
-          submodules: recursive
-          
-      - uses: ./.github/actions/setup-and-build
-
-      - name: Publish (Linux)
-        run: npm run publish:linux
-        working-directory: apps/tangent-electron
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # S3 publish
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          name: osint-copilot-${{ matrix.platform }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            apps/tangent-electron/dist/*.AppImage
+            apps/tangent-electron/dist/*.deb
+            apps/tangent-electron/dist/*.dmg
+            apps/tangent-electron/dist/*.zip
+            apps/tangent-electron/dist/*.exe
+            apps/tangent-electron/dist/latest*.yml
