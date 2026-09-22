@@ -320,7 +320,12 @@ test('the real extension sends an entity, a note and a page capture into the rea
 	try {
 		context = await chromium.launchPersistentContext(profile, {
 			executablePath: chromePath,
-			headless: process.env.OC_E2E_HEADED !== '1',
+			// Headed by default. Chromium 149 (Playwright build 1228) never starts an
+			// extension's service worker in headless mode, so waiting for one hangs until
+			// the test's timeout; build 1243 is fine either way, which is what hid this
+			// locally. Headed costs nothing here: the suite already needs a display, and
+			// CI runs it under xvfb. OC_E2E_HEADLESS=1 asks for the old behaviour.
+			headless: process.env.OC_E2E_HEADLESS === '1',
 			args: [`--disable-extensions-except=${unpacked}`, `--load-extension=${unpacked}`],
 		})
 		const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker')

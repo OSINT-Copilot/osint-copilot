@@ -18,7 +18,7 @@
  * sending; the page is served from 127.0.0.1, which the extension's host permission lets
  * it see without an activeTab grant.
  *
- * Runs headless: Chrome for Testing loads unpacked extensions in its new headless mode.
+ * Runs headed: Chromium 149 starts no extension service worker when headless (see below).
  * Set OC_E2E_HEADED=1 to watch it, and OC_E2E_CHROMIUM to use another Chromium binary.
  *
  * Page capture needs pageCapture and <all_urls>, which the real manifest makes optional
@@ -119,7 +119,12 @@ let profile: string;
 function launch(profileDir: string, extensionDir: string): Promise<BrowserContext> {
 	return chromium.launchPersistentContext(profileDir, {
 		executablePath: chromiumPath(),
-		headless: process.env.OC_E2E_HEADED !== '1',
+		// Headed by default. Chromium 149 (Playwright build 1228) never starts an
+		// extension's service worker in headless mode, so waiting for one hangs until
+		// the test's timeout; build 1243 is fine either way, which is what hid this
+		// locally. Headed costs nothing here: the suite already needs a display, and
+		// CI runs it under xvfb. OC_E2E_HEADLESS=1 asks for the old behaviour.
+		headless: process.env.OC_E2E_HEADLESS === '1',
 		args: [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`],
 	});
 }
