@@ -14,8 +14,12 @@ runs:
       run: npm ci
       shell: bash
 
+    # Downloads the binary and proves it runs. Not `electron --version`, which starts a
+    # browser process: on an Ubuntu 24.04 runner that aborts on the SUID sandbox, because
+    # the image blocks the unprivileged user namespace Chromium's sandbox wants. Run as
+    # Node, the same binary answers without a sandbox at all.
     - name: Install Electron binary
-      run: npx electron --version
+      run: ELECTRON_RUN_AS_NODE=1 npx electron -p "'Electron ' + process.versions.electron"
       shell: bash
 
     - name: Build

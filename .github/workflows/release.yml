@@ -58,6 +58,11 @@ jobs:
         run: npm run build:dev
         working-directory: apps/tangent-electron
 
+      # The suite opens real windows, and Ubuntu 24.04 blocks the user namespace Chromium's
+      # sandbox uses, so Electron aborts on its setuid helper instead. Runners allow this.
+      - name: Allow Chromium's user-namespace sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       # A real window needs a display; the runner has none.
       - name: End-to-end tests
         run: xvfb-run -a -s "-screen 0 1920x1080x24" npm run test:end-to-end
