@@ -17,5 +17,10 @@ export default defineConfig<TangentOptions>({
 			testMatch: /.*tests-integration.*\.bench\.(ts)/,
 		}
 	],
-	workers: 1
+	workers: 1,
+	// On CI only, and two at most: these drive a real window, and upstream's Note Linking
+	// races its own autocomplete there (it has carried a "Slush for CI" wait for years).
+	// A retried test is reported as flaky, not as passed, so this hides nothing. Locally
+	// a failure stays a failure, where it can be looked at.
+	retries: process.env.CI ? 2 : 0
 })
