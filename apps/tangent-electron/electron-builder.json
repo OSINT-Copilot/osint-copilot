@@ -197,6 +197,10 @@
 		}
 	],
 
+	// Wraps the Linux executable so an AppImage can start where Chromium's sandbox cannot; see
+	// the file for the measurement behind it.
+	"afterPack": "build/after-pack.js",
+
 	// Calls build/notarize.js when Apple's credentials are set, and says why when they are not.
 	"afterSign": "build/after-sign.js"
 }

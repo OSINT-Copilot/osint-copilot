@@ -61,18 +61,19 @@ Git submodules.
 
 Builds are at
 [osint-copilot-releases](https://github.com/OSINT-Copilot/osint-copilot-releases/releases/latest):
-an **AppImage** (portable, x64 and arm64) and a **.deb**. Linux is the only platform built today.
+an **AppImage** (portable, x64 and arm64) and a **.deb**. Windows installers exist for 0.14.0;
+0.14.1 and 0.14.2 are Linux-only fixes, so Windows users should take 0.14.0. There is no macOS
+build.
 
-### The .deb — the one that needs no setup
+### The .deb
 
 ```bash
-sudo apt install ./osint-copilot_0.14.1_amd64.deb
+sudo apt install ./osint-copilot_0.14.2_amd64.deb
 ```
 
-Then start it from the applications menu. Installing sorts out the two things that otherwise
-bite on Ubuntu 24.04 and later: the package installs an AppArmor profile that lets the app open
-the user namespace its Chromium sandbox needs, and its menu entry already carries the X11 switch,
-so it does not even need the restart the next section describes. From a terminal:
+Then start it from the applications menu. The package installs an AppArmor profile granting the
+user namespace its Chromium sandbox needs, and its menu entry carries the X11 switch, so it needs
+neither of the workarounds the AppImage performs. From a terminal:
 
 ```bash
 "/opt/OSINT Copilot/osint-copilot"
@@ -81,63 +82,29 @@ so it does not even need the restart the next section describes. From a terminal
 ### The AppImage
 
 ```bash
-chmod +x osint-copilot-0.14.1-x86_64.AppImage
-./osint-copilot-0.14.1-x86_64.AppImage
+chmod +x osint-copilot-0.14.2-x86_64.AppImage
+./osint-copilot-0.14.2-x86_64.AppImage
 ```
 
-On Ubuntu 24.04 and later that aborts before any window appears:
+That is all, on any Linux with a desktop. Two things used to stand in the way, and from 0.14.2
+the application handles both by itself:
 
-```
-FATAL:sandbox/linux/suid/client/setuid_sandbox_host.cc:166] The SUID sandbox helper binary
-was found, but is not configured correctly. Rather than run without sandboxing I'm aborting
-now. You need to make sure that /tmp/.mount_osint-XXXXXX/chrome-sandbox is owned by root and
-has mode 4755.
-```
+* **The display backend.** Electron's Wayland backend crashes as it opens a window on some
+  systems, so on a Wayland session the app restarts once with the X11 backend. It may briefly
+  appear twice in a process list.
+* **The Chromium sandbox.** Ubuntu 24.04 and later forbid unprivileged user namespaces to
+  unconfined programs, and the setuid helper an AppImage carries cannot work, because AppImage
+  contents are mounted `nosuid`. With both routes closed Chromium aborted rather than run
+  unprotected. The app now unpacks itself once into `~/.cache/OSINT Copilot/<version>`, where the
+  sandbox works, and runs from there. The first start says so and takes a few seconds; later
+  starts reuse it, and old versions are deleted.
 
-(This one is separate from the display backend, and still needs one of the fixes below.)
+`--no-sandbox` is deliberately not used: this application renders captured web pages, enricher
+responses and model output, so the sandbox is doing real work. `OC_NO_SELF_INSTALL=1` opts out of
+the unpacking, and `OC_OZONE=native` out of the backend restart.
 
-Ubuntu sets `kernel.apparmor_restrict_unprivileged_userns=1`, which stops an unconfined program
-opening the user namespace Chromium's sandbox normally uses, so Chromium falls back to its
-setuid helper — and that helper can never work from inside an AppImage, because the filesystem
-an AppImage mounts itself on is `nosuid`, where the setuid bit is ignored. **`chmod 4755` on the
-`.AppImage` file does nothing for this**: the path in the message is a file inside that mount,
-not the file you ran. Pick one of these instead.
-
-**Allow the user namespace.** Keeps the sandbox; one system-wide setting:
-
-```bash
-sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-# and to survive a reboot:
-echo kernel.apparmor_restrict_unprivileged_userns=0 \
-  | sudo tee /etc/sysctl.d/60-apparmor-namespace.conf
-```
-
-**Or unpack the AppImage and give the helper its bit.** Keeps the sandbox, changes nothing
-system-wide, and the unpacked copy is on your own filesystem, where setuid is honoured:
-
-```bash
-./osint-copilot-0.14.1-x86_64.AppImage --appimage-extract
-sudo chown root:root squashfs-root/chrome-sandbox
-sudo chmod 4755 squashfs-root/chrome-sandbox
-./squashfs-root/osint-copilot
-```
-
-Run `squashfs-root/osint-copilot`, not `squashfs-root/AppRun`: AppRun expects variables that
-only the AppImage runtime sets, and exits with `/osint-copilot: No such file or directory`.
-
-**Or install the .deb**, which does all of this for you.
-
-`--no-sandbox` also starts the app, and is the option to avoid: OSINT Copilot renders model
-output, enricher responses and captured web pages, none of which it wrote.
-
-If the AppImage refuses to mount at all — `Cannot mount AppImage, please check your FUSE setup`
-— run it as `APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.1-x86_64.AppImage`, or install
-`libfuse2`.
-
-From 0.14.1 the app sorts the display backend out itself: Electron's Wayland backend segfaults on
-some systems the moment a window opens, so on a Wayland session the app restarts once with
-`--ozone-platform=x11`. Passing the switch yourself still wins, and `OC_OZONE=native` skips the
-restart. [Running on Linux](./Documentation/Running%20on%20Linux.md) goes through all of this.
+If the AppImage will not mount at all — `Cannot mount AppImage, please check your FUSE setup` —
+run `APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.2-x86_64.AppImage`, or install `libfuse2`.
 
 On first run the app asks for a licence key, and takes either a subscription key or an offline
 `OSINT-...` key.
