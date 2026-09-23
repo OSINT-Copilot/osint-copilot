@@ -15,30 +15,28 @@ function openDocumentation() {
 	</p>
 	<p class="version">v{workspace.version}</p>
 	<p>
-		<span class="tangent">Tangent</span> is made by 
-		<a target="_blank" rel="noreferrer" href="http://tangentnotes.com/About">Taylor Hadden</a>.
-		It is designed to help you follow your interest as you write.
-		Never get lost, never lose your train of thought.
-	</p>
-	<p>
-		
+		<span class="product">OSINT Copilot</span> is an investigation workspace for open-source
+		research, made by
+		<a target="_blank" rel="noreferrer" href="https://github.com/OSINT-Copilot">Probe Point Analytics</a>.
+		Everything it records is a plain markdown file in a folder you control.
 	</p>
 	<p>
 		<!-- svelte-ignore a11y-invalid-attribute -->
-		Take a look at <a href="#" on:click={openDocumentation} class="local">the documentation</a> if you have a question.
-		If that doesn't fill your needs, please reach out on
-		<a target="_blank" rel="noreferrer" href="https://discord.gg/6VpvhUnxFe">Discord</a>,
-		<a target="_blank" rel="noreferrer" href="https://indieapps.space/@tangentnotes">Mastodon</a>, or through
-		<a target="_blank" rel="noreferrer" href={`mailto: contact@tangentnotes.com?Subject=Tangent v${workspace.version}`}>email</a>.
+		Take a look at <a href="#" on:click={openDocumentation} class="local">the documentation</a> if you
+		have a question. Downloads and release notes are on the
+		<a target="_blank" rel="noreferrer" href="https://github.com/OSINT-Copilot/osint-copilot-releases/releases">releases page</a>.
 	</p>
-	<p>
-		Tangent is currently in an early development state.
-		If you encounter a bug, have a question, or think of a feature you would love to have, please
-		<a target="_blank" rel="noreferrer" href="https://github.com/suchnsuch/tangent-public/issues/new">open an issue on GitHub</a>
-		or reach out at any of the socials above.
+	<p class="credit">
+		Built on <a target="_blank" rel="noreferrer" href="https://www.tangentnotes.com">Tangent</a>
+		by <a target="_blank" rel="noreferrer" href="http://tangentnotes.com/About">Taylor Hadden</a>,
+		used under the Apache License 2.0. The editor, file tree, link index and query language are
+		Tangent's; the investigation toolset is ours. Please send questions about OSINT Copilot to us
+		rather than to Tangent.
 	</p>
-	<h1>Supporters</h1>
-	<p style:margin-bottom="0">The following people have made exceptional contributions:</p>
+	<h1>Tangent's supporters</h1>
+	<p style:margin-bottom="0">
+		These people made exceptional contributions to Tangent, which this application is built on:
+	</p>
 	<ul>
 		<li>Trevor Slaton</li>
 		<li>Paul Williams</li>
@@ -49,8 +47,13 @@ function openDocumentation() {
 </main>
 
 <style lang="scss">
-.tangent {
+.product {
 	color: var(--accentTextColor);
+}
+
+.credit {
+	color: var(--deemphasizedTextColor);
+	font-size: 92%;
 }
 
 main {

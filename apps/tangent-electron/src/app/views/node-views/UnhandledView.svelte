@@ -5,7 +5,7 @@ export let state: LensViewState
 
 <article>
 	<h1>Cannot present "{state.parent.node.name}"</h1>
-	<p>Tangent cannot display "{state.parent.node.path}".</p>
+	<p>OSINT Copilot cannot display "{state.parent.node.path}".</p>
 	<p>The file type may not be supported, or perhaps the file does not exist.</p>
 </article>
 

@@ -311,7 +311,7 @@ export default class Workspace extends EventDispatcher {
 		}))
 
 		promises.push(this.viewState.startup().catch(err => {
-			console.error('Tangent View State failed Startup()', err)
+			console.error('View state failed Startup()', err)
 		}))
 
 		await Promise.all(promises)

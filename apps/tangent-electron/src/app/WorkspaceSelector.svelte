@@ -86,9 +86,9 @@ function openDocumentation() {
 				{/each}
 			</ul>
 		{:else}
-			<h1>Welcome To Tangent</h1>
+			<h1>Welcome to OSINT Copilot</h1>
 			<p>
-				<em>Tangent</em> is designed to work on many files within a folder.
+				<em>OSINT Copilot</em> is designed to work on many files within a folder.
 				This folder is called a "workspace."
 				Think of a workspace as a big bucket of all of your thoughts.
 			</p>

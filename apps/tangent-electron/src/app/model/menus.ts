@@ -173,7 +173,7 @@ export function buildMainMenu(workspace: Workspace): MenuItemConstructorOptions[
 
 	if (isMac) {
 		template.push({
-			label: 'Tangent',
+			label: 'OSINT Copilot',
 			submenu: [
 				{ role: 'about' },
 				{ tangentRole: 'checkForUpdates' },
@@ -392,22 +392,13 @@ export function buildMainMenu(workspace: Workspace): MenuItemConstructorOptions[
 			{ command: cmds.openDocumenation },
 			{ command: cmds.openChangelog },
 			{ type: 'separator' },
+			// Upstream's website, e-mail, Discord and Mastodon used to be here. They are
+			// Tangent's support channels, not ours, and sending OSINT Copilot's users to them
+			// helps nobody -- least of all Taylor, who would field our bugs. Attribution lives
+			// in Help > About, where it belongs.
 			{
-				label: 'Tangent\'s Website',
-				link: 'http://tangentnotes.com'
-			},
-			{
-				label: 'Email Tangent\'s Team',
-				link: `mailto:contact@tangentnotes.com?subject=Tangent v${workspace.version}`
-			},
-			{ type: 'separator' },
-			{
-				label: 'Tangent on Discord',
-				link: 'https://discord.gg/6VpvhUnxFe'
-			},
-			{
-				label: 'Tangent on Mastodon',
-				link: 'https://mastodon.social/@tangentnotes'
+				label: 'Releases and Downloads',
+				link: 'https://github.com/OSINT-Copilot/osint-copilot-releases/releases'
 			},
 			{ type: 'separator' },
 			{ command: cmds.openLogs },

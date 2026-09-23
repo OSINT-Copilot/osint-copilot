@@ -232,7 +232,7 @@ export default class Tangent {
 		}
 
 		if (startupTasks.length == 0) {
-			console.error('Tangent did not initialize session startup correctly!')
+			console.error('OSINT Copilot did not initialize session startup correctly!')
 		}
 		
 		return Promise.all(startupTasks)

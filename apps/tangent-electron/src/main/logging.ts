@@ -84,7 +84,7 @@ export function setupLogging() {
 	Logger.setHandler(defaultLogHandler)
 	
 	app.on('quit', () => {
-		Logger.info('Tangent Exiting')
+		Logger.info('OSINT Copilot Exiting')
 		logStream.end()
 		Logger.setHandler(null)
 	})

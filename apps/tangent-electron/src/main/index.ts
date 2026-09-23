@@ -62,7 +62,7 @@ function initializeApplication() {
 
 ******************************************************
 ******************************************************
-Tangent ${app.getVersion()} Launched With Arguments:`, process.argv)
+OSINT Copilot ${app.getVersion()} Launched With Arguments:`, process.argv)
 
 	initializeDebugging()
 
@@ -166,7 +166,7 @@ Tangent ${app.getVersion()} Launched With Arguments:`, process.argv)
 
 	async function onReady() {
 		const log = Logger.get('initialization')
-		log.info('Tangent Initializing...')
+		log.info('OSINT Copilot Initializing...')
 		let hasOpenedWindows = false
 		
 		try {
@@ -181,7 +181,7 @@ Tangent ${app.getVersion()} Launched With Arguments:`, process.argv)
 			])
 		}
 		catch (err) {
-			log.error('CRITICAL INITIALIZATION ERROR. A major subcomponent of Tangent failed to initialize.')
+			log.error('CRITICAL INITIALIZATION ERROR. A major subcomponent of OSINT Copilot failed to initialize.')
 			log.error(err)
 		}
 		

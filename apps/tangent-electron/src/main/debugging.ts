@@ -13,7 +13,7 @@ export async function initializeDebugging() {
 		ignoreSystemCrashHandler: false,
 		rateLimit: false,
 		globalExtra: {
-			key: 'Tangent_' + app.getVersion()
+			key: 'OSINTCopilot_' + app.getVersion()
 		}
 	})
 

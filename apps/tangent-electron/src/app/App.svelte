@@ -261,7 +261,7 @@ async function setState(state: WorkspaceInitState) {
 			// OSINT Copilot starts once the workspace is live. Deliberately not awaited:
 			// its startup reads schemas and prompts off disk, and the note workspace
 			// should not wait on that. Views opened before it finishes wait for it.
-			// Failures are contained — a bug on our side must not stop Tangent opening.
+			// Failures are contained — a bug on our side must not stop the app opening.
 			import('osint/integration/bootstrap')
 				.then(m => m.startOsintCopilot(workspace as any))
 				.catch(e => console.error('[osint] failed to start', e))
@@ -274,7 +274,7 @@ async function setState(state: WorkspaceInitState) {
 				error: e
 			}
 			applicationState = 'error'
-			console.error('Tangent failed to initialize', e)
+			console.error('OSINT Copilot failed to initialize', e)
 			return
 		}
 	}
@@ -351,7 +351,7 @@ function getErrorEmail() {
 	const { state, error } = errorDetails
 
 	let body =`
-Tangent v${state.version} failed to initialize.
+OSINT Copilot v${state.version} failed to initialize.
 
 Below is a stack trace of the error. Please provide any additional details above.\n\n` 
 
@@ -363,7 +363,7 @@ Below is a stack trace of the error. Please provide any additional details above
 	}
 
 	return mailTo('contact@tangentnotes.com', {
-		subject: `Tangent Initialization Error, v${state.version}`,
+		subject: `OSINT Copilot Initialization Error, v${state.version}`,
 		body
 	})
 }
@@ -406,7 +406,7 @@ Below is a stack trace of the error. Please provide any additional details above
 			size="256"
 			styleString="--iconStroke: var(--embossedBackgroundColor);"
 			/>
-		<p>Tangent encountered an issue while initializing.</p>
+		<p>OSINT Copilot encountered an issue while initializing.</p>
 		<p>
 			Please
 			<a href={getErrorEmail()}>click here</a>

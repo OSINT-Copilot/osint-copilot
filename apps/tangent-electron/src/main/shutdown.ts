@@ -38,7 +38,7 @@ export function shutDown() {
 	if (shutDownState !== 'idle') return
 
 	shutDownState = 'shutting down'
-	log.info('Shutting Down Tangent')
+	log.info('Shutting Down OSINT Copilot')
 	addShutDownTask(saveSettings())
 	addShutDownTask(saveAndCloseWorkspaces())
 
