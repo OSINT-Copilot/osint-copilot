@@ -16,6 +16,7 @@ import yargs from 'yargs'
 import { hideBin } from 'yargs/helpers'
 
 import { mode } from './environment'
+import { relaunchExecPath, x11RelaunchArgs } from './ozone'
 import {
 	getWorkspace,
 	getWindowHandle,
@@ -313,7 +314,18 @@ Tangent ${app.getVersion()} Launched With Arguments:`, process.argv)
 
 let shouldInit = true
 
-if (mode === 'production') {
+// Before anything takes the single-instance lock: on a Wayland session with no backend chosen,
+// this process re-execs itself with --ozone-platform=x11 and exits. See ./ozone.ts for why it
+// cannot be done with a command-line switch or an environment variable from in here.
+const ozoneRelaunch = x11RelaunchArgs(process.platform, process.env, process.argv)
+if (ozoneRelaunch) {
+	Logger.get('ozone').info('Relaunching with the X11 backend: Electron cannot build its UI on this Wayland session')
+	app.relaunch({ execPath: relaunchExecPath(process.env, process.execPath), args: ozoneRelaunch })
+	app.exit(0)
+	shouldInit = false
+}
+
+if (shouldInit && mode === 'production') {
 	const hasLock = app.requestSingleInstanceLock()
 	if (!hasLock) {
 		app.quit()

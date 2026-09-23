@@ -66,23 +66,23 @@ an **AppImage** (portable, x64 and arm64) and a **.deb**. Linux is the only plat
 ### The .deb — the one that needs no setup
 
 ```bash
-sudo apt install ./osint-copilot_0.14.0_amd64.deb
+sudo apt install ./osint-copilot_0.14.1_amd64.deb
 ```
 
 Then start it from the applications menu. Installing sorts out the two things that otherwise
 bite on Ubuntu 24.04 and later: the package installs an AppArmor profile that lets the app open
-the user namespace its Chromium sandbox needs, and its menu entry already passes
-`--ozone-platform=x11`. To run it from a terminal, pass that flag yourself:
+the user namespace its Chromium sandbox needs, and its menu entry already carries the X11 switch,
+so it does not even need the restart the next section describes. From a terminal:
 
 ```bash
-"/opt/OSINT Copilot/osint-copilot" --ozone-platform=x11
+"/opt/OSINT Copilot/osint-copilot"
 ```
 
 ### The AppImage
 
 ```bash
-chmod +x osint-copilot-0.14.0-x86_64.AppImage
-./osint-copilot-0.14.0-x86_64.AppImage --ozone-platform=x11
+chmod +x osint-copilot-0.14.1-x86_64.AppImage
+./osint-copilot-0.14.1-x86_64.AppImage
 ```
 
 On Ubuntu 24.04 and later that aborts before any window appears:
@@ -93,6 +93,8 @@ was found, but is not configured correctly. Rather than run without sandboxing I
 now. You need to make sure that /tmp/.mount_osint-XXXXXX/chrome-sandbox is owned by root and
 has mode 4755.
 ```
+
+(This one is separate from the display backend, and still needs one of the fixes below.)
 
 Ubuntu sets `kernel.apparmor_restrict_unprivileged_userns=1`, which stops an unconfined program
 opening the user namespace Chromium's sandbox normally uses, so Chromium falls back to its
@@ -114,10 +116,10 @@ echo kernel.apparmor_restrict_unprivileged_userns=0 \
 system-wide, and the unpacked copy is on your own filesystem, where setuid is honoured:
 
 ```bash
-./osint-copilot-0.14.0-x86_64.AppImage --appimage-extract
+./osint-copilot-0.14.1-x86_64.AppImage --appimage-extract
 sudo chown root:root squashfs-root/chrome-sandbox
 sudo chmod 4755 squashfs-root/chrome-sandbox
-./squashfs-root/osint-copilot --ozone-platform=x11
+./squashfs-root/osint-copilot
 ```
 
 Run `squashfs-root/osint-copilot`, not `squashfs-root/AppRun`: AppRun expects variables that
@@ -129,13 +131,13 @@ only the AppImage runtime sets, and exits with `/osint-copilot: No such file or 
 output, enricher responses and captured web pages, none of which it wrote.
 
 If the AppImage refuses to mount at all — `Cannot mount AppImage, please check your FUSE setup`
-— run it as `APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.0-x86_64.AppImage
---ozone-platform=x11`, or install `libfuse2`.
+— run it as `APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.1-x86_64.AppImage`, or install
+`libfuse2`.
 
-The `--ozone-platform=x11` flag is there because Electron's Wayland backend segfaults on some
-systems the moment a window opens — no error, no window, and it is why nothing appears if you
-leave the flag off. [Running on Linux](./Documentation/Running%20on%20Linux.md) goes through all
-of this in more detail.
+From 0.14.1 the app sorts the display backend out itself: Electron's Wayland backend segfaults on
+some systems the moment a window opens, so on a Wayland session the app restarts once with
+`--ozone-platform=x11`. Passing the switch yourself still wins, and `OC_OZONE=native` skips the
+restart. [Running on Linux](./Documentation/Running%20on%20Linux.md) goes through all of this.
 
 On first run the app asks for a licence key, and takes either a subscription key or an offline
 `OSINT-...` key.

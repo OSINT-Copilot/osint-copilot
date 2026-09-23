@@ -7,8 +7,8 @@ Downloads live at
 # Running the AppImage
 
 ```bash
-chmod +x osint-copilot-0.14.0-x86_64.AppImage
-./osint-copilot-0.14.0-x86_64.AppImage --ozone-platform=x11
+chmod +x osint-copilot-0.14.1-x86_64.AppImage
+./osint-copilot-0.14.1-x86_64.AppImage
 ```
 
 That is the whole thing on most machines. The rest of this page is what to do when it is not.
@@ -17,17 +17,25 @@ On **Ubuntu 24.04 and later** it is not: the app aborts before any window appear
 "The SUID sandbox helper binary was found, but is not configured correctly". That section
 below has three ways out, and installing the .deb instead is the shortest of them.
 
-## Why `--ozone-platform=x11`
+## The display backend, and why the app restarts once
 
 Electron's Wayland backend segfaults the instant it creates a renderer on some systems --
 including kernel 7.x with Electron 42. There is no error; the window simply never appears.
-Forcing the X11 backend avoids it, and X11 apps run fine under Wayland through XWayland.
 
-The flag *is* baked into the `.desktop` entry, so launching from an application menu after
-integrating the AppImage does not need it. Running the file directly from a terminal
-bypasses that entry, which is why you pass it by hand.
+Up to 0.14.0 the answer was to pass `--ozone-platform=x11` by hand. From **0.14.1** the app
+does it for you: on a Wayland session with no backend chosen it restarts itself once with the
+X11 backend, which is why you may see it start twice in a process list. X11 applications run
+fine under Wayland through XWayland.
 
-If your system runs Electron happily under Wayland, you can leave the flag off.
+Nothing in the app can do this without the restart. The platform is fixed before the main
+script runs, so `app.commandLine.appendSwitch` and `ELECTRON_OZONE_PLATFORM_HINT` are both too
+late -- measured, and both still crash.
+
+You are still in charge:
+
+- `--ozone-platform=wayland` is honoured, if your system runs Electron under Wayland happily.
+- `--ozone-platform=x11` skips the restart, since the choice is already made.
+- `OC_OZONE=native` keeps whatever the session offers and never restarts.
 
 ## "Cannot mount AppImage, please check your FUSE setup"
 
@@ -35,7 +43,7 @@ AppImages mount themselves with FUSE. Where FUSE 2 is missing -- common on newer
 distributions, which ship FUSE 3 -- unpack and run instead:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.0-x86_64.AppImage --ozone-platform=x11
+APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.1-x86_64.AppImage
 ```
 
 The equivalent `--appimage-extract-and-run` flag also works. Neither appears in
@@ -86,10 +94,10 @@ Nothing changes system-wide, and the unpacked copy sits on your own filesystem, 
 setuid bit is honoured:
 
 ```bash
-./osint-copilot-0.14.0-x86_64.AppImage --appimage-extract
+./osint-copilot-0.14.1-x86_64.AppImage --appimage-extract
 sudo chown root:root squashfs-root/chrome-sandbox
 sudo chmod 4755 squashfs-root/chrome-sandbox
-./squashfs-root/osint-copilot --ozone-platform=x11
+./squashfs-root/osint-copilot
 ```
 
 Run `squashfs-root/osint-copilot`, not `squashfs-root/AppRun`. AppRun expects the variables
@@ -118,15 +126,15 @@ ELECTRON_RUN_AS_NODE` and try again.
 The route that needs no setup: it handles the sandbox and the X11 flag for you.
 
 ```bash
-sudo apt install ./osint-copilot_0.14.0_amd64.deb
+sudo apt install ./osint-copilot_0.14.1_amd64.deb
 ```
 
 It installs to `/opt/OSINT Copilot`, installs an AppArmor profile so the Chromium sandbox
-works without relaxing anything system-wide, and adds a menu entry that already carries the
-X11 flag. To run it from a terminal:
+works without relaxing anything system-wide, and adds a menu entry that carries the X11 flag
+already, so it does not even need the restart. To run it from a terminal:
 
 ```bash
-"/opt/OSINT Copilot/osint-copilot" --ozone-platform=x11
+"/opt/OSINT Copilot/osint-copilot"
 ```
 
 # Building your own
@@ -142,8 +150,9 @@ cd apps/tangent-electron && npm run start
 for you -- it strips `ELECTRON_RUN_AS_NODE`, defaults to X11 on Linux, and falls back to
 `--no-sandbox` with a loud warning if the sandbox is blocked. Use it while developing.
 
-`npm run dev` rebuilds as you edit, but does **not** go through that launcher, so pass the
-flag yourself: `npm run dev -- --ozone-platform=x11`.
+`npm run dev` rebuilds as you edit, but does **not** go through that launcher. It does not
+need the flag any more either -- the app restarts itself -- but passing
+`npm run dev -- --ozone-platform=x11` skips that restart.
 
 If the build is killed part-way, it ran out of memory. Give it more:
 

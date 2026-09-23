@@ -1,7 +1,7 @@
 {
   "name": "osint-copilot",
   "productName": "OSINT Copilot",
-  "version": "0.14.0",
+  "version": "0.14.1",
   "description": "An OSINT investigation workspace built on local markdown notes.",
   "repository": "https://github.com/Probe-Point-Analytics-LLC/osint-copilot",
   "license": "Apache-2.0",
