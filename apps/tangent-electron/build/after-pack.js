@@ -16,7 +16,7 @@
  *
  * The way out is to put the application on an ordinary filesystem, where a root-owned setuid
  * helper does work. So on such a system this unpacks the application once into
- * ~/.cache/OSINT Copilot/app and, if the helper there is not yet root-owned, prints the single
+ * ~/.cache/osint-copilot/app and, if the helper there is not yet root-owned, prints the single
  * command that makes it so. After that one `sudo`, every start has a full sandbox, and upgrades
  * reuse the same directory.
  *
@@ -51,7 +51,31 @@ if [ -z "\${APPIMAGE:-}" ] || ! namespace_sandbox_denied; then
 	exec "\$here/${name}.bin" "\$@"
 fi
 
-app="\${XDG_CACHE_HOME:-\$HOME/.cache}/OSINT Copilot/app"
+# No spaces in this path, ever. Chromium execs the sandbox helper by splitting its path on
+# whitespace, so "~/.cache/OSINT Copilot/app" made it try to run "/home/<user>/.cache/OSINT"
+# and abort with "failed to execvp" once the helper was in place.
+cache="\${XDG_CACHE_HOME:-\$HOME/.cache}"
+app="\$cache/osint-copilot/app"
+
+# A space anywhere in the path breaks the helper the same way, so fall back to one that has
+# none, and say so plainly if even that is impossible.
+case "\$app" in
+	*[[:space:]]*)
+		app="/var/tmp/osint-copilot-\$(id -u)/app"
+		;;
+esac
+case "\$app" in
+	*[[:space:]]*)
+		echo "OSINT Copilot: no space-free directory to unpack into (tried \$app)." >&2
+		echo "Chromium cannot use a sandbox helper whose path contains a space." >&2
+		echo "Set XDG_CACHE_HOME to a path without spaces and start again." >&2
+		exit 1
+		;;
+esac
+
+# The 0.14.2 and 0.14.3 layout used a directory with a space in it; it cannot work, and one of
+# its files may be root-owned, so it is cleared out here rather than left to rot.
+[ -d "\$cache/OSINT Copilot" ] && rm -rf "\$cache/OSINT Copilot" 2>/dev/null || true
 helper="\$app/chrome-sandbox"
 
 # Unpack on the first start, and whenever the AppImage is a different version from the copy.
