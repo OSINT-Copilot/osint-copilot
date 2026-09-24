@@ -2,22 +2,29 @@
 // Copyright 2026 Probe Point Analytics LLC
 
 /**
- * Wraps the Linux executable so the AppImage can start where Chromium's sandbox cannot.
+ * Wraps the Linux executable so an AppImage can get a Chromium sandbox on Ubuntu 24.04 and later.
  *
- * Chromium refuses to run unsandboxed. It has two ways to get a sandbox: unprivileged user
- * namespaces, or a setuid helper (`chrome-sandbox`). Ubuntu 24.04 and later forbid the first for
- * unconfined programs, and the second can never work inside an AppImage, because an AppImage's
- * contents are mounted nosuid -- the setuid bit is ignored there. Both routes closed, Chromium
- * aborts with "The SUID sandbox helper binary was found, but is not configured correctly".
+ * Chromium will not run unsandboxed, and it has two ways to get a sandbox:
  *
- * Measured on Ubuntu 26.04: the very same files fail from /tmp and start normally, sandbox intact,
- * from a directory under $HOME. So where the restriction applies, the wrapper copies the
- * application into the user's cache directory once and runs it from there. Everywhere else --
- * the .deb, and any distribution that still allows unprivileged user namespaces -- it runs in
- * place and copies nothing.
+ *   - unprivileged user namespaces, which `kernel.apparmor_restrict_unprivileged_userns=1`
+ *     denies to any program without an AppArmor profile that grants them. Ubuntu 24.04 set this;
+ *   - the setuid helper `chrome-sandbox`, which must be owned by root with mode 4755.
  *
- * The alternative would be --no-sandbox, which is not acceptable for an application that renders
- * captured web pages, enricher responses and model output.
+ * From an AppImage both are closed: the mount is nosuid, so the setuid bit there is ignored, and
+ * the namespace is denied. Chromium then aborts with "The SUID sandbox helper binary was found,
+ * but is not configured correctly", which is what users saw.
+ *
+ * The way out is to put the application on an ordinary filesystem, where a root-owned setuid
+ * helper does work. So on such a system this unpacks the application once into
+ * ~/.cache/OSINT Copilot/app and, if the helper there is not yet root-owned, prints the single
+ * command that makes it so. After that one `sudo`, every start has a full sandbox, and upgrades
+ * reuse the same directory.
+ *
+ * Deliberately not --no-sandbox: this application renders captured web pages, enricher responses
+ * and model output. OC_SANDBOX=off is there for anyone who chooses that trade knowingly.
+ *
+ * Everywhere else -- the .deb, and any distribution that still allows unprivileged user
+ * namespaces -- the wrapper execs the binary in place and copies nothing.
  */
 const fs = require('fs')
 const path = require('path')
@@ -28,36 +35,71 @@ function launcher(name, version) {
 set -eu
 here=$(dirname "$(readlink -f "$0")")
 
-needs_own_copy() {
-	# Only AppImages are mounted nosuid; an installed copy has no problem to work around.
-	[ -n "\${APPIMAGE:-}" ] || return 1
-	[ -z "\${OC_NO_SELF_INSTALL:-}" ] || return 1
-	# Ubuntu's switch, then Debian's older one. Either means no user-namespace sandbox.
-	[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = "1" ] && return 0
-	[ "$(cat /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null || echo 1)" = "0" ] && return 0
+# Test seam: the suite points these at files it controls.
+apparmor_switch="\${OC_USERNS_SWITCH:-/proc/sys/kernel/apparmor_restrict_unprivileged_userns}"
+legacy_switch="\${OC_USERNS_LEGACY_SWITCH:-/proc/sys/kernel/unprivileged_userns_clone}"
+
+namespace_sandbox_denied() {
+	[ "$(cat "\$apparmor_switch" 2>/dev/null || echo 0)" = "1" ] && return 0
+	[ "$(cat "\$legacy_switch" 2>/dev/null || echo 1)" = "0" ] && return 0
 	return 1
 }
 
-if needs_own_copy; then
-	home="\${XDG_CACHE_HOME:-\$HOME/.cache}/OSINT Copilot"
-	target="\$home/${version}"
-	if [ ! -x "\$target/${name}.bin" ]; then
-		echo "OSINT Copilot: this system does not let the sandbox start from an AppImage," >&2
-		echo "so the application is being unpacked to \$target once. Later starts reuse it." >&2
-		rm -rf "\$target.partial"
-		mkdir -p "\$target.partial"
-		cp -a "\$here/." "\$target.partial/"
-		rm -rf "\$target"
-		mv "\$target.partial" "\$target"
-		# Older versions are dead weight once this one is in place.
-		for old in "\$home"/*; do
-			[ "\$old" = "\$target" ] || rm -rf "\$old"
-		done
-	fi
-	exec "\$target/${name}.bin" "\$@"
+# An installed copy is fine: the .deb's AppArmor profile grants the namespace, and its helper can
+# be root-owned. Only an AppImage has to work around this.
+if [ -z "\${APPIMAGE:-}" ] || ! namespace_sandbox_denied; then
+	exec "\$here/${name}.bin" "\$@"
 fi
 
-exec "\$here/${name}.bin" "\$@"
+app="\${XDG_CACHE_HOME:-\$HOME/.cache}/OSINT Copilot/app"
+helper="\$app/chrome-sandbox"
+
+# Unpack on the first start, and whenever the AppImage is a different version from the copy.
+if [ ! -x "\$app/${name}.bin" ] || [ "$(cat "\$app/.version" 2>/dev/null || true)" != "${version}" ]; then
+	echo "OSINT Copilot: unpacking to \$app (first start on this system)..." >&2
+	rm -rf "\$app.partial"
+	mkdir -p "\$app.partial"
+	cp -a "\$here/." "\$app.partial/"
+	printf '%s' "${version}" > "\$app.partial/.version"
+	rm -rf "\$app"
+	mv "\$app.partial" "\$app"
+fi
+
+# Chromium accepts the helper only when it is owned by root and setuid.
+helper_ready() {
+	# -L: follow the link if there is one, and read the owner of the file Chromium will exec.
+	[ "$(stat -L -c '%u %a' "\$helper" 2>/dev/null || echo "1 000")" = "0 4755" ]
+}
+
+if helper_ready; then
+	exec "\$app/${name}.bin" "\$@"
+fi
+
+if [ "\${OC_SANDBOX:-}" = "off" ]; then
+	echo "OSINT Copilot: starting without the Chromium sandbox (OC_SANDBOX=off)." >&2
+	exec "\$app/${name}.bin" --no-sandbox "\$@"
+fi
+
+cat >&2 <<MESSAGE
+
+OSINT Copilot cannot start yet.
+
+Ubuntu 24.04 and later do not let an application that is not installed set up the
+Chromium sandbox, and OSINT Copilot will not run without it, because it renders web
+pages and model output.
+
+Run this one command, then start OSINT Copilot again:
+
+  sudo chown root:root "\$helper" && sudo chmod 4755 "\$helper"
+
+It changes one file belonging to this application, and you only need it once.
+
+Alternatives:
+  * Install the .deb from the releases page, which does this for you.
+  * OC_SANDBOX=off ./\$(basename "\${APPIMAGE}")   to start without the sandbox.
+
+MESSAGE
+exit 1
 `
 }
 
@@ -68,10 +110,9 @@ exports.default = async function afterPack(context) {
 	const real = path.join(context.appOutDir, `${name}.bin`)
 	const wrapper = path.join(context.appOutDir, name)
 
-	// electron-builder packs once per target; the wrapper must not wrap itself.
-	if (fs.existsSync(real)) return
+	if (fs.existsSync(real)) return // packed once per target; never wrap the wrapper
 
 	fs.renameSync(wrapper, real)
 	fs.writeFileSync(wrapper, launcher(name, context.packager.appInfo.version), { mode: 0o755 })
-	console.log(`  • launcher wrapped so the sandbox can start  executable=${name}`)
+	console.log(`  • launcher wrapped for the Chromium sandbox  executable=${name}`)
 }
