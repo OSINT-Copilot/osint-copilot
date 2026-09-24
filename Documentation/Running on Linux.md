@@ -7,11 +7,11 @@ Downloads live at
 # Running the AppImage
 
 ```bash
-chmod +x osint-copilot-0.14.2-x86_64.AppImage
-./osint-copilot-0.14.2-x86_64.AppImage
+chmod +x osint-copilot-0.14.3-x86_64.AppImage
+./osint-copilot-0.14.3-x86_64.AppImage
 ```
 
-That is the whole thing. From 0.14.2 the application deals with the display backend and the
+That is the whole thing. From 0.14.3 the application deals with the display backend and the
 Chromium sandbox by itself; the rest of this page explains what it is doing and what to try if
 something still goes wrong.
 
@@ -41,7 +41,7 @@ AppImages mount themselves with FUSE. Where FUSE 2 is missing -- common on newer
 distributions, which ship FUSE 3 -- unpack and run instead:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.2-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.3-x86_64.AppImage
 ```
 
 The equivalent `--appimage-extract-and-run` flag also works. Neither appears in
@@ -52,7 +52,7 @@ no system changes. The alternative is installing `libfuse2` from your distributi
 
 ## "The SUID sandbox helper binary was found, but is not configured correctly"
 
-**Fixed in 0.14.2** -- the application now unpacks itself once into
+**Fixed in 0.14.3** -- the application now unpacks itself once into
 `~/.cache/OSINT Copilot/<version>` and runs from there, so this should not appear any more. If you
 are on an older build, or you have set `OC_NO_SELF_INSTALL=1`, this is the message and these are
 the ways round it.
@@ -97,7 +97,7 @@ Nothing changes system-wide, and the unpacked copy sits on your own filesystem, 
 setuid bit is honoured:
 
 ```bash
-./osint-copilot-0.14.2-x86_64.AppImage --appimage-extract
+./osint-copilot-0.14.3-x86_64.AppImage --appimage-extract
 sudo chown root:root squashfs-root/chrome-sandbox
 sudo chmod 4755 squashfs-root/chrome-sandbox
 ./squashfs-root/osint-copilot
@@ -129,7 +129,7 @@ ELECTRON_RUN_AS_NODE` and try again.
 The route that needs no setup: it handles the sandbox and the X11 flag for you.
 
 ```bash
-sudo apt install ./osint-copilot_0.14.2_amd64.deb
+sudo apt install ./osint-copilot_0.14.3_amd64.deb
 ```
 
 It installs to `/opt/OSINT Copilot`, installs an AppArmor profile so the Chromium sandbox
