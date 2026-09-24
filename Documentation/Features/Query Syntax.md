@@ -1,4 +1,4 @@
-Tangent's query syntax powers its query-based search system. See [[Queries]] for an overview.
+OSINT Copilot's query syntax powers its query-based search system. See [[Queries]] for an overview.
 
 ```tangentquery
 Notes in [[Inbox]] with 'pending'
@@ -11,8 +11,8 @@ A query is built out of two primary parts: __Forms__ and __Clauses__. The essent
 # Forms
 The forms defined for a query determine what types of items the query will return. The forms have a small hierarchy, with some form keywords implicitly including multiple sub-forms.
 
-* `Files` looks for all files that Tangent is prepared to visualize. 
-	* `Notes` looks for files with the `.md` extension: the notes Tangent works with on a regular basis.
+* `Files` looks for all files that OSINT Copilot is prepared to visualize. 
+	* `Notes` looks for files with the `.md` extension: the notes OSINT Copilot works with on a regular basis.
 	* `Images` looks for image files. This includes `.png`, `.jpeg`, `.tiff`, `.svg` and more.
 * `Sets` looks for items that can contain files.
 	* `Folders` looks for standard folders.
@@ -26,7 +26,7 @@ For example, in the query `Notes with "thing"`:
 	* `with` is the clause keyword.
 	* `"thing"` is the clause value.
 
-The clause keyword provides context for how Tangent should process the clause value. There are several keywords, each of which are capable of handling different values.
+The clause keyword provides context for how OSINT Copilot should process the clause value. There are several keywords, each of which are capable of handling different values.
 
 ## Keywords and Supported Values
 `named`

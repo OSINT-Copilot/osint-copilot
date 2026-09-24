@@ -1,9 +1,9 @@
 /**
- * The inbox's view of Tangent's bookkeeping: which workspaces exist and which windows
+ * The inbox's view of OSINT Copilot's bookkeeping: which workspaces exist and which windows
  * have one open.
  *
  * Structural rather than importing main/workspaces, for the reason guarded-ipc.ts gives:
- * this folder is inside `typecheck:osint`, and Tangent's tree does not build under strict
+ * this folder is inside `typecheck:osint`, and OSINT Copilot's tree does not build under strict
  * null checks. index.ts passes the real workspaceMap and contentsMap in; tests pass maps
  * of their own (or the real ones).
  */
@@ -23,9 +23,9 @@ export interface WindowLike {
 }
 
 export interface TangentMaps {
-    /** Tangent's workspaceMap: every known workspace, loaded or not. */
+    /** OSINT Copilot's workspaceMap: every known workspace, loaded or not. */
     workspaceMap: Map<string, unknown>;
-    /** Tangent's contentsMap: every application window, by its webContents. */
+    /** OSINT Copilot's contentsMap: every application window, by its webContents. */
     contentsMap: Map<WindowContents, WindowLike>;
     documentationPath(): string | null;
 }

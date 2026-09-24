@@ -6,14 +6,14 @@ A markdown embed can embed content from the internet. It looks like `![](https:/
 ![](https://pixnio.com/free-images/2021/10/18/2021-10-18-06-25-57-550x367.jpg)
 
 # Supported Local Content
-Tangent can embed local images, videos and audio.
+OSINT Copilot can embed local images, videos and audio.
 * Images: `.png`, `.jpeg`, `.gif`, `.bmp`, `.svg`.
 * Video: `.mov`, `.mp4`, `.mkv`, `.avi`, `.webm`.
 * Audio: `.mp3`, `.m4a`, `.wav`, `.ogg`, `.flac`.
 * PDFs: `.pdf`.
 
 # Supported Remote Content
-Tangent can display web link previews:
+OSINT Copilot can display web link previews:
 https://en.wikipedia.org/wiki/Capuchin_monkey
 
 Images:

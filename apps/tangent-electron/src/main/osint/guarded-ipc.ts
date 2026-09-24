@@ -11,7 +11,7 @@ import { assertTrustedSender } from './sender-guard'
 
 /**
  * Deliberately does NOT import main/workspaces to wire the window predicate up itself.
- * This file is inside `typecheck:osint`, and reaching into Tangent's tree pulls common/
+ * This file is inside `typecheck:osint`, and reaching into OSINT Copilot's tree pulls common/
  * in under strictNullChecks, where it reports errors in code the fork does not own --
  * which is why index.ts is in that config's `exclude` list. index.ts owns the wiring;
  * sender-guard refuses everything until it runs, so the failure mode is closed channels.

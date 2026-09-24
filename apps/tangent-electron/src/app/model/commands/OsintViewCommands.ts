@@ -1,9 +1,9 @@
 /**
  * Commands that open OSINT Copilot's views.
  *
- * A new file in Tangent's commands directory rather than an edit to an existing one:
+ * A new file in OSINT Copilot's commands directory rather than an edit to an existing one:
  * new files never conflict on a merge from upstream. Registering here rather than in the
- * plugin's own command list is what gets these into Tangent's command palette and its
+ * plugin's own command list is what gets these into OSINT Copilot's command palette and its
  * shortcut editor, so they behave like every other command in the app.
  *
  * Imports only the dependency-free descriptor module. Pulling in the real view modules
@@ -19,7 +19,7 @@ import { osintPluginState, graphFeaturesEnabled } from 'osint/integration/osint-
 /**
  * Opens one OSINT view. Also what the toolbar pill is built from.
  *
- * The pill renders each of these through Tangent's `use:command` action -- the same one
+ * The pill renders each of these through OSINT Copilot's `use:command` action -- the same one
  * the Map/Thread/Focus buttons use -- so the tooltip, the shortcut in it, and the
  * `checked` highlight all come from this class rather than from any toolbar code.
  * getChecked() says whether the view is the current node. canExecute() deliberately does
@@ -215,7 +215,7 @@ async function attachPluginCommandsWhenReady(workspace: Workspace, timeoutMs = 1
 		const plugin = (globalThis as any).osint?.plugin
 		if (plugin?.commands) {
 			const keys = registerPluginCommands(workspace, plugin.commands.values())
-			console.debug(`[osint] registered ${keys.length} plugin commands with Tangent`)
+			console.debug(`[osint] registered ${keys.length} plugin commands with OSINT Copilot`)
 			return
 		}
 		await new Promise(resolve => setTimeout(resolve, 100))
@@ -224,10 +224,10 @@ async function attachPluginCommandsWhenReady(workspace: Workspace, timeoutMs = 1
 
 
 /**
- * Bridges the plugin's own commands into Tangent's registry.
+ * Bridges the plugin's own commands into OSINT Copilot's registry.
  *
  * The plugin registers ~20 commands through Obsidian's addCommand(); this wraps each one
- * so it shows up in Tangent's command palette and can be given a keyboard shortcut in
+ * so it shows up in OSINT Copilot's command palette and can be given a keyboard shortcut in
  * Preferences > Shortcuts, alongside every other command in the app.
  *
  * Registered at runtime rather than in createAllCommands(), because the commands only
@@ -257,7 +257,7 @@ class PluginCommand extends WorkspaceCommand {
 	}
 }
 
-/** Adds one Tangent command per plugin command. Returns the keys it registered. */
+/** Adds one OSINT Copilot command per plugin command. Returns the keys it registered. */
 function registerPluginCommands(
 	workspace: Workspace,
 	commands: Iterable<ObsidianCommand>,

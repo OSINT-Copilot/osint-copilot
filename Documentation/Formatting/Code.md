@@ -1,5 +1,5 @@
 # Inline Code
-Tangent supports the standard markdown formatting for inline code by surrounding text in `` `backtick characters` ``. If you want to show back-tick characters in an inline code span, you can use two back-ticks.
+OSINT Copilot supports the standard markdown formatting for inline code by surrounding text in `` `backtick characters` ``. If you want to show back-tick characters in an inline code span, you can use two back-ticks.
 
 You can toggle inline code with the `Cmd/Ctrl+\` shortcut.
 
@@ -15,4 +15,4 @@ function zoomify(target) {
 }
 ```
 
-Tangent [[Markdown Syntax#CodeCode Blocks|deviates from standard markdown]] and _does not_ support the standard code block syntax of indenting text by four spaces or a tab.
+OSINT Copilot [[Markdown Syntax#CodeCode Blocks|deviates from standard markdown]] and _does not_ support the standard code block syntax of indenting text by four spaces or a tab.

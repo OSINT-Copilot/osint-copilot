@@ -1,4 +1,4 @@
-Tangent supports [YAML](https://yaml.org) front matter in your notes.
+OSINT Copilot supports [YAML](https://yaml.org) front matter in your notes.
 
 To create a YAML front matter block, the first line of your note _must_ be three dashes on their own line: `---`. Anything after this will be interpreted as YAML until a closing `---` line.
 

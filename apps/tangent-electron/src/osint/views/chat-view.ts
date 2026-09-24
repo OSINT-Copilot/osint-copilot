@@ -208,7 +208,7 @@ export class ChatView extends ItemView {
     this.noRuntimeAvailable = none;
     this.syncSendControls();
     this.sendButtonEl.title = none
-      ? "Install and configure Claude, Codex, Hermes, or a custom runtime in Settings → OSINT Copilot."
+      ? "Install and configure Claude, Codex, Hermes, or a custom runtime in Settings → Tangent."
       : "";
   }
 
@@ -222,7 +222,7 @@ export class ChatView extends ItemView {
     const configured = getConfiguredRuntimeOptions(this.plugin);
     if (av.availableIds.length === 0) {
       wrap.createEl("span", {
-        text: "No agent CLI detected. Configure Claude, Codex, Hermes, or a custom runtime under Settings → OSINT Copilot.",
+        text: "No agent CLI detected. Configure Claude, Codex, Hermes, or a custom runtime under Settings → Tangent.",
         cls: "setting-item-description",
       });
     }
@@ -477,7 +477,7 @@ export class ChatView extends ItemView {
     runtimeReady.catch((e) => {
       runtimeRow.empty();
       runtimeRow.createEl("span", {
-        text: "Could not detect agent runtimes. See Settings → OSINT Copilot.",
+        text: "Could not detect agent runtimes. See Settings → Tangent.",
         cls: "setting-item-description",
       });
       console.error("[OSINT Copilot] runtime availability probe failed:", e);
@@ -1995,7 +1995,7 @@ export class ChatView extends ItemView {
     }
     if (availability.availableIds.length === 0) {
       new Notice(
-        "No agent runtime is available. Install Claude, Codex, Hermes, or a custom runtime and confirm settings under OSINT Copilot.",
+        "No agent runtime is available. Install Claude, Codex, Hermes, or a custom runtime and confirm settings under Tangent.",
         8000,
       );
       return;
@@ -2018,7 +2018,7 @@ export class ChatView extends ItemView {
     if (needsImageRuntime && !availability.byId[imageRuntimeId]) {
       new Notice(
         `Image attachments are read by ${this.runtimeDisplayName(imageRuntimeId)}, which is unavailable, ` +
-        'so your message was not sent. Remove the images or configure that CLI in Settings → OSINT Copilot.',
+        'so your message was not sent. Remove the images or configure that CLI in Settings → Tangent.',
         9000,
       );
       return;

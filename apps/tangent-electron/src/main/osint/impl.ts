@@ -185,7 +185,7 @@ export const host: Pick<Host, 'platform' | 'cli' | 'extract'> = {
         // A static import of extract.ts is cheap: the module is small and pdfjs itself
         // stays deferred inside loadPdfJs(), which requires it on first use. A relative
         // require() here would not resolve under vitest, and a dynamic import() needs
-        // `module` set on Tangent's main tsconfig, which is an upstream file.
+        // `module` set on OSINT Copilot's main tsconfig, which is an upstream file.
         pdfText: (data: ArrayBuffer) => extractPdfText(data),
         docxText: async (data: ArrayBuffer) => extractDocxText(data),
     },

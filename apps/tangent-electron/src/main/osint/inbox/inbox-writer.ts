@@ -24,7 +24,7 @@
  * nothing. And never Workspace.containsPath, which is a bare startsWith: '/cases/a' would
  * "contain" '/cases/ab'.
  *
- * No electron import. What it needs from Tangent (the known workspaces, which windows
+ * No electron import. What it needs from OSINT Copilot (the known workspaces, which windows
  * have one open) comes through InboxHost; see tangent-host.ts.
  */
 import * as fs from 'fs';
@@ -138,7 +138,7 @@ const STEP_NAME = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
  */
 const READ_FLAGS = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0);
 
-/** What the inbox needs from Tangent's window and workspace bookkeeping. */
+/** What the inbox needs from OSINT Copilot's window and workspace bookkeeping. */
 export interface InboxHost {
     /** Every workspace the app knows (the keys of workspaceMap), as registered. */
     knownRoots(): string[];

@@ -12,6 +12,6 @@ export class OpenDocumentationCommand extends WorkspaceCommand {
 	}
 
 	getTooltip(context?: CommandContext) {
-		return 'Opens Tangent\'s documentation as a separate workspace.'
+		return 'Opens OSINT Copilot\'s documentation as a separate workspace.'
 	}
 }

@@ -19,7 +19,7 @@ $: focusLevel = tangent.focusLevel
 const workspace = getContext('workspace') as Workspace
 
 function createTitle(name: string) {
-	let result = workspace.directoryStore.files.name + ' – Tangent'
+	let result = workspace.directoryStore.files.name + ' – OSINT Copilot'
 	if (name) {
 		result = name + ' – ' + result
 	}

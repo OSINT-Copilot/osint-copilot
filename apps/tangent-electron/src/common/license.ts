@@ -348,15 +348,15 @@ export function isExpired(payload: LicensePayload, now = new Date()): boolean {
 export function licenseFailureMessage(reason: LicenseFailure): string {
 	switch (reason) {
 		case 'missing':
-			return 'Enter your licence key to use OSINT Copilot.'
+			return 'Enter your licence key to use Tangent.'
 		case 'malformed':
 			return 'That does not look like an OSINT Copilot licence key. Check that you copied all of it.'
 		case 'bad-signature':
 			return 'That licence key is not valid. Check for a typo, or ask for a replacement.'
 		case 'expired':
-			return 'That licence key has expired. Renew it to keep using OSINT Copilot.'
+			return 'That licence key has expired. Renew it to keep using Tangent.'
 		case 'unsupported-version':
-			return 'That licence key needs a newer version of OSINT Copilot.'
+			return 'That licence key needs a newer version of Tangent.'
 		case 'unknown-key':
 			return 'That key is not recognised. Copy it again from your dashboard at ' +
 				'osint-copilot.com, or check that you are signed in to the right account.'

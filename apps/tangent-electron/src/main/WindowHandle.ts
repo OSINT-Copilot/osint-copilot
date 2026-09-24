@@ -347,7 +347,7 @@ export default class WindowHandle {
 	/*
 	 * These two functions work through some context menu malarky:
 	 *   * We need the electron event for copy/paste & spelling context.
-	 *   * The Tangent web events want to create customizations _after_ click-based
+	 *   * The OSINT Copilot web events want to create customizations _after_ click-based
 	 *     selection changes have occurred.
 	 *   * _Sometimes_ electron will not fire a `context-menu` event even though
 	 *     the actual `contextmenu` web event worked exactly as expect.

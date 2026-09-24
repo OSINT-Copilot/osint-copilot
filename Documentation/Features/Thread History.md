@@ -1,7 +1,7 @@
 [[Sessions]] track the history of the Threads of notes you've looked at, as well as the current note in that Thread.
 
 You can navigate back and forward through your thread history via:
-* The back and forward buttons in the top bar of Tangent.
+* The back and forward buttons in the top bar of OSINT Copilot.
 * The "Go Back" and "Go Forward" menu items in the "Go" menu.
 * Using the `Cmd/Ctrl+Shift+[` and `Cmd/Ctrl+Shift+]` keyboard shortcuts.
 

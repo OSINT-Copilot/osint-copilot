@@ -41,7 +41,7 @@ const derivedFromSettings = new Set<string>()
 
 /**
  * Where to look for settings. Injected rather than imported so the guard stays testable
- * and does not depend on Tangent's workspace bookkeeping.
+ * and does not depend on OSINT Copilot's workspace bookkeeping.
  */
 let workspaceRootsProvider: () => string[] = () => []
 export function setWorkspaceRootsProvider(provider: () => string[]): void {

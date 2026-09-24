@@ -30,7 +30,7 @@ export class SenderNotPermittedError extends Error {}
  * Answers "did main create this webContents for an application window?".
  *
  * Injected rather than importing main/workspaces, so this module stays free of Electron
- * and of Tangent's workspace bookkeeping. Defaults to refusing everything: if the wiring
+ * and of OSINT Copilot's workspace bookkeeping. Defaults to refusing everything: if the wiring
  * is ever dropped, the channels go silent rather than open.
  */
 let isApplicationWindow: (contents: unknown) => boolean = () => false

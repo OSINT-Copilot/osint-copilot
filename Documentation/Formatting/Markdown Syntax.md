@@ -1,4 +1,4 @@
-Tangent uses a semi-custom flavor of markdown for formatting. You can:
+OSINT Copilot uses a semi-custom flavor of markdown for formatting. You can:
 - Link to notes with [[Wiki Links]] or to the internet with [[Markdown Links]]
 - Insert [[Headers]]
 - Use [[Bold and Italics]]
@@ -16,13 +16,13 @@ As your text cursor enters and leaves a formatted section, the markdown formatti
 # Philosophy
 The markdown language is a widely-supported standard of the internet. Even when completely unstyled, markdown is highly readable.
 
-By using and building on markdown syntax, your notes are exceptionally portable. You are fully able to edit your notes with different editors or tools without having to import or export in and out of Tangent. Additionally, since markdown is a plain text format, it works exceptionally well with version control systems like [Git](https://git-scm.com).
+By using and building on markdown syntax, your notes are exceptionally portable. You are fully able to edit your notes with different editors or tools without having to import or export in and out of OSINT Copilot. Additionally, since markdown is a plain text format, it works exceptionally well with version control systems like [Git](https://git-scm.com).
 
 # Deviations from the Standard
-There are a handful of areas where Tangent deviates from standard markdown.
+There are a handful of areas where OSINT Copilot deviates from standard markdown.
 
 ## [[Code#Code Blocks]]
-The most notable is in code block formatting: Tangent exclusively uses the "code fence" style for code blocks, where the block start and end with three back-tick characters.
+The most notable is in code block formatting: OSINT Copilot exclusively uses the "code fence" style for code blocks, where the block start and end with three back-tick characters.
 
 Tabs or spaces at the beginning of lines simply indents those lines. This grants much more control over the formatting of notes.
 

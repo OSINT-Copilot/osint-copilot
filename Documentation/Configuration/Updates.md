@@ -1,4 +1,4 @@
-Tangent will automatically update when new versions are released.
+OSINT Copilot will automatically update when new versions are released.
 
 The options relevant to updates are found in the [[System Menu]].
 

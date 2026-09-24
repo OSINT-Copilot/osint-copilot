@@ -80,7 +80,7 @@ function createNewStyle() {
 </script>
 
 <p class="overview">
-	You can further modify Tangent's appearance with custom CSS files.
+	You can further modify OSINT Copilot's appearance with custom CSS files.
 	Places a CSS file in the "styles" folder and enable it here.
 </p>
 <p class="overview">

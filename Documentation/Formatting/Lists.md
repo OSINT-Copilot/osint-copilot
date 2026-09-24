@@ -25,7 +25,7 @@ By default, list glyphs will automatically change when you indent them. Children
 
 
 # Extended Bullets
-Tangent supports multiple UTF characters as native unordered bullets. You may use these characters instead of the standard `+`, `-`, `*` characters and they will be displayed natively. Use these as expressive alternatives in your lists!
+OSINT Copilot supports multiple UTF characters as native unordered bullets. You may use these characters instead of the standard `+`, `-`, `*` characters and they will be displayed natively. Use these as expressive alternatives in your lists!
 
 The following characters are treated as "large" lists:
 • `U+2022 (Bullet)

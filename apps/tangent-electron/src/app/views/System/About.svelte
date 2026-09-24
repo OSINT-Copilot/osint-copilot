@@ -27,13 +27,13 @@ function openDocumentation() {
 		<a target="_blank" rel="noreferrer" href="https://github.com/OSINT-Copilot/osint-copilot-releases/releases">releases page</a>.
 	</p>
 	<p class="credit">
-		Built on <a target="_blank" rel="noreferrer" href="https://www.tangentnotes.com">Tangent</a>
+		Built on <a target="_blank" rel="noreferrer" href="https://www.tangentnotes.com">OSINT Copilot</a>
 		by <a target="_blank" rel="noreferrer" href="http://tangentnotes.com/About">Taylor Hadden</a>,
 		used under the Apache License 2.0. The editor, file tree, link index and query language are
-		Tangent's; the investigation toolset is ours. Please send questions about OSINT Copilot to us
+		OSINT Copilot's; the investigation toolset is ours. Please send questions about OSINT Copilot to us
 		rather than to Tangent.
 	</p>
-	<h1>Tangent's supporters</h1>
+	<h1>OSINT Copilot's supporters</h1>
 	<p style:margin-bottom="0">
 		These people made exceptional contributions to Tangent, which this application is built on:
 	</p>

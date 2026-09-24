@@ -50,7 +50,7 @@ export default async function migrate(filepath: string, defaultsFolder: string):
 	}
 	catch (e) {
 		log.error('An error occured while migrating workspace data: ', e)
-		userFacingErrors.push('Tangent was unable to update workspace data. Please restart Tangent or seek assistance via email or Discord.')
+		userFacingErrors.push('OSINT Copilot was unable to update workspace data. Please restart OSINT Copilot, or contact Probe Point Analytics if it keeps happening.')
 	}
 
 	const updateChannel = getVersionChannel()
@@ -96,8 +96,8 @@ async function ensureWorkspaceSettingsExist(tangentPath: string, defaultsFolder:
 			await fs.copyFile(defaultWorkspaceSettingsPath, workspaceSettingsPath)
 		}
 		catch (e) {
-			log.error('Failed to copy default workspace settings. Tangent should be restarted.')
-			return ['Tangent was unable to initiaize workspace settings. Please restart Tangent.']
+			log.error('Failed to copy default workspace settings. OSINT Copilot should be restarted.')
+			return ['OSINT Copilot was unable to initiaize workspace settings. Please restart Tangent.']
 		}
 	}
 	return []
@@ -164,7 +164,7 @@ async function updateWorkspace(
 	}
 	catch (e) {
 		log.error(`Failed to migrate from ${effectiveVersion} to ${effectiveVersion + 1}:`, e)
-		userFacingErrors.push('Tangent failed to migrate its workspace data to the newest version. Please restart Tangent, or delete the ".tangent" folder to reset the workspace.')
+		userFacingErrors.push('OSINT Copilot failed to migrate its workspace data to the newest version. Please restart OSINT Copilot, or delete the ".tangent" folder to reset the workspace.')
 	}
 	
 

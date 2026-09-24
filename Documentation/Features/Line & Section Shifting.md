@@ -1,4 +1,4 @@
-Tangent implements the `Alt+Up` and `Alt+Down` shortcuts from code editors to shift your currently selected line(s) up and down.
+OSINT Copilot implements the `Alt+Up` and `Alt+Down` shortcuts from code editors to shift your currently selected line(s) up and down.
 
 You can also shift entire sections of content across other sections. On Mac, the shortcut is "⌃⌥ ↑" and "⌃⌥ ↓". On Windows & Linux, the shortcut is `Ctrl+Shift+Up` and `Ctrl+Shift+Down`.
 

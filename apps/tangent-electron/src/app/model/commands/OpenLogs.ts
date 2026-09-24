@@ -16,6 +16,6 @@ export default class OpenLogsCommand extends WorkspaceCommand {
 	}
 
 	getTooltip(context?: CommandContext) {
-		return 'Opens the folder containing Tangent\'s log file.'
+		return 'Opens the folder containing OSINT Copilot\'s log file.'
 	}
 }

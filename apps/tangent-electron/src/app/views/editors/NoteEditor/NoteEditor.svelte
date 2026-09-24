@@ -250,7 +250,7 @@ onDestroy(() => {
 })
 
 function onEditorError(error) {
-	console.error("Tangent encountered a text editor error and will fall back to safe mode.", error)
+	console.error("OSINT Copilot encountered a text editor error and will fall back to safe mode.", error)
 	console.error(error.error)
 
 	// Fall back to a safe mode
@@ -1061,7 +1061,7 @@ function onContextMenu(event: MouseEvent) {
 				})
 			}
 			else if (!Array.isArray(resolution)) {
-				// Tangent knows what this is
+				// OSINT Copilot knows what this is
 
 				let actionName = ''
 				let toolTipBase = ''

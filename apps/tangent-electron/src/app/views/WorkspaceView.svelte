@@ -41,7 +41,7 @@ $: {
 		document.body.classList.remove('focusing')
 	}
 }
-// Rebuilt when the registry grows, not snapshotted once at mount: OSINT Copilot
+// Rebuilt when the registry grows, not snapshotted once at mount: Tangent
 // registers its plugin commands after its async startup, and a handler built at mount
 // never saw them, so a shortcut assigned to one of them could not fire.
 let topCommandHandler: (event: KeyboardEvent) => void

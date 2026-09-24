@@ -20,7 +20,7 @@
  * capture worker (derive-worker.ts), never on main's own thread: a 50 MB page is seconds
  * of synchronous work.
  *
- * The output must be INERT when the analyst opens it in the app. Tangent turns
+ * The output must be INERT when the analyst opens it in the app. OSINT Copilot turns
  * `![alt](url)` and `![[name]]` into embeds that load when the note is viewed, and it
  * renders HTML tags written in a note. Either, in text a hostile page chose, would make
  * the app fetch the target's tracker every time the analyst reads their own evidence. It
@@ -60,10 +60,10 @@ const LINKABLE = /^((https?|mailto):|(?![a-z][a-z0-9+.-]*:))/i
  * The last word on inertness, applied to the whole output: whatever produced it (text,
  * code, alt text, a URL), no embed and no tag survives.
  *
- * - `![` becomes `!\[`, which Tangent shows as text. That covers `![[name]]` too.
- * - `://` becomes `:\/\/`. Tangent's raw-link parser starts at `://`, so without it no
+ * - `![` becomes `!\[`, which OSINT Copilot shows as text. That covers `![[name]]` too.
+ * - `://` becomes `:\/\/`. OSINT Copilot's raw-link parser starts at `://`, so without it no
  *   bare URL exists to embed, alone on a line or after a `!`. Deciding where page text
- *   ends and code begins would mean predicting Tangent's parser; escaping everywhere does
+ *   ends and code begins would mean predicting OSINT Copilot's parser; escaping everywhere does
  *   not, at the price of backslashes in a URL quoted in code.
  * - `<` followed by what could start a tag, comment or declaration becomes `&lt;`.
  *

@@ -63,7 +63,7 @@ ipcMain.handle('getWorkspaceDialog', async (event) => {
 			buttonLabel: 'Select Workspace',
 			defaultPath: app.getPath('documents'),
 			title: 'Select a Workspace Folder',
-			message: 'Select a folder that will act as your Tangent Workspace.',
+			message: 'Select a folder that will act as your OSINT Copilot Workspace.',
 			properties: ['openDirectory', 'createDirectory']
 		})
 
@@ -342,7 +342,7 @@ ipcMain.handle('delete', async (event, filepath) => {
 		catch (err) {
 			log.error('Failed to delete', filepath, err)
 			const filename = workspace.contentsStore.pathToRelativePath(filepath) || filepath
-			windowHandle.postUserMessage('error', `Tangent failed to delete ${filename}. See logs for more details.`)
+			windowHandle.postUserMessage('error', `OSINT Copilot failed to delete ${filename}. See logs for more details.`)
 		}
 	}
 	else {
@@ -365,7 +365,7 @@ ipcMain.handle('getFileContents', (event, filepath) => {
 		catch (err) {
 			log.error('Failed to open file', filepath, err)
 			const filename = workspace.contentsStore.pathToRelativePath(filepath) || filepath
-			windowHandle.postUserMessage('error', `Tangent failed to read ${filename}. See logs for more details.`)
+			windowHandle.postUserMessage('error', `OSINT Copilot failed to read ${filename}. See logs for more details.`)
 		}
 	}
 	else {
@@ -389,7 +389,7 @@ ipcMain.on('openFile', (event, filepath) => {
 		catch (err) {
 			log.error('Failed to open file', filepath, err)
 			const filename = workspace.contentsStore.pathToRelativePath(filepath) || filepath
-			windowHandle.postUserMessage('error', `Tangent failed to open ${filename}. See logs for more details.`)
+			windowHandle.postUserMessage('error', `OSINT Copilot failed to open ${filename}. See logs for more details.`)
 		}
 	}
 	else {
@@ -418,7 +418,7 @@ ipcMain.on('closeFile', (event, filepath) => {
 		catch (err) {
 			log.error('Failed to close file', filepath, err)
 			const filename = workspace.contentsStore.pathToRelativePath(filepath) || filepath
-			windowHandle.postUserMessage('error', `Tangent failed to close ${filename}. See logs for more details.`)
+			windowHandle.postUserMessage('error', `OSINT Copilot failed to close ${filename}. See logs for more details.`)
 		}
 	}
 	else {

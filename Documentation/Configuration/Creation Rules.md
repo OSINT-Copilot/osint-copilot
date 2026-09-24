@@ -1,7 +1,7 @@
 Creation Rules let you set up quick ways to create notes with a specific name format in specific folders. Creation Rules are shown in the "New Note" dropdown in the upper-left of the window, and within the [[Command Palette]].
 
 # Managing Creation Rules
-The Creation Rules manager for Tangent is found in the [[System Menu]].
+The Creation Rules manager for OSINT Copilot is found in the [[System Menu]].
 
 This section shows a list of all Creation Rules within the current [[The Workspace|workspace]]. You can click on any of the rules in the list to enter the editing interface. You can also reorder the rules by dragging and dropping.
 
@@ -10,7 +10,7 @@ Creation rules can have any title you wish. If the first character of the name i
 ## Name Template
 The Name Template setting lets you inject automatic values into a note name when it is created. This is used in the default "Daily Note" creation rule to create notes with a simple Year-Month-Day timestamp. The "Name Template Tokens" dropdown will show all of the tokens available to you. Clicking on them will automatically insert them into the template's name field.
 
-If your rule's name template doesn't use the `%name%` token, it is deterministic and doesn't require any additional input to create a new note. For example, the name template `%YYYY% Yearly Theme` is deterministic and will create notes like "2023 Yearly Theme". On the other hand `%YYYY% Yearly Theme – %name%` will ask you to fill in the `%name%` template on creation and will create notes like "2022 Yearly Theme – The Year of Tangent".
+If your rule's name template doesn't use the `%name%` token, it is deterministic and doesn't require any additional input to create a new note. For example, the name template `%YYYY% Yearly Theme` is deterministic and will create notes like "2023 Yearly Theme". On the other hand `%YYYY% Yearly Theme – %name%` will ask you to fill in the `%name%` template on creation and will create notes like "2022 Yearly Theme – The Year of OSINT Copilot".
 
 ## Content Template
 When present, the set file will be used as a template for new notes. Its content will seed the initial contents of notes created by this rule. In addition, any [[Date Template Tokens]] will be replaced using the current date.

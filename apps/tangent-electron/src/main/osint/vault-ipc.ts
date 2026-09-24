@@ -1,18 +1,18 @@
 /**
  * The `osint:vault.*` channels: file I/O for the Obsidian Vault shim.
  *
- * This exists alongside Tangent's own `file` API rather than replacing it, because the
- * shim needs four things Tangent's API does not offer: a stat back from every write
+ * This exists alongside OSINT Copilot's own `file` API rather than replacing it, because the
+ * shim needs four things OSINT Copilot's API does not offer: a stat back from every write
  * (the shim's read cache and its self-write suppression are keyed on path+mtime+size),
  * binary read/write, real OS trash, and Obsidian's exact error strings
  * ("File already exists." / "Folder already exists."), which vault-bootstrap-fs.ts
  * matches on.
  *
  * It does NOT bring a second filesystem watcher: change events are derived from
- * Tangent's own TreeChange stream in the renderer.
+ * OSINT Copilot's own TreeChange stream in the renderer.
  *
  * Confinement is doubled up. vault.ts refuses any path escaping the open root, by `..`
- * or through a symlink, and the root itself must be a workspace Tangent has open — the
+ * or through a symlink, and the root itself must be a workspace OSINT Copilot has open — the
  * renderer cannot point this at an arbitrary directory.
  *
  * Kept out of index.ts, and free of any electron import, so the registration itself can
@@ -33,7 +33,7 @@ export type VaultHandle = (
 export interface VaultIpcDeps {
 	/** guarded-ipc's `handle` in the app, so every channel keeps the sender check. */
 	handle: VaultHandle
-	/** Throws unless `dir` is a workspace Tangent has open. */
+	/** Throws unless `dir` is a workspace OSINT Copilot has open. */
 	assertIsOpenWorkspace(dir: string): void
 	/** Electron's shell.trashItem in the app. */
 	trashItem(absolutePath: string): Promise<void>

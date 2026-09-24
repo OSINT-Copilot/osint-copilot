@@ -32,7 +32,7 @@ This folder is **managed by you**. The plugin copies these files once when they 
 
 ## Reload
 
-After editing, use command palette: **OSINT Copilot: Reload vault prompts** (or restart Obsidian).
+After editing, use command palette: **Tangent: Reload vault prompts** (or restart Obsidian).
 `,
 	},
 	{

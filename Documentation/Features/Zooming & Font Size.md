@@ -1,4 +1,4 @@
-Tangent uses `Cmd/Ctrl+Shift+Plus` and `Cmd/Ctrl+Shift+Minus` to control the zoom level in the [[Map View]] and image panels as well as change the font size for notes.
+OSINT Copilot uses `Cmd/Ctrl+Shift+Plus` and `Cmd/Ctrl+Shift+Minus` to control the zoom level in the [[Map View]] and image panels as well as change the font size for notes.
 
 You can reset the zoom level or font size with `Cmd/Ctrl+Shift+0`.
 

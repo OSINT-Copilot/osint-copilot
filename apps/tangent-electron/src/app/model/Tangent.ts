@@ -105,7 +105,7 @@ export default class Tangent {
 		this.context = new ViewStateContext(state.workspace, this)
 		this.context.creators = [
 			// OSINT Copilot's views. Declines anything that is not one of its file types,
-			// so Tangent's own handling of notes, folders, embeds and queries is untouched.
+			// so OSINT Copilot's own handling of notes, folders, embeds and queries is untouched.
 			osintViewStateCreator as any,
 			(context, node, reference) => {
 				if (node instanceof NoteFile) {

@@ -1,6 +1,6 @@
 ![[Thread View Button.png|110]]
 
-The Thread View is the default view mode of Tangent. When you open a note from [[The Sidebar]] or the [[Command Palette]], it becomes the root of the thread.
+The Thread View is the default view mode of OSINT Copilot. When you open a note from [[The Sidebar]] or the [[Command Palette]], it becomes the root of the thread.
 
 When you follow a [[Wiki Links|wiki link]] in a note, the linked note is added to the end thread, replacing any other notes that were previously after the source note. Even though notes are replaced, this context is not lost: the [[Map View]] 
 

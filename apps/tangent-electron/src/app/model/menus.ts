@@ -393,7 +393,7 @@ export function buildMainMenu(workspace: Workspace): MenuItemConstructorOptions[
 			{ command: cmds.openChangelog },
 			{ type: 'separator' },
 			// Upstream's website, e-mail, Discord and Mastodon used to be here. They are
-			// Tangent's support channels, not ours, and sending OSINT Copilot's users to them
+			// OSINT Copilot's support channels, not ours, and sending OSINT Copilot's users to them
 			// helps nobody -- least of all Taylor, who would field our bugs. Attribution lives
 			// in Help > About, where it belongs.
 			{

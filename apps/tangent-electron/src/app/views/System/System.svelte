@@ -33,7 +33,7 @@ $: mode = updateState.mode
 
 $: onModeChanged($mode)
 function onModeChanged(_m?) {
-	// anyShimModalIsOpen() as well as Tangent's own stack: OSINT Copilot's dialogs are
+	// anyShimModalIsOpen() as well as Tangent's own stack: Tangent's dialogs are
 	// elements on document.body rather than entries in viewState.modal, so without it a
 	// ready update threw the settings menu over the top of the first-run tour.
 	if ($mode === 'ready' && !suppressUpdates && !detailsOpen
@@ -90,7 +90,7 @@ const menus = [
 		component: Updates
 	},
 	{
-		// No documentation page: the licence is ours, not something Tangent documents.
+		// No documentation page: the licence is ours, not something OSINT Copilot documents.
 		name: 'Licence',
 		component: License,
 		documentation: false

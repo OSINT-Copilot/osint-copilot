@@ -82,7 +82,7 @@ describe('converting a captured page to markdown', () => {
 })
 
 /**
- * Tangent turns ![alt](url) and ![[name]] into embeds that load when a note is viewed, and
+ * OSINT Copilot turns ![alt](url) and ![[name]] into embeds that load when a note is viewed, and
  * it renders HTML tags. Page-derived markdown carrying either would fetch the target's
  * tracker every time the analyst opened their own evidence.
  */

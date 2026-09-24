@@ -5,7 +5,7 @@ import * as os from 'os'
 import * as path from 'path'
 import { createHash, createHmac, randomBytes, randomUUID } from 'crypto'
 
-// Tangent's workspace registry imports electron for app paths it does not touch here.
+// OSINT Copilot's workspace registry imports electron for app paths it does not touch here.
 vi.mock('electron', () => ({
 	app: { getPath: () => os.tmpdir(), getVersion: () => '0.0.0-test' },
 	BrowserWindow: class {},
@@ -17,8 +17,8 @@ import { tangentInboxHost, type WindowContents, type WindowLike } from './tangen
 import { verifySealedManifest } from './manifest-mac'
 
 /**
- * Tangent's own registry. Loaded through a specifier TypeScript does not follow: this
- * folder is inside `typecheck:osint`, and Tangent's tree does not build under strict
+ * OSINT Copilot's own registry. Loaded through a specifier TypeScript does not follow: this
+ * folder is inside `typecheck:osint`, and OSINT Copilot's tree does not build under strict
  * null checks (see guarded-ipc.ts). The shape is the part tangent-host.ts relies on.
  */
 interface TangentRegistry {
@@ -30,7 +30,7 @@ let registry: TangentRegistry | null = null
 
 /**
  * The whole path a bundle takes, as the extension would drive it: the real server and the
- * real inbox over a workspace registered in Tangent's own workspaceMap, and a client that
+ * real inbox over a workspace registered in OSINT Copilot's own workspaceMap, and a client that
  * implements PROTOCOL.md from scratch with node:crypto rather than the app's signing.ts, so
  * the two halves are checked against the document and not against each other.
  */

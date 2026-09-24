@@ -1,8 +1,8 @@
-Tangent supports the standard `[[Double Bracket]]` wiki link syntax for linking to a note by name within the same workspace.
+OSINT Copilot supports the standard `[[Double Bracket]]` wiki link syntax for linking to a note by name within the same workspace.
 
 You can follow a link goes by command-clicking on Mac or control-clicking on Windows. You can also follow a link that the typing cursor is hovering over by pressing `Command+Enter` on Mac or `Control+Enter` on Windows.
 
-Wiki links to notes will resolve to your chosen accent color (green by default). Wiki links to notes that do not exist will show in red. This is not necessarily a bad thing! I can be useful to create a link to a topic or thought without adding content. Tangent will autocomplete to that link either way.
+Wiki links to notes will resolve to your chosen accent color (green by default). Wiki links to notes that do not exist will show in red. This is not necessarily a bad thing! I can be useful to create a link to a topic or thought without adding content. OSINT Copilot will autocomplete to that link either way.
 
 # Autocomplete
 Typing the first two brackets `[[` will bring up the autocomplete menu. You can also summon autocomplete from within an existing wiki link by pressing `Control+Space`.
@@ -37,13 +37,13 @@ When creating a new link in autocomplete, the following shortcuts may be useful:
 
 # Link Resolution Mechanics
 ## Depth
-Wiki links are based on direct name matches. Of course, you may have multiple files in a workspace with the same name. With a given name, Tangent will link to the file or folder that is closest to the root of the workspace. Ambiguity can be defeated by providing the full workspace-relative path to the target file.
+Wiki links are based on direct name matches. Of course, you may have multiple files in a workspace with the same name. With a given name, OSINT Copilot will link to the file or folder that is closest to the root of the workspace. Ambiguity can be defeated by providing the full workspace-relative path to the target file.
 
 ## File Extensions
-Wiki links let you link to files without extensions so long as there is no name conflict. If there _is_ a name conflict, Tangent will prefer `.md` files over all other file type. i.e. `[[File]]` will link to `File.md` over `File.png`. Adding the extension to the wiki link will link to the exact file.
+Wiki links let you link to files without extensions so long as there is no name conflict. If there _is_ a name conflict, OSINT Copilot will prefer `.md` files over all other file type. i.e. `[[File]]` will link to `File.md` over `File.png`. Adding the extension to the wiki link will link to the exact file.
 
 ## Files vs Folders
-If a file and a folder at the same depth have the same name, Tangent will link to the _file_. This may be somewhat counterintuitive at first, but it allows for handy namespacing of topics into adjacent folders.
+If a file and a folder at the same depth have the same name, OSINT Copilot will link to the _file_. This may be somewhat counterintuitive at first, but it allows for handy namespacing of topics into adjacent folders.
 	
 	For instance, you may have a `Physics.md` note and a `Physics` folder with notes like `Physics/Radiation.md` within it. In this case a wiki link of `[[Physics]]` will link to the `Physics.md` _note_.
 	

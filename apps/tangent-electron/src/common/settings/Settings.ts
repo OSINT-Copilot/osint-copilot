@@ -52,24 +52,24 @@ class KeymapSettings extends PatchableMap<string, string[], string[]> {
 export default class Settings extends ObjectStore {
 	updateChannel = new Setting<string>({
 		name: 'Update Channel',
-		description: 'Controls what versions Tangent will automatically update to.',
+		description: 'Controls what versions OSINT Copilot will automatically update to.',
 		validValues: [
 			{
 				value: 'latest',
 				displayName: 'Stable',
-				description: 'Tangent will auto-update to the latest version hardened by a beta phase. ' +
+				description: 'OSINT Copilot will auto-update to the latest version hardened by a beta phase. ' +
 					'Choose this to prefer stability over new features.'
 			},
 			{
 				value: 'beta',
 				displayName: 'Beta',
-				description: 'Tangent will auto-update to the latest stable or beta version. ' +
+				description: 'OSINT Copilot will auto-update to the latest stable or beta version. ' +
 					'Choose this to participate in the beta period for a release. There may be bugs, but features should appear fully-formed.'
 			},
 			{
 				value: 'alpha',
 				displayName: 'Bleeding Edge',
-				description: 'Tangent will auto-update to the absolute latest version. ' +
+				description: 'OSINT Copilot will auto-update to the absolute latest version. ' +
 					'Choose this to get access to features as soon as they are developed. There will be bugs.'
 				
 			}
@@ -78,50 +78,50 @@ export default class Settings extends ObjectStore {
 
 	automaticallyCheckForUpdates = new Setting<boolean>({
 		name: 'Automatically Check for Updates',
-		description: 'When enabled, Tangent will automatically check for updates.',
+		description: 'When enabled, OSINT Copilot will automatically check for updates.',
 		defaultValue: true
 	})
 
 	showChangelogOnUpdate = new Setting<boolean>({
-		name: 'Show Changelog when Tangent Updates',
+		name: 'Show Changelog when OSINT Copilot Updates',
 		defaultValue: true
 	})
 
 	appearance = new Setting<string>({
 		name: 'Appearance',
-		description: 'Controls whether Tangent displays in light or dark mode.',
+		description: 'Controls whether OSINT Copilot displays in light or dark mode.',
 		validValues: [
 			{
 				value: 'system',
 				displayName: 'System',
-				description: 'Tangent will use light or dark mode based on your OS settings.'
+				description: 'OSINT Copilot will use light or dark mode based on your OS settings.'
 			},
 			{
 				value: 'light',
 				displayName: 'Light',
-				description: 'Tangent will always display in light mode.'
+				description: 'OSINT Copilot will always display in light mode.'
 			},
 			{
 				value: 'dark',
 				displayName: 'Dark',
-				description: 'Tangent will always display in dark mode.'
+				description: 'OSINT Copilot will always display in dark mode.'
 			}
 		]
 	})
 
 	titlebar = new Setting<string>({
 		name: 'Titlebar',
-		description: 'Controsl the appearance of the titlebars of Tangent\'s windows. (Requires restart.)',
+		description: 'Controsl the appearance of the titlebars of OSINT Copilot\'s windows. (Requires restart.)',
 		validValues: [
 			{
 				value: 'system',
 				displayName: 'System',
-				description: 'Tangent will use the native titlebar of your OS. (Requires restart.)'
+				description: 'OSINT Copilot will use the native titlebar of your OS. (Requires restart.)'
 			},
 			{
 				value: 'condensed',
 				displayName: 'Condensed',
-				description: 'Tangent will place window controls within its own navigation bar. (Requires restart.)'
+				description: 'OSINT Copilot will place window controls within its own navigation bar. (Requires restart.)'
 			}
 		],
 		defaultValue: isLinux ? 'system' : 'condensed'
@@ -129,7 +129,7 @@ export default class Settings extends ObjectStore {
 
 	accentHue = new Setting<number>({
 		name: 'Accent Hue',
-		description: 'The hue of Tangent\'s button and link color.',
+		description: 'The hue of OSINT Copilot\'s button and link color.',
 		defaultValue: 141,
 		range: {
 			min: 0,
@@ -140,7 +140,7 @@ export default class Settings extends ObjectStore {
 
 	accentSaturation = new Setting<number>({
 		name: 'Accent Saturation',
-		description: 'The saturation of Tangent\s button and link color.',
+		description: 'The saturation of OSINT Copilot\s button and link color.',
 		defaultValue: 67,
 		range: {
 			min: 0,
@@ -521,7 +521,7 @@ export default class Settings extends ObjectStore {
 
 	startupBehavior = new Setting<'restore' | 'select'>({
 		name: 'Startup Behavior',
-		description: 'What windows Tangent opens on startup.',
+		description: 'What windows OSINT Copilot opens on startup.',
 		validValues: [
 			{
 				value: 'restore',
@@ -601,13 +601,13 @@ export default class Settings extends ObjectStore {
 
 	enableSpellCheck = new Setting<boolean>({
 		name: 'Use Spell Check',
-		description: 'Whether Tangent should use spell check or not.',
+		description: 'Whether OSINT Copilot should use spell check or not.',
 		defaultValue: true
 	})
 
 	filenameSpellCheck = new Setting<'never'|'editing'|'always'>({
 		name: 'Spell Check Filenames',
-		description: 'When and how Tangent should use spell check in filenames.',
+		description: 'When and how OSINT Copilot should use spell check in filenames.',
 		validValues: [
 			{
 				value: 'never',
@@ -630,7 +630,7 @@ export default class Settings extends ObjectStore {
 
 	contentSpellCheck = new Setting<'never'|'editing'|'always'>({
 		name: 'Spell Check Content',
-		description: 'When and how Tangent should use spell check in note content.',
+		description: 'When and how OSINT Copilot should use spell check in note content.',
 		validValues: [
 			{
 				value: 'never',
@@ -688,7 +688,7 @@ export default class Settings extends ObjectStore {
 	// Debug
 	debug_sendCrashReports = new Setting<boolean>({
 		name: 'Send Crash Reports',
-		description: 'When enabled, if Tangent crashes, it will upload a crash report to a third party server to assist with debugging.',
+		description: 'When enabled, if OSINT Copilot crashes, it will upload a crash report to a third party server to assist with debugging.',
 		defaultValue: false
 	})
 

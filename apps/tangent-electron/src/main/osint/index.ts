@@ -1,12 +1,12 @@
 /**
  * OSINT Copilot's privileged half.
  *
- * Registers on import, the way Tangent's own message modules do, so wiring it up is a
+ * Registers on import, the way OSINT Copilot's own message modules do, so wiring it up is a
  * single `import './osint'` in src/main/index.ts.
  *
- * Only capabilities Tangent does not already provide live here: spawning CLI runtimes,
+ * Only capabilities OSINT Copilot does not already provide live here: spawning CLI runtimes,
  * guarded HTTP with main-side secrets, and document text extraction. File I/O is
- * deliberately absent — that goes through Tangent's own `file` API and DirectoryStore.
+ * deliberately absent — that goes through OSINT Copilot's own `file` API and DirectoryStore.
  *
  * Trust boundary rules, all enforced on this side because the renderer is untrusted:
  *   - no channel returns a secret value; main resolves and injects them (see impl.ts)
@@ -46,7 +46,7 @@ setWorkspaceRootsProvider(() => [...workspaceMap.keys()])
 
 /**
  * Who may speak to the `osint:*` channels. Wired here rather than in guarded-ipc.ts
- * because `contentsMap` lives in Tangent's tree, and this file is already excluded from
+ * because `contentsMap` lives in OSINT Copilot's tree, and this file is already excluded from
  * `typecheck:osint` for exactly that reason.
  *
  * `contentsMap` is populated in createWindow() before the page loads, so a window's first
@@ -109,7 +109,7 @@ handle('osint:extract.docxText', (_e, data: ArrayBuffer) => host.extract.docxTex
 
 // --------------------------------------------------------------------------- vault
 // The channels themselves are in vault-ipc.ts; see there for why they exist and how
-// they are confined. The workspace check lives here because workspaceMap is Tangent's.
+// they are confined. The workspace check lives here because workspaceMap is OSINT Copilot's.
 registerVaultHandlers({
 	handle,
 	assertIsOpenWorkspace(dir: string): void {
@@ -170,7 +170,7 @@ handle('osint:basemap.read', (_e, handleId: string, offset: number, length: numb
  * over, and the inbox they land in. The protocol and its threat model are in
  * extension/PROTOCOL.md; what decides whether the port is open is ExtensionController.
  *
- * Wired here because it needs Tangent's workspaceMap and contentsMap, the licence and
+ * Wired here because it needs OSINT Copilot's workspaceMap and contentsMap, the licence and
  * Electron's dialog and safeStorage, none of which the electron-free modules import.
  */
 const RECONCILE_EVERY_MS = 10 * 60_000

@@ -860,7 +860,7 @@ While that id is listed under REGISTERED HTTP ENRICHERS, call the API through en
       new ConfirmModal(
         this.app,
         'Revoke this extension?',
-        `${origin} will no longer be able to send items to OSINT Copilot. To use it again, pair it again.`,
+        `${origin} will no longer be able to send items to Tangent. To use it again, pair it again.`,
         () => resolve(true),
         () => resolve(false),
         true,

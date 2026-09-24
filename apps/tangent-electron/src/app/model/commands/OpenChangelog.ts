@@ -13,6 +13,6 @@ export default class OpenChangelogCommand extends WorkspaceCommand {
 	}
 
 	getTooltip(context?: CommandContext) {
-		return 'Opens Tangent\'s changelog dialog.'
+		return 'Opens OSINT Copilot\'s changelog dialog.'
 	}
 }

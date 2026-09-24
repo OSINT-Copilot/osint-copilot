@@ -5,9 +5,9 @@
  *
  * For tests that drive the extension's own code against the app, in vitest
  * (extension-interop.test.ts) and in a real browser (the extension package's
- * e2e/smoke.spec.ts). No electron import and no Tangent registry: the workspace is
+ * e2e/smoke.spec.ts). No electron import and no OSINT Copilot registry: the workspace is
  * registered in maps of our own through tangentInboxHost, which is the adapter index.ts
- * uses for Tangent's real maps.
+ * uses for OSINT Copilot's real maps.
  */
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
