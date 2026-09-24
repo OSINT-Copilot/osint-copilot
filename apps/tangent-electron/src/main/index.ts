@@ -314,10 +314,13 @@ OSINT Copilot ${app.getVersion()} Launched With Arguments:`, process.argv)
 
 let shouldInit = true
 
-// Before anything takes the single-instance lock: on a Wayland session with no backend chosen,
-// this process re-execs itself with --ozone-platform=x11 and exits. See ./ozone.ts for why it
-// cannot be done with a command-line switch or an environment variable from in here.
-const ozoneRelaunch = x11RelaunchArgs(process.platform, process.env, process.argv)
+// Only for a build that is run from source. A packaged Linux build goes through the launcher
+// from build/after-pack.js, which picks the backend before Chromium starts; re-execing here as
+// well would detach a child whose output goes nowhere, which is how a failure to start turned
+// into a silent exit with no window and no message.
+const ozoneRelaunch = app.isPackaged
+	? null
+	: x11RelaunchArgs(process.platform, process.env, process.argv)
 if (ozoneRelaunch) {
 	Logger.get('ozone').info('Relaunching with the X11 backend: Electron cannot build its UI on this Wayland session')
 	app.relaunch({ execPath: relaunchExecPath(process.env, process.execPath), args: ozoneRelaunch })

@@ -35,6 +35,21 @@ function launcher(name, version) {
 set -eu
 here=$(dirname "$(readlink -f "$0")")
 
+# Electron's Wayland backend segfaults as it opens a window on some systems, and the platform is
+# fixed before the main script runs, so the application used to re-exec itself with the switch.
+# That re-exec detaches the child and discards its output: when anything went wrong the user got
+# their prompt back with no window and no message. Deciding here, before Chromium starts, keeps
+# one process attached to the terminal. OC_OZONE=native leaves the session's own backend alone.
+ozone=""
+case " $* " in
+	*" --ozone-platform"*) ;;
+	*)
+		if [ "\${OC_OZONE:-}" != "native" ] && { [ "\${XDG_SESSION_TYPE:-}" = "wayland" ] || [ -n "\${WAYLAND_DISPLAY:-}" ]; }; then
+			ozone="--ozone-platform=x11"
+		fi
+		;;
+esac
+
 # Test seam: the suite points these at files it controls.
 apparmor_switch="\${OC_USERNS_SWITCH:-/proc/sys/kernel/apparmor_restrict_unprivileged_userns}"
 legacy_switch="\${OC_USERNS_LEGACY_SWITCH:-/proc/sys/kernel/unprivileged_userns_clone}"
@@ -48,7 +63,7 @@ namespace_sandbox_denied() {
 # An installed copy is fine: the .deb's AppArmor profile grants the namespace, and its helper can
 # be root-owned. Only an AppImage has to work around this.
 if [ -z "\${APPIMAGE:-}" ] || ! namespace_sandbox_denied; then
-	exec "\$here/${name}.bin" "\$@"
+	exec "\$here/${name}.bin" \$ozone "\$@"
 fi
 
 # No spaces in this path, ever. Chromium execs the sandbox helper by splitting its path on
@@ -96,12 +111,12 @@ helper_ready() {
 }
 
 if helper_ready; then
-	exec "\$app/${name}.bin" "\$@"
+	exec "\$app/${name}.bin" \$ozone "\$@"
 fi
 
 if [ "\${OC_SANDBOX:-}" = "off" ]; then
 	echo "OSINT Copilot: starting without the Chromium sandbox (OC_SANDBOX=off)." >&2
-	exec "\$app/${name}.bin" --no-sandbox "\$@"
+	exec "\$app/${name}.bin" --no-sandbox \$ozone "\$@"
 fi
 
 cat >&2 <<MESSAGE
