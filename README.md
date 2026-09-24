@@ -61,14 +61,13 @@ Git submodules.
 
 Builds are at
 [osint-copilot-releases](https://github.com/OSINT-Copilot/osint-copilot-releases/releases/latest):
-an **AppImage** (portable, x64 and arm64) and a **.deb**. Windows installers exist for 0.14.0;
-0.14.1 and 0.14.4 are Linux-only fixes, so Windows users should take 0.14.0. There is no macOS
-build.
+an **AppImage** (portable, x64 and arm64) and a **.deb**. Linux only. There is no Windows or macOS build: the Windows installers that existed for
+0.14.0 were removed along with the older releases.
 
 ### The .deb
 
 ```bash
-sudo apt install ./osint-copilot_0.14.4_amd64.deb
+sudo apt install ./osint-copilot_0.14.5_amd64.deb
 ```
 
 Then start it from the applications menu. The package installs an AppArmor profile granting the
@@ -82,8 +81,8 @@ neither of the workarounds the AppImage performs. From a terminal:
 ### The AppImage
 
 ```bash
-chmod +x osint-copilot-0.14.4-x86_64.AppImage
-./osint-copilot-0.14.4-x86_64.AppImage
+chmod +x osint-copilot-0.14.5-x86_64.AppImage
+./osint-copilot-0.14.5-x86_64.AppImage
 ```
 
 On most systems that is all. On **Ubuntu 24.04 and later** the first start unpacks the
@@ -99,13 +98,14 @@ sandbox and needs nothing further.
 
 Why not just run without the sandbox: this application renders captured web pages, enricher
 responses and model output, so the renderer sandbox is doing real work. If you would rather have
-it anyway, `OC_SANDBOX=off ./osint-copilot-0.14.4-x86_64.AppImage` starts without it.
+it anyway, `OC_SANDBOX=off ./osint-copilot-0.14.5-x86_64.AppImage` starts without it.
 
-The app also restarts itself once with the X11 backend on a Wayland session, because Electron's
-Wayland backend crashes as it opens a window on some systems; `OC_OZONE=native` opts out.
+On a Wayland session the launcher also selects the X11 backend before Chromium starts, because
+Electron's Wayland backend crashes as it opens a window on some systems; `OC_OZONE=native` opts
+out.
 
 If the AppImage will not mount at all — `Cannot mount AppImage, please check your FUSE setup` —
-run `APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.4-x86_64.AppImage`, or install `libfuse2`.
+run `APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.5-x86_64.AppImage`, or install `libfuse2`.
 
 On first run the app asks for a licence key, and takes either a subscription key or an offline
 `OSINT-...` key.

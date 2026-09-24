@@ -7,27 +7,27 @@ Downloads live at
 # Running the AppImage
 
 ```bash
-chmod +x osint-copilot-0.14.4-x86_64.AppImage
-./osint-copilot-0.14.4-x86_64.AppImage
+chmod +x osint-copilot-0.14.5-x86_64.AppImage
+./osint-copilot-0.14.5-x86_64.AppImage
 ```
 
-That is the whole thing. From 0.14.4 the application deals with the display backend and the
+That is the whole thing. From 0.14.5 the application deals with the display backend and the
 Chromium sandbox by itself; the rest of this page explains what it is doing and what to try if
 something still goes wrong.
 
-## The display backend, and why the app restarts once
+## The display backend
 
 Electron's Wayland backend segfaults the instant it creates a renderer on some systems --
 including kernel 7.x with Electron 42. There is no error; the window simply never appears.
 
-Up to 0.14.0 the answer was to pass `--ozone-platform=x11` by hand. From **0.14.1** the app
-does it for you: on a Wayland session with no backend chosen it restarts itself once with the
-X11 backend, which is why you may see it start twice in a process list. X11 applications run
-fine under Wayland through XWayland.
+Up to 0.14.0 the answer was to pass `--ozone-platform=x11` by hand. From **0.14.5** the
+launcher inside the package adds it for you, before Chromium starts, on a Wayland session where
+no backend was chosen. X11 applications run fine under Wayland through XWayland.
 
-Nothing in the app can do this without the restart. The platform is fixed before the main
+It has to happen there rather than in the application: the platform is fixed before the main
 script runs, so `app.commandLine.appendSwitch` and `ELECTRON_OZONE_PLATFORM_HINT` are both too
-late -- measured, and both still crash.
+late -- measured, and both still crash. 0.14.1 to 0.14.4 re-executed the application instead,
+which detached the new process and hid its output; that is gone.
 
 You are still in charge:
 
@@ -41,7 +41,7 @@ AppImages mount themselves with FUSE. Where FUSE 2 is missing -- common on newer
 distributions, which ship FUSE 3 -- unpack and run instead:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.4-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.5-x86_64.AppImage
 ```
 
 The equivalent `--appimage-extract-and-run` flag also works. Neither appears in
@@ -52,12 +52,19 @@ no system changes. The alternative is installing `libfuse2` from your distributi
 
 ## "The SUID sandbox helper binary was found, but is not configured correctly"
 
-**Fixed in 0.14.4** -- the application now unpacks itself once into
-`~/.cache/OSINT Copilot/<version>` and runs from there, so this should not appear any more. If you
-are on an older build, or you have set `OC_NO_SELF_INSTALL=1`, this is the message and these are
-the ways round it.
+**Handled in 0.14.5.** Chromium's message is replaced by one that names the single command to
+run. The application unpacks itself into `~/.cache/osint-copilot/app`, where a root-owned helper
+can exist, and asks you to make it root-owned:
 
-In full:
+```bash
+sudo chown root:root ~/.cache/osint-copilot/app/chrome-sandbox && sudo chmod 4755 ~/.cache/osint-copilot/app/chrome-sandbox
+```
+
+Run it once; every later start and every upgrade is fine. `OC_SANDBOX=off` starts without the
+sandbox instead. The rest of this section explains why the command is needed, and the other ways
+round it.
+
+Chromium's own message, for reference:
 
 ```
 FATAL:sandbox/linux/suid/client/setuid_sandbox_host.cc:166] The SUID sandbox helper
@@ -97,7 +104,7 @@ Nothing changes system-wide, and the unpacked copy sits on your own filesystem, 
 setuid bit is honoured:
 
 ```bash
-./osint-copilot-0.14.4-x86_64.AppImage --appimage-extract
+./osint-copilot-0.14.5-x86_64.AppImage --appimage-extract
 sudo chown root:root squashfs-root/chrome-sandbox
 sudo chmod 4755 squashfs-root/chrome-sandbox
 ./squashfs-root/osint-copilot
@@ -129,7 +136,7 @@ ELECTRON_RUN_AS_NODE` and try again.
 The route that needs no setup: it handles the sandbox and the X11 flag for you.
 
 ```bash
-sudo apt install ./osint-copilot_0.14.4_amd64.deb
+sudo apt install ./osint-copilot_0.14.5_amd64.deb
 ```
 
 It installs to `/opt/OSINT Copilot`, installs an AppArmor profile so the Chromium sandbox
