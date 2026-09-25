@@ -1,4 +1,4 @@
-import { BrowserWindow, Menu, type MenuItemConstructorOptions, shell } from 'electron'
+import { BrowserWindow, Menu, type MenuItemConstructorOptions, screen, shell } from 'electron'
 import path from 'path'
 import os from 'os'
 import { mode } from './environment'
@@ -12,6 +12,7 @@ import { cleanMenuTemplate } from '../common/menus'
 import { getSettings } from './settings'
 import { addShutDownTask } from './shutdown'
 import { wait } from '@such-n-such/core'
+import { defaultWindowBounds } from './window-size'
 
 let defaultLanguages = null
 
@@ -24,9 +25,12 @@ function getTitleBarStyle() {
 export function createWindow(assignedWorkspace?: string) {
 	// Create the browser window.
 
+	// A fixed size opened past the edge of any smaller screen, and with the title bar at y=0
+	// the window could not be dragged back. See window-size.ts.
+	const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+
 	let windowOptions: Electron.BrowserWindowConstructorOptions = {
-		width: 2000,
-		height: 1200,
+		...defaultWindowBounds(display.workArea),
 		minWidth: 100,
 		minHeight: 100,
 		webPreferences: {
