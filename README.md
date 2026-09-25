@@ -60,29 +60,43 @@ Git submodules.
 ## Running the released app
 
 Builds are at
-[osint-copilot-releases](https://github.com/OSINT-Copilot/osint-copilot-releases/releases/latest):
-an **AppImage** (portable, x64 and arm64) and a **.deb**. Linux only. There is no Windows or macOS build: the Windows installers that existed for
-0.14.0 were removed along with the older releases.
+[osint-copilot-releases](https://github.com/OSINT-Copilot/osint-copilot-releases/releases/latest).
+Linux gets an **AppImage** (portable, x64 and arm64), a **.deb** and an **.rpm**; Windows gets an
+**installer** and a **portable .exe**. There is no macOS build — it cannot be produced from the
+Linux machine these are built on.
 
-### The .deb
+The Windows binaries are **not code-signed yet**, so SmartScreen warns the first time; see
+[Windows](#windows) below.
+
+### The .deb — Debian, Ubuntu, Mint
 
 ```bash
-sudo apt install ./osint-copilot_0.14.5_amd64.deb
+sudo apt install ./osint-copilot_0.14.7_amd64.deb
 ```
 
-Then start it from the applications menu. The package installs an AppArmor profile granting the
-user namespace its Chromium sandbox needs, and its menu entry carries the X11 switch, so it needs
-neither of the workarounds the AppImage performs. From a terminal:
+### The .rpm — Fedora, RHEL, openSUSE
+
+```bash
+sudo dnf install ./osint-copilot-0.14.7.x86_64.rpm
+```
+
+Either way, start it from the applications menu, or from a terminal:
 
 ```bash
 "/opt/OSINT Copilot/osint-copilot"
 ```
 
+Either package sets the Chromium sandbox up for you and carries the X11 switch in its menu
+entry, so neither needs the workarounds the AppImage performs. On a distribution running
+AppArmor — Ubuntu 24.04 and later — installing also loads a profile granting the user namespace
+the sandbox needs; where AppArmor is not in use, as on Fedora, that step is skipped and nothing
+is needed in its place.
+
 ### The AppImage
 
 ```bash
-chmod +x osint-copilot-0.14.5-x86_64.AppImage
-./osint-copilot-0.14.5-x86_64.AppImage
+chmod +x osint-copilot-0.14.7-x86_64.AppImage
+./osint-copilot-0.14.7-x86_64.AppImage
 ```
 
 On most systems that is all. On **Ubuntu 24.04 and later** the first start unpacks the
@@ -98,14 +112,26 @@ sandbox and needs nothing further.
 
 Why not just run without the sandbox: this application renders captured web pages, enricher
 responses and model output, so the renderer sandbox is doing real work. If you would rather have
-it anyway, `OC_SANDBOX=off ./osint-copilot-0.14.5-x86_64.AppImage` starts without it.
+it anyway, `OC_SANDBOX=off ./osint-copilot-0.14.7-x86_64.AppImage` starts without it.
 
 On a Wayland session the launcher also selects the X11 backend before Chromium starts, because
 Electron's Wayland backend crashes as it opens a window on some systems; `OC_OZONE=native` opts
 out.
 
 If the AppImage will not mount at all — `Cannot mount AppImage, please check your FUSE setup` —
-run `APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.5-x86_64.AppImage`, or install `libfuse2`.
+run `APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.7-x86_64.AppImage`, or install `libfuse2`.
+
+### Windows
+
+`OSINT Copilot-Setup-0.14.7.exe` installs per-user, into your own profile, so it needs no
+administrator rights. `OSINT Copilot-Portable-0.14.7.exe` runs straight from the file and
+installs nothing. Both carry x64 and arm64.
+
+Neither is code-signed yet, so **SmartScreen shows a blue "Windows protected your PC" box** on
+the first run. Choose **More info**, then **Run anyway**. That warning is about the missing
+signature, not about anything the installer does, and it stops once a certificate is in place.
+
+Windows 10 or later. Nothing else needs installing.
 
 On first run the app asks for a licence key, and takes either a subscription key or an offline
 `OSINT-...` key.

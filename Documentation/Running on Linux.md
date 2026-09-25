@@ -1,5 +1,5 @@
-OSINT Copilot ships for Linux as an **AppImage** (portable, no install) and a **.deb**. Both
-are built from the same code; pick whichever suits you.
+OSINT Copilot ships for Linux as an **AppImage** (portable, no install), a **.deb** and an
+**.rpm**. All three are built from the same code; pick whichever suits you.
 
 Downloads live at
 [osint-copilot-releases](https://github.com/OSINT-Copilot/osint-copilot-releases/releases).
@@ -7,8 +7,8 @@ Downloads live at
 # Running the AppImage
 
 ```bash
-chmod +x osint-copilot-0.14.5-x86_64.AppImage
-./osint-copilot-0.14.5-x86_64.AppImage
+chmod +x osint-copilot-0.14.7-x86_64.AppImage
+./osint-copilot-0.14.7-x86_64.AppImage
 ```
 
 That is the whole thing. From 0.14.5 the application deals with the display backend and the
@@ -41,7 +41,7 @@ AppImages mount themselves with FUSE. Where FUSE 2 is missing -- common on newer
 distributions, which ship FUSE 3 -- unpack and run instead:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.5-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.7-x86_64.AppImage
 ```
 
 The equivalent `--appimage-extract-and-run` flag also works. Neither appears in
@@ -104,7 +104,7 @@ Nothing changes system-wide, and the unpacked copy sits on your own filesystem, 
 setuid bit is honoured:
 
 ```bash
-./osint-copilot-0.14.5-x86_64.AppImage --appimage-extract
+./osint-copilot-0.14.7-x86_64.AppImage --appimage-extract
 sudo chown root:root squashfs-root/chrome-sandbox
 sudo chmod 4755 squashfs-root/chrome-sandbox
 ./squashfs-root/osint-copilot
@@ -131,21 +131,31 @@ If it prints anything, the Electron binary is running as plain Node: no window o
 `electron --version` prints a Node version, and nothing explains why. `unset
 ELECTRON_RUN_AS_NODE` and try again.
 
-# Running the .deb
+# Running the .deb or the .rpm
 
-The route that needs no setup: it handles the sandbox and the X11 flag for you.
+The route that needs no setup: either package handles the sandbox and the X11 flag for you.
 
 ```bash
-sudo apt install ./osint-copilot_0.14.5_amd64.deb
+sudo apt install ./osint-copilot_0.14.7_amd64.deb      # Debian, Ubuntu, Mint
+sudo dnf install ./osint-copilot-0.14.7.x86_64.rpm     # Fedora, RHEL, openSUSE
 ```
 
-It installs to `/opt/OSINT Copilot`, installs an AppArmor profile so the Chromium sandbox
-works without relaxing anything system-wide, and adds a menu entry that carries the X11 flag
-already, so it does not even need the restart. To run it from a terminal:
+Both install to `/opt/OSINT Copilot` and add a menu entry that carries the X11 flag already,
+so neither needs the restart. To run one from a terminal:
 
 ```bash
 "/opt/OSINT Copilot/osint-copilot"
 ```
+
+The installer also decides how the Chromium sandbox should work on your machine: where user
+namespaces are available it leaves the helper alone, and where they are not it gives the helper
+its setuid bit. On a system running AppArmor — Ubuntu 24.04 and later — it additionally loads a
+profile granting the app the user namespace, so nothing has to be relaxed system-wide. On a
+system not running AppArmor, such as Fedora, that step is skipped because nothing there blocks
+the namespace in the first place.
+
+If dnf refuses the package over a missing signature, these builds are not signed yet; `dnf
+install --nogpgcheck` is the flag that says so out loud.
 
 # Building your own
 
