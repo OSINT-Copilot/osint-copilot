@@ -212,7 +212,7 @@ api.license.status().then(status => {
 	applyLicense({
 		valid: false,
 		reason: 'missing',
-		message: 'The licence could not be checked. Please restart Tangent.'
+		message: 'The licence could not be checked. Please restart OSINT Copilot.'
 	})
 })
 

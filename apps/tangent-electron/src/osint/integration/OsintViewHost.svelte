@@ -119,7 +119,7 @@ onDestroy(() => {
 		<div class="osint-view-gated">
 			<p><strong>{descriptor?.label}</strong> is turned off.</p>
 			<p>Graph features are disabled in this vault's settings, so this view has nothing to show.</p>
-			<button on:click={() => openOsintSettings()}>Open Tangent settings</button>
+			<button on:click={() => openOsintSettings()}>Open OSINT Copilot settings</button>
 		</div>
 	{/if}
 </div>

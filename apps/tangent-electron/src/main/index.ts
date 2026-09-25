@@ -17,6 +17,7 @@ import { hideBin } from 'yargs/helpers'
 
 import { mode } from './environment'
 import { relaunchExecPath, x11RelaunchArgs } from './ozone'
+import { gpuSandboxWouldFail } from './gpu'
 import {
 	getWorkspace,
 	getWindowHandle,
@@ -310,6 +311,14 @@ OSINT Copilot ${app.getVersion()} Launched With Arguments:`, process.argv)
 	})
 
 	isInitialized = true
+}
+
+// A machine with no DRM render node cannot start the GPU process under its sandbox, and
+// Chromium aborts the whole application rather than carry on. Unlike the display backend, this
+// switch is read when the GPU process launches, which is long after this line runs.
+if (gpuSandboxWouldFail(process.platform)) {
+	Logger.get('gpu').info('No DRM render node; starting the GPU process without its sandbox')
+	app.commandLine.appendSwitch('disable-gpu-sandbox')
 }
 
 let shouldInit = true

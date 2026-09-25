@@ -43,7 +43,7 @@ async function activate() {
 	}
 	catch (e) {
 		console.error('Licence activation failed', e)
-		message = 'The licence could not be checked. Please restart Tangent.'
+		message = 'The licence could not be checked. Please restart OSINT Copilot.'
 		isRefusal = true
 	}
 	finally {
