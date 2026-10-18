@@ -180,6 +180,12 @@ export interface SubscriptionDetails {
 	features: Entitlements
 	/** ISO timestamp of the last answer from the server. Drives the grace period. */
 	checkedAt: string
+	/**
+	 * Why the dashboard last refused this key, when its last answer was a refusal; absent
+	 * when it was a yes. Without it a refusal was cached like any answer, with a fresh
+	 * `checkedAt`, and read back as a live licence on every launch for the next 20 hours.
+	 */
+	refusal?: LicenseFailure
 }
 
 /**

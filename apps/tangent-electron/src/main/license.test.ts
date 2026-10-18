@@ -144,3 +144,53 @@ describe('onLicenseChanged', () => {
 		expect((await license.licenseStatus()).valid).toBe(false)
 	})
 })
+
+describe('a refusal on a recent licence', () => {
+	beforeEach(() => {
+		delete process.env.OSINT_SKIP_LICENSE
+		state.userData = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-license-'))
+		license.clearLicense()
+		state.requests = 0
+		state.answers = []
+		// An hour old: fresh enough that a normal launch asks nothing.
+		fs.writeFileSync(path.join(state.userData, 'license.json'), JSON.stringify({
+			key: KEY,
+			kind: 'subscription',
+			subscription: subscription(new Date(Date.now() - 60 * 60 * 1000).toISOString()),
+		}))
+	})
+
+	afterEach(() => {
+		fs.rmSync(state.userData, { recursive: true, force: true })
+	})
+
+	it('stays refused on the next launch when the subscription was cancelled', async () => {
+		const lapsed = { ...validAnswer().subscription!, refusal: 'subscription-inactive' as const }
+		state.answers = [{ ...fail('subscription-inactive'), source: 'subscription', subscription: lapsed }]
+
+		expect((await license.licenseStatus(true)).valid).toBe(false)  // "Check for changes"
+
+		// The next launch. This used to open the app: the refusal was cached with a fresh
+		// timestamp and read back as a live licence for the next twenty hours.
+		const next = await license.licenseStatus()
+		expect(next.valid).toBe(false)
+		expect(next.reason).toBe('subscription-inactive')
+	})
+
+	it('stays refused on the next launch when the key was deleted', async () => {
+		state.answers = [fail('unknown-key')]
+
+		expect((await license.licenseStatus(true)).valid).toBe(false)
+
+		const next = await license.licenseStatus()
+		expect(next.valid).toBe(false)
+		expect(next.reason).toBe('unknown-key')
+	})
+
+	it('lets the user back in as soon as the dashboard says yes again', async () => {
+		state.answers = [fail('unknown-key'), validAnswer()]
+
+		expect((await license.licenseStatus(true)).valid).toBe(false)
+		expect((await license.licenseStatus()).valid).toBe(true)
+	})
+})

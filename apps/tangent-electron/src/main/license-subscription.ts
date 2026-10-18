@@ -134,12 +134,15 @@ export function statusFromResponse(body: unknown): LicenseStatus {
 	}
 
 	if (license.active !== true) {
+		const reason = reasonFrom(license.reason)
 		return {
-			...fail(reasonFrom(license.reason)),
+			...fail(reason),
 			source: 'subscription',
 			// Carried even though invalid: the settings page shows which plan lapsed, and
 			// the cache keeps the answer so the app does not forget the account on a retry.
-			subscription: details,
+			// A reason this build does not know reads as server-error, "could not ask",
+			// which is not a refusal and must not be remembered as one.
+			subscription: reason === 'server-error' ? details : { ...details, refusal: reason },
 		}
 	}
 

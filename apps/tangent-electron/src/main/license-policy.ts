@@ -46,6 +46,12 @@ export function cachePolicy(cached: SubscriptionDetails | null, now = new Date()
 		// Nothing to fall back on: a key we have never had an answer about is not a licence.
 		return { check: true, required: true, reasonIfUnreachable: 'server-error' }
 	}
+	if (cached.refusal) {
+		// Locked out already, so asking costs nothing, and a customer who has just renewed
+		// gets in on the next launch. Unreachable, the refusal stands: no connection is not
+		// a way back in.
+		return { check: true, required: false, reasonIfUnreachable: cached.refusal }
+	}
 	if (graceExhausted(cached.checkedAt, now)) {
 		return { check: true, required: true, reasonIfUnreachable: 'offline-too-long' }
 	}
@@ -70,6 +76,9 @@ export function statusFromCache(
 	now = new Date(),
 	stale = false,
 ): LicenseStatus {
+	if (cached.refusal) {
+		return { ...fail(cached.refusal), source: 'subscription', subscription: cached }
+	}
 	if (cached.expires && new Date(cached.expires).getTime() <= now.getTime()) {
 		return { ...fail('expired'), source: 'subscription', subscription: cached }
 	}

@@ -138,6 +138,24 @@ describe('reading what the dashboard said', () => {
 		expect(status.subscription?.planDisplayName).toBe('Premium')
 	})
 
+	it('records the refusal in what it caches, so a later launch cannot read it as a yes', () => {
+		const status = statusFromResponse({
+			ok: true,
+			license: { ...ACTIVE.license, active: false, reason: 'subscription-inactive' },
+		})
+		expect(status.subscription?.refusal).toBe('subscription-inactive')
+		expect(statusFromResponse(ACTIVE).subscription?.refusal).toBeUndefined()
+	})
+
+	it('records no refusal for a reason it does not know, which means "could not ask"', () => {
+		const status = statusFromResponse({
+			ok: true,
+			license: { ...ACTIVE.license, active: false, reason: 'from-a-newer-server' },
+		})
+		expect(status.reason).toBe('server-error')
+		expect(status.subscription?.refusal).toBeUndefined()
+	})
+
 	it('reports a switched-off key as revoked', () => {
 		const status = statusFromResponse({
 			ok: true,

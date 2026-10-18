@@ -65,6 +65,15 @@ describe('when to ask the server again', () => {
 	})
 })
 
+describe('when the last answer was a refusal', () => {
+	it('asks again on every launch, so a renewal lets the user straight back in', () => {
+		const policy = cachePolicy(cached({ refusal: 'revoked', checkedAt: hoursAgo(1) }), NOW)
+		expect(policy.check).toBe(true)
+		// Offline, the refusal simply stands; no connection must not mean a way back in.
+		expect(policy.required).toBe(false)
+	})
+})
+
 describe('reading a cached answer', () => {
 	it('honours a live subscription without a request', () => {
 		const status = statusFromCache(cached(), NOW)
@@ -84,6 +93,14 @@ describe('reading a cached answer', () => {
 		expect(status.valid).toBe(false)
 		expect(status.reason).toBe('expired')
 		// Still names the plan, so settings can say what lapsed.
+		expect(status.subscription?.planDisplayName).toBe('Premium')
+	})
+
+	it('stays refused when the last answer was a refusal, however recent', () => {
+		// The answer is an hour old, so nothing is asked; it was a no, and must stay one.
+		const status = statusFromCache(cached({ refusal: 'subscription-inactive' }), NOW)
+		expect(status.valid).toBe(false)
+		expect(status.reason).toBe('subscription-inactive')
 		expect(status.subscription?.planDisplayName).toBe('Premium')
 	})
 

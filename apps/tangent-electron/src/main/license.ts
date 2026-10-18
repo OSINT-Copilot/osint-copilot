@@ -173,7 +173,13 @@ function bypassStatus(): LicenseStatus {
  */
 function remember(stored: StoredLicense, status: LicenseStatus): LicenseStatus {
 	const previous = cached?.status
-	const next: StoredLicense = { ...stored, subscription: status.subscription ?? stored.subscription }
+	let subscription = status.subscription ?? stored.subscription
+	if (!status.valid && status.reason && status.reason !== 'server-error' && subscription && !subscription.refusal) {
+		// A 401 comes with no details. Kept as they were, the last *good* details read back
+		// as a live licence on the next launch; stamp them with the refusal instead.
+		subscription = { ...subscription, refusal: status.reason }
+	}
+	const next: StoredLicense = { ...stored, subscription }
 	writeStored(next)
 	cached = { stored: next, status }
 	// Only on a change of verdict. A listener asks licenseStatus() again, and a refusal
