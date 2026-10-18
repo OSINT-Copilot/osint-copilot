@@ -87,14 +87,49 @@ async function buildKatex() {
 	}
 }
 
-async function buildDocumentation() {
-	const buildPath = path.resolve(path.join(__dirname, '../__build', 'documentation.zip'))
+/** The newest mtime anywhere under `dir`, or 0 if it cannot be read. */
+async function newestMTime(dir) {
+	let newest = 0
+	let entries
 	try {
-		await fs.promises.stat(buildPath)
-		console.log('Documentation already built')
+		entries = await fs.promises.readdir(dir, { withFileTypes: true })
 	}
 	catch (e) {
-		const docPath = path.resolve(path.join(__dirname, '../../../Documentation'))
+		return 0
+	}
+	for (const entry of entries) {
+		const full = path.join(dir, entry.name)
+		if (entry.isDirectory()) {
+			newest = Math.max(newest, await newestMTime(full))
+		}
+		else {
+			try {
+				newest = Math.max(newest, (await fs.promises.stat(full)).mtimeMs)
+			}
+			catch (e) { /* vanished mid-walk; it cannot be newer than what we have */ }
+		}
+	}
+	return newest
+}
+
+async function buildDocumentation() {
+	const buildPath = path.resolve(path.join(__dirname, '../__build', 'documentation.zip'))
+	const docPath = path.resolve(path.join(__dirname, '../../../Documentation'))
+
+	// This used to skip whenever the archive existed at all, so it was built once and then never
+	// again: releases 0.14.1 to 0.14.7 shipped documentation from before the changelog cleanup,
+	// including all 211 of the upstream project's release notes. Comparing timestamps keeps the
+	// fast path for an unchanged tree and still notices an edit.
+	let built = null
+	try {
+		built = (await fs.promises.stat(buildPath)).mtimeMs
+	}
+	catch (e) { /* not built yet */ }
+
+	if (built !== null && built >= await newestMTime(docPath)) {
+		console.log('Documentation already built')
+	}
+	else {
 		
 		// Copy to a new directory to do fixup
 		const docClonePath = path.resolve(path.join(__dirname, '../__build', 'Documentation'))

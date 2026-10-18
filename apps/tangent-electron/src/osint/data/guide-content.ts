@@ -46,7 +46,7 @@ An AI assistant works **alongside** those files rather than owning them. It read
 notes, proposes changes, and every change it proposes is shown to you as a diff before
 anything is written.
 
-Your vault lives wherever you chose when you opened it. Tangent keeps its own
+Your vault lives wherever you chose when you opened it. OSINT Copilot keeps its own
 material under \`${OSINT_COPILOT_VAULT_ROOT}/\`.
 `.trim(),
     },
@@ -82,7 +82,7 @@ Entities, Timeline and Locations are hidden when graph features are turned off i
         body: `
 1. **Connect an assistant.** Open **Settings → OSINT Copilot** and choose a runtime —
    Claude Code, Codex CLI or Hermes. Each one is a command-line tool you install
-   separately; Tangent finds it on your \`PATH\`, or you can give it an explicit
+   separately; OSINT Copilot finds it on your \`PATH\`, or you can give it an explicit
    path. Without one, every view still works, but the Chat view has nothing to answer it.
 2. **Open Chat and ask something.** "What is in this vault?" is a fine first question.
    Answers cite the notes they came from, and the citations are clickable.
