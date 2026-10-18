@@ -123,8 +123,8 @@ run `APPIMAGE_EXTRACT_AND_RUN=1 ./osint-copilot-0.14.7-x86_64.AppImage`, or inst
 
 ### Windows
 
-`OSINT Copilot-Setup-0.14.7.exe` installs per-user, into your own profile, so it needs no
-administrator rights. `OSINT Copilot-Portable-0.14.7.exe` runs straight from the file and
+`OSINT-Copilot-Setup-0.14.7.exe` installs per-user, into your own profile, so it needs no
+administrator rights. `OSINT-Copilot-Portable-0.14.7.exe` runs straight from the file and
 installs nothing. Both carry x64 and arm64.
 
 Neither is code-signed yet, so **SmartScreen shows a blue "Windows protected your PC" box** on
