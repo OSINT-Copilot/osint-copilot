@@ -43,6 +43,7 @@ import { getRegistry } from './grammarLoader'
 import { INITIAL } from 'vscode-textmate'
 import { initializeDebugging } from './debugging'
 import { addShutDownTask, isReadyToShutDown, shutDown } from './shutdown'
+import { userArguments } from './cli-args'
 
 var isInitialized = false
 
@@ -102,39 +103,7 @@ OSINT Copilot ${app.getVersion()} Launched With Arguments:`, process.argv)
 			argv = argv.slice(2)
 		}
 		else {
-
-			let newArgs: string[] = []
-
-			let positionalArgCount = 0
-
-			function skip(arg: string) {
-				switch (arg) {
-					// Attempt to strip out chromium & electron options
-					case '--allow-file-access-from-files':
-					case '--original-process-start-time':
-						return 1
-					// Consume the next arg as well
-					case '--require':
-						return 2
-					default:
-						return 0
-				}
-			}
-
-			for (let i = 0; i < argv.length; i++) {
-				const skipCount = skip(argv[i])
-				if (skipCount) {
-					i += skipCount - 1
-				}
-				else if (positionalArgCount < 2) {
-					positionalArgCount++
-				}
-				else {
-					newArgs.push(argv[i])
-				}
-			}
-
-			argv = newArgs
+			argv = userArguments(argv, Boolean(process.defaultApp))
 		}
 
 		Logger.log('processed args', argv)
