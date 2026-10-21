@@ -1,6 +1,10 @@
 /**
- * Geocoding Service - Converts addresses to latitude/longitude coordinates
- * Uses Nominatim (OpenStreetMap) API - free, no API key required
+ * Geocoding Service - Converts addresses to latitude/longitude coordinates.
+ *
+ * It speaks the Nominatim API, but deliberately has no public service configured by
+ * default.  Desktop applications collectively share the public Nominatim capacity and
+ * must be switchable without an application release.  Investigators opt in per vault by
+ * providing a Nominatim-compatible service whose terms permit their use.
  */
 
 import { requestUrl, type RequestUrlResponse } from 'obsidian';
@@ -111,22 +115,64 @@ export function extractAddressComponents(address?: NominatimResult['address']): 
  */
 export type RetryStatusCallback = (attempt: number, maxAttempts: number, delaySeconds: number) => void;
 
+let configuredBaseUrl = '';
+
+/**
+ * Validate and normalize a Nominatim-compatible service root.
+ * Remote services must use HTTPS; loopback HTTP remains available for a local instance.
+ */
+export function normalizeGeocodingBaseUrl(raw: string): string | null {
+    const value = raw.trim().replace(/\/+$/, '');
+    if (!value) return '';
+    try {
+        const parsed = new URL(value);
+        const loopback = parsed.hostname === 'localhost'
+            || parsed.hostname === '127.0.0.1'
+            || parsed.hostname === '[::1]'
+            || parsed.hostname === '::1';
+        if (
+            parsed.username
+            || parsed.password
+            || parsed.search
+            || parsed.hash
+            || (parsed.protocol !== 'https:' && !(loopback && parsed.protocol === 'http:'))
+        ) {
+            return null;
+        }
+        return parsed.toString().replace(/\/$/, '');
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Whether a geocoding service is configured. Automatic geocoding (on entity creation) checks
+ * this first and quietly does nothing when it is false: with no service there is nothing to
+ * ask, and a notice on every new Location would be noise rather than help.
+ */
+export function isGeocodingConfigured(): boolean {
+    return Boolean(normalizeGeocodingBaseUrl(configuredBaseUrl));
+}
+
+/** Change the service used by all instances that were not given an explicit test URL. */
+export function configureGeocodingBaseUrl(raw: string): boolean {
+    const normalized = normalizeGeocodingBaseUrl(raw);
+    if (normalized === null) return false;
+    configuredBaseUrl = normalized;
+    return true;
+}
+
 /**
  * Geocoding service using Nominatim (OpenStreetMap)
  *
- * Usage Policy:
- * - Maximum 1 request per second
- * - Must include valid User-Agent
- * - Free for reasonable usage
+ * The configured operator's terms apply. Requests are cached and rate-limited to at most
+ * one per second, which is compatible with a standard Nominatim deployment but does not
+ * replace checking that operator's policy.
  *
  * @see https://nominatim.org/release-docs/latest/api/Search/
  */
 export class GeocodingService {
-    private static readonly NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
-    private static readonly NOMINATIM_REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse';
-    // Nominatim's policy requires a User-Agent that identifies the application. This
-    // still named the Obsidian plugin, which is not what is making the request.
-    private static readonly USER_AGENT = 'OSINTCopilot/3.0 (https://github.com/Probe-Point-Analytics-LLC/osint-copilot)';
+    private static readonly USER_AGENT = 'OSINTCopilot (https://github.com/OSINT-Copilot/osint-copilot)';
 
     // Rate limiting: the timestamp of the next free slot, reserved on claim.
     private lastRequestTime: number = 0;
@@ -143,6 +189,20 @@ export class GeocodingService {
     // Retry configuration
     private static readonly MAX_RETRIES = 5;
     private static readonly INITIAL_RETRY_DELAY = 1000; // 1 second
+
+    constructor(private readonly explicitBaseUrl?: string) {}
+
+    private serviceUrl(path: 'search' | 'reverse'): string {
+        const raw = this.explicitBaseUrl ?? configuredBaseUrl;
+        const base = normalizeGeocodingBaseUrl(raw);
+        if (base === null || !base) {
+            throw new GeocodingError(
+                GeocodingErrorType.InvalidInput,
+                'Configure a Nominatim-compatible geocoding service in Settings > OSINT Copilot > Map first.'
+            );
+        }
+        return `${base}/${path}`;
+    }
 
     /**
      * Geocode an address with automatic retry on network errors and graceful fallback.
@@ -441,7 +501,7 @@ export class GeocodingService {
         console.debug('[GeocodingService] Geocoding address:', query);
 
         try {
-            const url = `${GeocodingService.NOMINATIM_URL}?` + new URLSearchParams({
+            const url = `${this.serviceUrl('search')}?` + new URLSearchParams({
                 q: query,
                 format: 'json',
                 limit: '1',
@@ -543,7 +603,7 @@ export class GeocodingService {
         console.debug('[GeocodingService] Reverse geocoding:', latitude, longitude);
 
         try {
-            const url = `${GeocodingService.NOMINATIM_REVERSE_URL}?` + new URLSearchParams({
+            const url = `${this.serviceUrl('reverse')}?` + new URLSearchParams({
                 lat: String(latitude),
                 lon: String(longitude),
                 format: 'json',

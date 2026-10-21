@@ -94,6 +94,8 @@ export interface VaultAISettings {
 	mapCustomTileAttribution: string;
 	/** Display copy of the archive main remembers in userData; main is authoritative. */
 	mapOfflineBasemapPath: string;
+	/** Root URL of an operator-approved Nominatim-compatible service; empty disables geocoding. */
+	geocodingBaseUrl: string;
 	enabledSchemaFamilies: EnabledSchemaFamilies;
 	oidsfModalLayers: OIDSFModalLayers;
 	miroAccessToken: string;
@@ -161,6 +163,7 @@ export const DEFAULT_SETTINGS: VaultAISettings = {
 	mapCustomTileUrl: "",
 	mapCustomTileAttribution: "",
 	mapOfflineBasemapPath: "",
+	geocodingBaseUrl: "",
 	enabledSchemaFamilies: { ...DEFAULT_ENABLED_SCHEMA_FAMILIES },
 	oidsfModalLayers: { ...DEFAULT_OIDSF_MODAL_LAYERS },
 	miroAccessToken: "",

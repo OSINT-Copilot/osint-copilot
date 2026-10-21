@@ -22,6 +22,7 @@ import { isTaskAgentRunnable } from "../task-agents/task-agent-settings";
 import { ClaudeCodeService } from "../services/claude-code-service";
 import { CodexCliService } from "../services/codex-cli-service";
 import { importMiroBoard, MiroImportError } from "../services/miro-import-service";
+import { normalizeGeocodingBaseUrl } from "../services/geocoding-service";
 import { DEFAULT_SETTINGS } from "./vault-ai-settings";
 import { ensureFolderExists } from "../utils/vault-bootstrap-fs";
 import {
@@ -971,6 +972,30 @@ export class VaultAISettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl).setName("Map").setHeading();
+
+		new Setting(containerEl)
+			.setName("Geocoding service")
+			.setDesc(
+				"Optional root URL of a Nominatim-compatible service. Address and coordinate queries are sent to that operator. " +
+				"Empty disables geocoding; the public OpenStreetMap Nominatim endpoint is not configured automatically.",
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("https://nominatim.example.org")
+					.setValue(this.plugin.settings.geocodingBaseUrl)
+					.then((t) => t.inputEl.addEventListener("blur", async () => {
+						const normalized = normalizeGeocodingBaseUrl(t.inputEl.value);
+						if (normalized === null) {
+							this.setRowError(t.inputEl, "Use HTTPS, or HTTP only for localhost. Do not include credentials in the URL.");
+							return;
+						}
+						this.setRowError(t.inputEl, "");
+						t.inputEl.value = normalized;
+						if (this.plugin.settings.geocodingBaseUrl === normalized) return;
+						this.plugin.settings.geocodingBaseUrl = normalized;
+						await this.plugin.saveSettings();
+					})),
+			);
 
 		new Setting(containerEl)
 			.setName("Offline basemap")

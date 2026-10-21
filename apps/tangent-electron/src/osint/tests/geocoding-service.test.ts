@@ -1,6 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { requestUrl } from 'obsidian';
-import { extractAddressComponents, GeocodingService, GeocodingErrorType } from '../services/geocoding-service';
+import { extractAddressComponents, GeocodingService, GeocodingErrorType, normalizeGeocodingBaseUrl } from '../services/geocoding-service';
+
+describe('normalizeGeocodingBaseUrl', () => {
+    it('accepts HTTPS and strips a trailing slash', () => {
+        expect(normalizeGeocodingBaseUrl(' https://geo.example/api/ ')).toBe('https://geo.example/api');
+    });
+
+    it('allows loopback HTTP but rejects remote HTTP and embedded credentials', () => {
+        expect(normalizeGeocodingBaseUrl('http://localhost:8080/')).toBe('http://localhost:8080');
+        expect(normalizeGeocodingBaseUrl('http://geo.example')).toBeNull();
+        expect(normalizeGeocodingBaseUrl('https://user:pass@geo.example')).toBeNull();
+    });
+
+    it('rejects query strings and fragments in a service root', () => {
+        expect(normalizeGeocodingBaseUrl('https://geo.example?token=secret')).toBeNull();
+        expect(normalizeGeocodingBaseUrl('https://geo.example/#search')).toBeNull();
+    });
+});
 
 describe('extractAddressComponents', () => {
     it('extracts city/state/country/postalCode from a full address object', () => {
@@ -51,7 +68,7 @@ describe('GeocodingService.reverseGeocodeWithRetry', () => {
     let service: GeocodingService;
 
     beforeEach(() => {
-        service = new GeocodingService();
+        service = new GeocodingService('https://geo.example');
         vi.mocked(requestUrl).mockReset();
     });
 
@@ -72,6 +89,7 @@ describe('GeocodingService.reverseGeocodeWithRetry', () => {
         expect(result.city).toBe('Paris');
         expect(result.country).toBe('France');
         expect(result.postalCode).toBe('75007');
+        expect(vi.mocked(requestUrl).mock.calls[0][0].url).toContain('https://geo.example/reverse?');
     });
 
     it('treats a Nominatim 200-with-`error`-field response as NotFound, not a false success', async () => {
@@ -94,4 +112,12 @@ describe('GeocodingService.reverseGeocodeWithRetry', () => {
         });
         expect(requestUrl).not.toHaveBeenCalled();
     });
+
+	it('does not contact any service when none was configured', async () => {
+		const disabled = new GeocodingService('');
+		await expect(disabled.reverseGeocodeWithRetry(48.8584, 2.2945)).rejects.toMatchObject({
+			type: GeocodingErrorType.InvalidInput,
+		});
+		expect(requestUrl).not.toHaveBeenCalled();
+	});
 });

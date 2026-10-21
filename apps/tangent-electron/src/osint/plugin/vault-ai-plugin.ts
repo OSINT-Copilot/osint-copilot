@@ -77,6 +77,7 @@ import { CHAT_VIEW_TYPE, ChatView } from '../views/chat-view';
 import { OsintWorkspaceController } from './osint-workspace-controller';
 import { host as osintHost } from '../host';
 import { InboxService, readExtensionActivity } from '../services/inbox-service';
+import { configureGeocodingBaseUrl } from '../services/geocoding-service';
 import { ExtensionActivityModal } from '../modals/extension-activity-modal';
 import { CountingNotice } from '../inbox/extension-notice';
 import { EnricherDraftRequestModal, EnricherStateModal, type EnricherState } from '../modals/enricher-command-modals';
@@ -647,10 +648,10 @@ export default class VaultAIPlugin extends Plugin {
   private async draftHttpEnricherFromUserDetails(docUrl: string, details: string): Promise<void> {
     new Notice("Drafting the enricher from its documentation…");
     const system = [
-      "You draft JSON for an OSINT HTTP enricher tool that will run inside Obsidian (plugin HTTP, not a browser tab).",
+      "You draft JSON for an OSINT HTTP enricher tool that will run inside the OSINT Copilot desktop app (app-side HTTP, not a browser tab).",
       "Return ONLY one JSON object with keys:",
       "id, name, description, method, urlTemplate, allowedDomains, authType, authEnvVar, authHeaderName, authQueryParam, vaultRelativePath, inputHints, skillInstructions.",
-      "Runtime: Obsidian uses requestUrl (no CORS from app origin). urlTemplate must hit the real API origin — do not rely on browser-only session cookies or front-end-only endpoints.",
+      "Runtime: the app makes the request itself with requestUrl (no CORS from an app origin). urlTemplate must hit the real API origin — do not rely on browser-only session cookies or front-end-only endpoints.",
       "allowedDomains must list every hostname used in urlTemplate (API host), not only the documentation site host.",
       "Auth: prefer bearer_vault | header_vault | query_vault with vaultRelativePath (relative path under the vault credentials folder); use bearer_env | header_env | query_env only if appropriate. Never put API keys or secrets in the JSON.",
       "Use {{query}} and {{attachments_context}} in urlTemplate or body when relevant.",
@@ -860,7 +861,7 @@ While that id is listed under REGISTERED HTTP ENRICHERS, call the API through en
       new ConfirmModal(
         this.app,
         'Revoke this extension?',
-        `${origin} will no longer be able to send items to Tangent. To use it again, pair it again.`,
+		`${origin} will no longer be able to send items to OSINT Copilot. To use it again, pair it again.`,
         () => resolve(true),
         () => resolve(false),
         true,
@@ -1035,6 +1036,11 @@ While that id is listed under REGISTERED HTTP ENRICHERS, call the API through en
     if (typeof merged.extensionAllowWayback !== 'boolean') {
       merged.extensionAllowWayback = DEFAULT_SETTINGS.extensionAllowWayback;
     }
+    if (typeof merged.geocodingBaseUrl !== 'string' || !configureGeocodingBaseUrl(merged.geocodingBaseUrl)) {
+      merged.geocodingBaseUrl = DEFAULT_SETTINGS.geocodingBaseUrl;
+      configureGeocodingBaseUrl(merged.geocodingBaseUrl as string);
+      stripped = true;
+    }
 
     this.settings = merged as unknown as VaultAISettings;
     // The toolbar and the view commands read the graph-features gate from here.
@@ -1076,6 +1082,7 @@ While that id is listed under REGISTERED HTTP ENRICHERS, call the API through en
   private graphFeaturesInitialised = false;
 
   async saveSettings() {
+    configureGeocodingBaseUrl(this.settings.geocodingBaseUrl);
     // Only a runtime-affecting change invalidates the availability cache and re-renders
     // open chats. Every text field in the settings tab saves per keystroke, and each save
     // used to re-probe every CLI (spawning `--version` for each) and rebuild the chat

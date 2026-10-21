@@ -20,7 +20,7 @@ import {
     isOsintConfidence,
 } from './osint-confidence-engine';
 import { identifierKeysForEntity, normalizeIdentifierKey } from './entity-identifiers';
-import { geocodingService, GeocodingError, GeocodingErrorType } from './geocoding-service';
+import { geocodingService, GeocodingError, GeocodingErrorType, isGeocodingConfigured } from './geocoding-service';
 import { ftmSchemaService } from './ftm-schema-service';
 import type { SchemaCatalogService } from './schema-catalog-service';
 import type { CatalogEntityType, SchemaFamily } from './schema-catalog-types';
@@ -1254,6 +1254,8 @@ export class EntityManager {
         if (hasLatitude && hasLongitude) {
             return properties;
         }
+        // Geocoding is opt-in: without a configured service, leave the coordinates empty.
+        if (!isGeocodingConfigured()) return properties;
 
         const address = (properties.full as string) || (properties.street as string);
         const city = properties.city as string;
@@ -1648,6 +1650,8 @@ ${(entity.properties.notes as string) || ''}
             console.debug('[EntityManager] Location already has coordinates:', properties.latitude, properties.longitude);
             return properties;
         }
+        // Geocoding is opt-in: without a configured service, leave the coordinates empty.
+        if (!isGeocodingConfigured()) return properties;
 
         // Build geocoding query from available address fields
         const address = properties.address as string;
@@ -2991,7 +2995,7 @@ ${this.buildConnectionPropertiesSection(connection)}
             metadata: {
                 version: "1.0.0",
                 export_date: new Date().toISOString(),
-                source: "OSINT Copilot Obsidian Plugin",
+                source: "OSINT Copilot",
                 total_entities: graphData.entities.length,
                 total_connections: graphData.connections.length
             },
