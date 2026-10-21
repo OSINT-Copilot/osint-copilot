@@ -1,6 +1,6 @@
 {
 	"name": "osint-copilot-extension",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"private": true,
 	"description": "OSINT Copilot extension: send notes, entities, page captures and highlights from the browser into an OSINT Copilot investigation.",
 	"license": "Apache-2.0",
