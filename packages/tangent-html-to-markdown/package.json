@@ -35,12 +35,12 @@
     "deploy": "npm run rebuild && npm publish"
   },
   "dependencies": {
-    "@such-n-such/core": "^0.4.0",
+    "@such-n-such/core": "^0.5.0",
     "@such-n-such/core-browser": "^0.1.0",
-    "turndown": "^7.1.1"
+    "turndown": "^7.2.4"
   },
   "devDependencies": {
-    "@vitest/browser": "^4.0.16",
+    "@vitest/browser": "^5.0.5",
     "vitest": "^4.0.16"
   }
 }
