@@ -1,237 +1,292 @@
-# Builds OSINT Copilot on each platform natively, which macOS in particular requires.
-#
-# Two modes, chosen by whether RELEASES_TOKEN is set:
-#
-#   * with it, each job publishes into a draft release in the public releases repository
-#     (see `publish` in apps/tangent-electron/electron-builder.json), which is what the
-#     in-app updater reads. A draft reaches nobody until it is published by hand.
-#   * without it, each job only packages, and attaches the installers to this run. That is
-#     the mode to use before the signing certificates exist: the builds are unsigned, and
-#     unsigned builds should not go to users.
-#
-# GITHUB_TOKEN cannot be used for the publish: it is scoped to this repository, and the
-# releases live in another one. RELEASES_TOKEN must be a token with contents:write there.
-#
-# Signing is likewise switchable, and off while the secrets are absent:
-#   * macOS: APPLE_CSC_LINK (base64 .p12) and APPLE_CSC_KEY_PASSWORD sign it; APPLE_ID,
-#     APPLE_TEAM_ID and APPLE_ID_PASSWORD notarize it (build/after-sign.js).
-#   * Windows: AZURE_KEY_VAULT_URL and the four variables beside it sign through
-#     AzureSignTool (build/sign-windows.js).
 name: Release
 
 on:
   push:
     tags:
       - 'v*'
-  # Build the three platforms from any branch without minting a version. Publishing still
-  # depends on RELEASES_TOKEN, so a manual run normally just leaves artifacts behind.
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  # The gate. Linux, because that is where the end-to-end suite is known to hold: it drives
-  # a real window, and macOS has failures of its own (see test-macos) that no release should
-  # wait on while nothing is shipped for macOS.
-  test:
+  validate:
+    name: Validate release metadata
     runs-on: ubuntu-latest
+    outputs:
+      app-version: ${{ steps.metadata.outputs.app-version }}
+      extension-version: ${{ steps.metadata.outputs.extension-version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Validate versions and private packages
+        id: metadata
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs'
+
+          const readPackage = path => JSON.parse(readFileSync(path, 'utf8'))
+          const root = readPackage('package.json')
+          const app = readPackage('apps/tangent-electron/package.json')
+          const extension = readPackage('apps/osint-copilot-extension/package.json')
+          const extensionManifest = readPackage('apps/osint-copilot-extension/static/manifest.json')
+          const lock = readPackage('package-lock.json')
+          const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
+
+          for (const [name, pkg] of [['root', root], ['desktop', app], ['extension', extension]]) {
+            if (!versionPattern.test(pkg.version)) throw new Error(`${name} has an invalid version: ${pkg.version}`)
+            if (pkg.private !== true) throw new Error(`${name} package must be private`)
+          }
+
+          for (const packagePath of [
+            'apps/tangent-test-workspace-generator',
+            'apps/tangent-website',
+            'packages/tangent-html-to-markdown',
+            'packages/tangent-query-parser',
+          ]) {
+            if (readPackage(`${packagePath}/package.json`).private !== true) {
+              throw new Error(`${packagePath} package must be private`)
+            }
+          }
+
+          if (extensionManifest.version !== extension.version) {
+            throw new Error(`extension manifest ${extensionManifest.version} does not match package ${extension.version}`)
+          }
+          if (lock.packages['apps/tangent-electron'].version !== app.version) {
+            throw new Error('desktop version does not match package-lock.json')
+          }
+          if (lock.packages['apps/osint-copilot-extension'].version !== extension.version) {
+            throw new Error('extension version does not match package-lock.json')
+          }
+
+          if (process.env.RELEASE_TAG && process.env.RELEASE_TAG !== `v${app.version}`) {
+            throw new Error(`tag ${process.env.RELEASE_TAG} does not match desktop version v${app.version}`)
+          }
+
+          appendFileSync(process.env.GITHUB_OUTPUT, `app-version=${app.version}\n`)
+          appendFileSync(process.env.GITHUB_OUTPUT, `extension-version=${extension.version}\n`)
+          console.log(`desktop ${app.version}; extension ${extension.version}`)
+          NODE
+
+  test:
+    name: Release tests
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           submodules: recursive
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-and-build
 
-      # Both: the headless shell runs the browser-mode unit tests, and the full Chromium is
-      # what the real-extension test drives -- a headless shell cannot load an extension, so
-      # with only that one installed the test waits for a service worker that never comes.
+      - name: Typecheck OSINT code
+        run: npm run typecheck:osint --workspace=apps/tangent-electron
+
+      - name: Typecheck browser extension
+        run: npm run typecheck --workspace=apps/osint-copilot-extension
+
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium chromium-headless-shell
 
-      - name: Unit tests
+      - name: Run unit and integration tests
         run: npx vitest run
         working-directory: apps/tangent-electron
 
-      # The setup action builds for production, and only a development build honours
-      # OSINT_SKIP_LICENSE. A runner holds no licence, so against a production build every
-      # window is the licence gate and the whole suite times out waiting for the workspace.
-      # A developer's own machine hides this: their profile has a real licence.
-      - name: Build (development) for the end-to-end run
+      - name: Build development app for end-to-end tests
         run: npm run build:dev
         working-directory: apps/tangent-electron
 
-      # The suite opens real windows, and Ubuntu 24.04 blocks the user namespace Chromium's
-      # sandbox uses, so Electron aborts on its setuid helper instead. Runners allow this.
       - name: Allow Chromium's user-namespace sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      # A real window needs a display; the runner has none. The real-extension test runs in
-      # its own job below, which does not gate a release.
-      - name: End-to-end tests
+      - name: Run end-to-end tests
         run: xvfb-run -a -s "-screen 0 1920x1080x24" npm run test:end-to-end -- --grep-invert "the real extension sends"
         working-directory: apps/tangent-electron
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
-          name: playwright-linux
+          name: playwright-release
           if-no-files-found: ignore
           retention-days: 7
           path: |
             apps/tangent-electron/test-results/
             apps/tangent-electron/playwright-report/
 
-  # The heaviest test there is: the real extension, in a real browser, against the real app.
-  # Not a gate, because it fails on a runner at its last step and passes on a developer's
-  # machine: Chrome refuses the page capture with net ERR_FILE_NOT_FOUND ("Chrome could not
-  # capture this page"), after pairing, an entity and a note have all gone through. The
-  # cause is not yet known, so this runs with the browser's own stderr in the log, which is
-  # what the next attempt needs.
-  test-extension:
+  build-linux:
+    name: Package Linux and extension
+    needs: [validate, test]
     runs-on: ubuntu-latest
-    continue-on-error: true
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           submodules: recursive
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-and-build
 
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium chromium-headless-shell
-
-      - name: Build (development)
-        run: npm run build:dev
-        working-directory: apps/tangent-electron
-
-      - name: Allow Chromium's user-namespace sandbox
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-
-      - name: The real extension against the real app
-        run: DEBUG=pw:browser xvfb-run -a -s "-screen 0 1920x1080x24" npm run test:end-to-end -- --grep "the real extension sends"
-        working-directory: apps/tangent-electron
-
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-extension
-          if-no-files-found: ignore
-          retention-days: 7
-          path: |
-            apps/tangent-electron/test-results/
-            apps/tangent-electron/playwright-report/
-
-  # Not a gate, and known to fail: 8 canvas tests never see the OSINT runtime start, and
-  # upstream's Note Linking disagrees. Nothing is shipped for macOS yet, so this runs to keep
-  # the failures visible and to collect the reports that will say why.
-  test-macos:
-    runs-on: macos-26
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          submodules: recursive
-
-      - uses: ./.github/actions/setup-and-build
-
-      # Both: the headless shell runs the browser-mode unit tests, and the full Chromium is
-      # what the real-extension test drives -- a headless shell cannot load an extension, so
-      # with only that one installed the test waits for a service worker that never comes.
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium chromium-headless-shell
-
-      - name: Test
-        run: npm run test
-        working-directory: apps/tangent-electron
-
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-macos
-          if-no-files-found: ignore
-          retention-days: 7
-          path: |
-            apps/tangent-electron/test-results/
-            apps/tangent-electron/playwright-report/
-
-  build:
-    needs: test
-    strategy:
-      # One platform failing should not cancel the other two: an unsigned Windows build is
-      # still worth having when macOS is what broke.
-      fail-fast: false
-      matrix:
-        include:
-          - platform: mac
-            runs-on: macos-26
-          - platform: win
-            runs-on: windows-latest
-          - platform: linux
-            runs-on: ubuntu-latest
-    runs-on: ${{ matrix.runs-on }}
-    env:
-      RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-      AZURE_KEY_VAULT_URL: ${{ secrets.AZURE_KEY_VAULT_URL }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          submodules: recursive
-
-      - uses: ./.github/actions/setup-and-build
-
-      # Only needed once Windows signing is configured; build/sign-windows.js calls it.
-      - name: Install AzureSignTool
-        if: matrix.platform == 'win' && env.AZURE_KEY_VAULT_URL != ''
-        run: dotnet tool install --global AzureSignTool
-
-      - name: Publish ${{ matrix.platform }}
-        if: env.RELEASES_TOKEN != ''
-        run: npm run publish:${{ matrix.platform }}
-        working-directory: apps/tangent-electron
+      - name: Package Linux without publishing
+        run: npm run package:linux --workspace=apps/tangent-electron
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-          CSC_LINK: ${{ secrets.APPLE_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CSC_KEY_PASSWORD }}
-          # Without a certificate, build unsigned rather than hunting for an identity that
-          # is not on the runner.
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.APPLE_CSC_LINK != '' }}
-          AZURE_KEY_VAULT_URL: ${{ secrets.AZURE_KEY_VAULT_URL }}
-          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-      - name: Package ${{ matrix.platform }} (no releases token, so nothing is published)
-        if: env.RELEASES_TOKEN == ''
-        run: npm run package:${{ matrix.platform }}
-        working-directory: apps/tangent-electron
+      - name: Package browser extension
+        run: npm run zip --workspace=apps/osint-copilot-extension
+
+      # The fictional demo investigation, so people who only download the app can open it.
+      - name: Package demo investigation
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          (cd demo && zip -qr -X "../release-assets/osint-copilot-demo-operation-northgate.zip" "Operation Northgate" README.md)
+
+      - name: Stage and checksum Linux artifacts
         env:
-          CSC_LINK: ${{ secrets.APPLE_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CSC_KEY_PASSWORD }}
-          # Without a certificate, build unsigned rather than hunting for an identity that
-          # is not on the runner.
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.APPLE_CSC_LINK != '' }}
-          AZURE_KEY_VAULT_URL: ${{ secrets.AZURE_KEY_VAULT_URL }}
-          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          APP_VERSION: ${{ needs.validate.outputs.app-version }}
+          EXTENSION_VERSION: ${{ needs.validate.outputs.extension-version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p release-assets
+          cp apps/tangent-electron/dist/*.AppImage release-assets/
+          cp apps/tangent-electron/dist/*.deb release-assets/
+          cp apps/tangent-electron/dist/*.rpm release-assets/
+          cp apps/tangent-electron/dist/latest*.yml release-assets/
+          blockmaps=(apps/tangent-electron/dist/*.blockmap)
+          if (( ${#blockmaps[@]} )); then cp "${blockmaps[@]}" release-assets/; fi
+          cp apps/osint-copilot-extension/release/*.zip release-assets/
 
-      # The installers themselves, not the unpacked trees electron-builder leaves beside
-      # them, and not the blockmaps the updater generates.
-      - uses: actions/upload-artifact@v4
+          test -f "release-assets/osint-copilot-$APP_VERSION-x86_64.AppImage"
+          test -f "release-assets/osint-copilot-$APP_VERSION-arm64.AppImage"
+          test -f "release-assets/osint-copilot_$APP_VERSION_amd64.deb"
+          test -f "release-assets/osint-copilot-$APP_VERSION.x86_64.rpm"
+          test -f release-assets/latest-linux.yml
+          test -f release-assets/latest-linux-arm64.yml
+          test -f "release-assets/osint-copilot-extension-$EXTENSION_VERSION.zip"
+          test -f release-assets/osint-copilot-demo-operation-northgate.zip
+          node scripts/release-checksums.mjs release-assets SHA256SUMS-linux.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: osint-copilot-${{ matrix.platform }}
+          name: osint-copilot-linux
           if-no-files-found: error
           retention-days: 14
-          path: |
-            apps/tangent-electron/dist/*.AppImage
-            apps/tangent-electron/dist/*.deb
-            apps/tangent-electron/dist/*.dmg
-            apps/tangent-electron/dist/*.zip
-            apps/tangent-electron/dist/*.exe
-            apps/tangent-electron/dist/latest*.yml
+          path: release-assets/
+
+  build-windows:
+    name: Package Windows (x64 and arm64)
+    needs: [validate, test]
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-and-build
+
+      # Release builds are intentionally credential-free. Code signing can be added later as
+      # an isolated step/job; signing credentials must never be exposed to install or build.
+      - name: Package Windows without publishing
+        run: npm run package:win --workspace=apps/tangent-electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Stage and checksum Windows artifacts
+        shell: bash
+        env:
+          APP_VERSION: ${{ needs.validate.outputs.app-version }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          cp apps/tangent-electron/dist/*.exe release-assets/
+          cp apps/tangent-electron/dist/*.blockmap release-assets/
+          cp apps/tangent-electron/dist/latest*.yml release-assets/
+
+          test -f "release-assets/OSINT-Copilot-Setup-$APP_VERSION.exe"
+          test -f "release-assets/OSINT-Copilot-Setup-$APP_VERSION.exe.blockmap"
+          test -f "release-assets/OSINT-Copilot-Portable-$APP_VERSION.exe"
+          test -f release-assets/latest.yml
+          node scripts/release-checksums.mjs release-assets SHA256SUMS-windows.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: osint-copilot-windows
+          if-no-files-found: error
+          retention-days: 14
+          path: release-assets/
+
+  assemble:
+    name: Verify release bundle
+    needs: [validate, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          pattern: osint-copilot-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify and consolidate checksums
+        run: |
+          set -euo pipefail
+          cd release-assets
+          sha256sum --check --strict SHA256SUMS-linux.txt
+          sha256sum --check --strict SHA256SUMS-windows.txt
+          rm SHA256SUMS-linux.txt SHA256SUMS-windows.txt
+          cd ..
+          node scripts/release-checksums.mjs release-assets SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: osint-copilot-release
+          if-no-files-found: error
+          retention-days: 30
+          path: release-assets/
+
+  publish:
+    name: Create draft release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [validate, assemble]
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: osint-copilot-release
+          path: release-assets
+
+      - name: Publish draft to the public update feed
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          RELEASE_REPOSITORY: OSINT-Copilot/osint-copilot-releases
+          RELEASE_TAG: ${{ github.ref_name }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN"
+          if gh release view "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists in $RELEASE_REPOSITORY" >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" release-assets/* \
+            --repo "$RELEASE_REPOSITORY" \
+            --draft \
+            --title "OSINT Copilot $RELEASE_TAG" \
+            --notes "Source: https://github.com/${{ github.repository }}/tree/$SOURCE_SHA"
