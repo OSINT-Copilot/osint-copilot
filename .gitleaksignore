@@ -1,0 +1,7 @@
+# Audited false positives. These are commit fingerprints, so new secrets in the same
+# files are still reported. See the adjacent source for the public/test-vector context.
+21b1ff67996f6e77658de42cc8da295e40d80655:apps/osint-copilot-extension/static/manifest.json:generic-api-key:8
+a46182ab7d97cd213014b0acb950ab8218594e12:apps/tangent-electron/src/main/osint/extension/vectors/protocol-vectors.json:generic-api-key:5
+a46182ab7d97cd213014b0acb950ab8218594e12:apps/tangent-electron/src/main/osint/extension/vectors/protocol-vectors.json:generic-api-key:21
+a46182ab7d97cd213014b0acb950ab8218594e12:apps/tangent-electron/src/main/osint/extension/vectors/protocol-vectors.json:generic-api-key:22
+0a57cb40e8e2e97dccf7c37759966abec083b8f1:apps/tangent-electron/src/main/license-subscription.test.ts:generic-api-key:168

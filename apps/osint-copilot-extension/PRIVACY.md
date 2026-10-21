@@ -1,12 +1,15 @@
 # OSINT Copilot extension: privacy policy
 
-Last updated: 19 September 2026
+Last updated: 20 October 2026
 
-The OSINT Copilot extension is made by Probe Point Analytics LLC. It lets you send notes, entities, page captures and highlights from web pages into the OSINT Copilot desktop application running on your own computer. This policy says what the extension handles, where it goes, and what it never does.
+The OSINT Copilot extension is developed by the OSINT Copilot contributors. It lets you send
+notes, entities, page captures and highlights from web pages into the OSINT Copilot desktop
+application running on your own computer. This policy says what the extension handles, where it
+goes, and what it never does.
 
 ## In short
 
-- The extension sends what you choose to send **only to the OSINT Copilot application on the same computer**, over `127.0.0.1`. It has no server, no account and no analytics. Probe Point Analytics does not receive anything from it.
+- The extension sends what you choose to send **only to the OSINT Copilot application on the same computer**, over `127.0.0.1`. It has no project server, account, analytics, or crash reporter, and the OSINT Copilot project does not receive the material.
 - It acts when you ask it to: when you send a note or an entity, capture a page, or make a highlight.
 - The one exception is one you choose, in the side panel: if you allow your highlights to come back when you revisit a page, it looks for your own highlights on each page as the page loads, so it can show them again. That happens inside the browser. It sends nothing when it does. Allowing page capture does not turn this on, though Chrome asks for the same permission for both.
 
@@ -57,4 +60,8 @@ If this policy changes, the new version will be published with the extension and
 
 ## Contact
 
-Probe Point Analytics LLC, [CONTACT ADDRESS: to be filled in before publishing].
+For privacy questions, use the
+[OSINT Copilot issue tracker](https://github.com/OSINT-Copilot/osint-copilot/issues/new/choose)
+after removing any private investigation data. Report a vulnerability or other sensitive
+security matter through
+[GitHub private vulnerability reporting](https://github.com/OSINT-Copilot/osint-copilot/security/advisories/new).

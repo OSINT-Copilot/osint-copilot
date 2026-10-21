@@ -1,0 +1,86 @@
+name: Bug report
+description: Report a reproducible problem without including sensitive case data.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug. Do not attach real investigation data, credentials, tokens, pairing strings, or private keys. Report security issues through the private link in SECURITY.md.
+  - type: input
+    id: app_version
+    attributes:
+      label: OSINT Copilot version
+      description: Find the app version under Settings → About. Include the OSINT layer version if shown.
+      placeholder: "0.15.0 (OSINT layer 4.x)"
+    validations:
+      required: true
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package type
+      options:
+        - Windows Setup
+        - Windows portable
+        - Linux AppImage x86-64
+        - Linux AppImage arm64
+        - Debian package
+        - RPM package
+        - macOS source build
+        - Source/development build
+        - Browser extension only
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Operating system and display session
+      description: Include OS version and, on Linux, X11 or Wayland.
+      placeholder: "Ubuntu 24.04, Wayland with XWayland"
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: AI runtime, extension, and browser versions
+      description: Only when relevant; otherwise write "not applicable".
+      placeholder: "Codex CLI x.y; extension 0.1.0; Chromium 153"
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use a new workspace or synthetic data whenever possible.
+      placeholder: |
+        1. Create a new workspace...
+        2. Open...
+        3. Choose...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs or screenshots
+      description: Use Help → Open Logs or Help → Toggle Developer Tools. Remove paths, case content, and secrets.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed real case data, credentials, tokens, pairing strings, and private keys.
+          required: true
+        - label: This is not an undisclosed security vulnerability.
+          required: true

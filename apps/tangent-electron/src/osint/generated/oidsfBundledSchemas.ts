@@ -3,6 +3,11 @@
  * Vendored snapshot of the OIDSF schemata, originally generated from the OIDSF spec's
  * schemata YAML. Neither that source nor its generator script is in this repo, so edits
  * are made here by hand.
+ *
+ * This snapshot includes schema names and descriptive text adapted from FollowTheMoney,
+ * Copyright (c) 2017-2024 Journalism Development Network, Inc. and (c) 2025 OpenSanctions
+ * Datenbanken GmbH, under the MIT License.
+ * See the repository-root THIRD_PARTY_NOTICES.md.
  */
 
 /** Bundled OIDSF unified schemata (FollowTheMoney-shaped). Typed in ftm-schema-service at import. */

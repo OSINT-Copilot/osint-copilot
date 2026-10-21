@@ -2,7 +2,24 @@ node_modules/
 .DS_Store
 .svelte-kit/
 *.env
+.env*
+!.env.example
 *.tsbuildinfo
+
+# Local tooling and generated integration workspaces.
+.claude/
+/apps/IntegrationTestWorkspace/
+.tangent_*/
+
+# Credential and private-key containers should never enter the repository.
+*.docx
+*.kdbx
+*.key
+*.p12
+*.pem
+*.pfx
+*.pptx
+*.xlsx
 
 /packages/**/lib/
 
@@ -23,6 +40,10 @@ node_modules/
 /apps/tangent-electron/.tangent/
 # ...except the demo investigation's, which are part of it (graph workspaces, persona).
 !/demo/*/.osint-copilot/
+
+# Provider credentials are vault-local secrets. Keep the deliberately fake demo fixture.
+**/OSINTCopilot/custom/credentials/**
+!/demo/*/OSINTCopilot/custom/credentials/leakcheck/api-key.txt
 
 # Licence signing key. NEVER commit: anyone holding it can mint valid licence keys.
 .license-signing-key.pem

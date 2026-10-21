@@ -1,5 +1,9 @@
-The debug options for OSINT Copilot are found in the [[System Menu]]. These options are only displayed when the [[Updates#Update Channels|update channel]] is set to "Beta" or "Alpha".
+The debug options are intended for troubleshooting and normally appear only in preview or
+source builds. Changing them can break application behavior.
 
-**Send Crash Reports** configures whether or not crashes should be uploaded should OSINT Copilot crash. This option is _disabled_ by default.
+Automatic crash reporting is disabled. OSINT Copilot does not start Electron's network crash
+reporter or upload crash dumps, so there is no crash-upload control on this page.
 
-Disabling the  **Links Can Create Virtual Files** option will prevent OSINT Copilot from indexing [[Wiki Links]] to files that don't yet exist. Disabling this option _will_ cause issues with several of OSINT Copilot's features, and is should only be used for troubleshooting.
+Disabling **Links Can Create Virtual Files** prevents OSINT Copilot from indexing [[Wiki Links]]
+to files that do not exist yet. This can break features that rely on unresolved links and should
+be used only while troubleshooting.

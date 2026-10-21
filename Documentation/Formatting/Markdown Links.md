@@ -1,6 +1,6 @@
-OSINT Copilot will recognize raw links and make them linkable. For example: http://tangentnotes.com.
+OSINT Copilot will recognize raw links and make them linkable. For example: https://github.com/OSINT-Copilot/osint-copilot.
 
-You can create standard markdown links ([such as this](https://twitter.com/OSINT CopilotNotes)) using the following syntax: `[link text](https://some.url.com)`.
+You can create standard markdown links ([such as this](https://github.com/OSINT-Copilot/osint-copilot)) using the following syntax: `[link text](https://some.url.com)`.
 
 You can follow a link by command-clicking on Mac or control-clicking on Windows. You can also follow a link that the typing cursor is hovering over by pressing `Command+Enter` on Mac or `Control+Enter` on Windows.
 

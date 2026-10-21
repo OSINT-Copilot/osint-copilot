@@ -7,7 +7,7 @@ The OSINT Copilot extension brings what you find on web pages into an investigat
 4. Click the extension's toolbar button to open its side panel, paste the string and choose **Pair**. OSINT Copilot asks you to confirm, naming the extension; nothing is accepted until you do.
 5. Pick the investigation in the side panel. Items go to that investigation until you pick another.
 
-Pairing is per browser profile. To stop a browser from sending, choose **Revoke** next to it in the settings, or **Unpair** in its side panel. The app accepts nothing from the extension while it is unlicensed, or while the setting is off.
+Pairing is per browser profile. To stop a browser from sending, choose **Revoke** next to it in the settings, or **Unpair** in its side panel. The app accepts nothing from the extension while the setting is off or after that browser has been revoked.
 
 # What you can send
 Everything is attached to the page it came from: its address and title.

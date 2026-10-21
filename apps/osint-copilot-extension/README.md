@@ -2,9 +2,14 @@
 
 A Chrome extension (Manifest V3, Chrome 140 or later) that sends notes, entities, page captures and highlights from web pages into an investigation in the OSINT Copilot desktop app on the same computer. Items go straight into the investigation, labelled "via extension". The app then shows a notice from which you can review them and remove any you did not mean to add.
 
-The extension talks only to the app, over `http://127.0.0.1`, and only after pairing. Nothing leaves the computer. The wire protocol is specified in [`apps/tangent-electron/src/main/osint/extension/PROTOCOL.md`](../tangent-electron/src/main/osint/extension/PROTOCOL.md).
+Items are delivered only to the paired app over `http://127.0.0.1`. The extension has no
+project server, account, analytics, or crash reporter. Capturing a PDF is the one website
+request it can make: it fetches the exact PDF URL again with the browser's cookies. The wire
+protocol is specified in
+[`apps/tangent-electron/src/main/osint/extension/PROTOCOL.md`](../tangent-electron/src/main/osint/extension/PROTOCOL.md).
 
-Licensed under Apache-2.0 (see `LICENSE` and `NOTICE`).
+Licensed under Apache-2.0 (see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE)). Issues and support
+requests belong in the [OSINT Copilot repository](https://github.com/OSINT-Copilot/osint-copilot).
 
 ## Build
 

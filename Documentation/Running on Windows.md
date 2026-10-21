@@ -43,34 +43,35 @@ Start menu entry is added and no file types are registered, which makes it the o
 a USB stick or on a machine you cannot install software on.
 
 It unpacks itself to a temporary folder on each start, so it starts more slowly than the
-installed build. Your data does **not** live in that folder -- see below -- so deleting the
-`.exe` is the whole uninstall.
+installed build. Your data does **not** live in that temporary folder: the portable build keeps
+its profile in a `.tangent_config` folder beside the `.exe` (see below), so keep the `.exe` in a
+folder you can write to.
 
 # Where your data is
 
 Two places, and neither is inside the application:
 
-* `%APPDATA%\OSINT Copilot` -- the licence key, the list of workspaces, window layout, and the
-  browser extension's pairing.
+* `%APPDATA%\OSINT Copilot` -- application settings, workspace history, logs, extracted
+  documentation, update state, and browser-extension pairing material. The portable build
+  keeps all of this in `.tangent_config` next to its `.exe` instead.
 * Your investigations, which are ordinary folders wherever you made them.
 
 Uninstalling leaves both alone. To start completely fresh, delete the first one; you will have
-to enter the licence key and pair the extension again.
+to pair the extension again. An earlier release may have left a `license.json` file in the
+profile; the current open-source build does not read or transmit it.
 
 ```powershell
 Remove-Item -Recurse "$env:APPDATA\OSINT Copilot"
+# Portable build: in the folder that holds the .exe
+Remove-Item -Recurse ".\.tangent_config"
 ```
 
 # Uninstalling
 
 Settings -> Apps -> Installed apps -> OSINT Copilot -> Uninstall, or run
 `Uninstall OSINT Copilot.exe` from the install folder. For the portable build, delete the
-`.exe`.
+`.exe` and the `.tangent_config` folder beside it.
 
 # First run
 
-The app asks for a licence key before it opens a workspace. Paste the key from your account on
-the dashboard; a subscription key and an offline `OSINT-...` key are both accepted.
-
-The key is checked on your own machine against a public key compiled into the build, so it
-works with no network connection, and nothing about your licence is sent anywhere.
+No licence key is required. Choose or create an investigation folder when the app opens.

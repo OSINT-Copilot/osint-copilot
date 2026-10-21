@@ -190,6 +190,4 @@ The results land in `apps/tangent-electron/dist/`.
 
 # First run
 
-The app asks for a licence key before it opens a workspace. Paste the key from your
-account on the dashboard; a subscription key and an offline `OSINT-...` key are both
-accepted from 0.13.0 onward.
+No licence key is required. Choose or create an investigation folder when the app opens.

@@ -6,11 +6,11 @@ What to enter in the Chrome Web Store developer dashboard, and what to check bef
 
 Chrome Web Store, in order:
 
-- [ ] Register a Chrome Web Store developer account for Probe Point Analytics (one-off
-      5 USD), and verify the publisher's email address.
-- [ ] Fill in the contact address in `PRIVACY.md` (line 60 is a placeholder) and publish it
-      at a public URL. The store form requires that URL, and this extension has to give one
-      because it handles website content.
+- [ ] Register the publishing maintainer or organization for a Chrome Web Store developer
+      account, and verify the publisher's email address.
+- [ ] Publish `PRIVACY.md` at a public URL. The store form requires that URL because the
+      extension handles website content. Confirm that the repository's public and private
+      contact routes are monitored before submission.
 - [ ] Decide the version to submit. The manifest says 0.1.0; a store version can only ever
       go up, so if 1.0.0 is what the listing should start at, change it before the first
       upload, not after.
@@ -29,7 +29,7 @@ Firefox is **not** a submission but a port. See "Firefox" at the end.
 
 ## Before submitting
 
-- [ ] Fill in the contact address in `PRIVACY.md`, and publish that page at a public URL (the store asks for one).
+- [ ] Publish `PRIVACY.md` at a public URL and confirm its support and security links work.
 - [ ] Build the package: `npm run zip`, which writes `release/osint-copilot-extension-<version>.zip` without the development `key` (the store refuses one, and assigns its own id).
 - [ ] Take screenshots: 1280×800 or 640×400, at least one. The side panel beside a page with a highlight, and the investigation in OSINT Copilot afterwards, show what it is for. Use a test investigation and a public page, not a real case.
 - [ ] A 128×128 icon is in the package (`icons/icon-128.png`). The store also wants a 440×280 small promotional tile if you want it featured; optional.
@@ -65,7 +65,10 @@ The OSINT Copilot extension is the browser half of OSINT Copilot, the desktop ap
 
 Everything lands straight in the investigation, marked as coming from the extension, and each item can be removed again from the application.
 
-It needs the OSINT Copilot desktop application, running on the same computer. The extension talks only to it, over 127.0.0.1, after you pair them with a one-time code; it has no server, no account and no analytics. Items wait in the extension while the application is closed.
+It needs the OSINT Copilot desktop application, running on the same computer. Items go only to
+the paired app over 127.0.0.1; the extension has no project server, account or analytics. A PDF
+capture refetches only the exact PDF URL shown in the tab, with the browser's cookies. Items wait
+in the extension while the application is closed.
 
 ## Privacy practices tab
 
@@ -120,13 +123,10 @@ If it is worth doing:
 - [ ] Port the manifest (event page, `sidebar_action`, Gecko id) and the side panel.
 - [ ] Get the end-to-end suite running against Firefox, or accept that the Firefox build is
       only covered by the unit tests.
-- [ ] Register an addons.mozilla.org account, submit, and expect a source-code request:
-      AMO asks for buildable sources when a submission ships bundled JavaScript, which
-      ours does (esbuild). That means handing Mozilla reviewers this package's source.
-
-That last point is worth deciding before any of the work: the application's source is
-private, and while the extension is a separate package under Apache-2.0, an AMO submission
-means giving its source to reviewers under their confidentiality terms.
+- [ ] Register an addons.mozilla.org account, submit, and expect a source-code request. AMO asks
+      for buildable sources when a submission ships bundled JavaScript, which ours does
+      (esbuild). Both the desktop app and extension are open source under Apache-2.0, so provide
+      the exact source commit and reproducible build instructions used for the package.
 
 ## Browsers
 

@@ -12,4 +12,4 @@ There are multiple sections:
 * [[Custom Styles]]
 * [[Dictionary]]
 * [[Updates]]
-* [[Debug]]
+* [[Debug]] (preview and source builds only)

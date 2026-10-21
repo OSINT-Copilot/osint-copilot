@@ -17,7 +17,7 @@ OSINT Copilot can display web link previews:
 https://en.wikipedia.org/wiki/Capuchin_monkey
 
 Images:
-https://www.tangentnotes.com/shots/thread-short-dark-2x.jpeg
+https://raw.githubusercontent.com/OSINT-Copilot/osint-copilot/main/apps/tangent-electron/build/icon.png
 
 Audio:
 https://www.computerhope.com/jargon/m/example.mp3

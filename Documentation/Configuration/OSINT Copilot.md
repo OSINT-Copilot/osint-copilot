@@ -37,6 +37,8 @@ Any local command-line program that follows the Hermes contract (the prompt on s
 Imports one Miro board's items and connectors into the vault as a Markdown note the chat can read. It is a one-time import, not a live sync, and importing the same board again overwrites its note. Enter a **Miro access token** (stored in plain text in OSINT Copilot's settings) and a **Board ID or URL**, then choose **Import board now**.
 
 # Map
+**Geocoding service** is empty by default, which disables address and coordinate lookups. To enable them, enter the root URL of a Nominatim-compatible service whose operator permits your use. Queries are sent to that operator. Remote endpoints must use HTTPS; HTTP is accepted only for localhost.
+
 The **Offline basemap** is a PMTiles file read from disk, which works with no network and tells no one what you are looking at. **Online basemap** is OpenFreeMap by default; every tile it fetches tells the provider which area you are viewing, so set it to __None__ to stop that, or choose __Custom tile server__ and give a **Tile URL template** containing `{z}`, `{x}` and `{y}` and its **Attribution**. **Basemap colours** follows the app's theme, or is always light or always dark.
 
 # Graph View
