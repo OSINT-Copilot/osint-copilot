@@ -10,8 +10,8 @@
   "author": "Taylor Hadden",
   "license": "MIT",
   "dependencies": {
-    "lorem-ipsum": "^2.0.8",
+    "lorem-ipsum": "^3.0.0",
     "ts-node": "^10.9.1",
-    "yargs": "^17.7.1"
+    "yargs": "^18.2.0"
   }
 }
