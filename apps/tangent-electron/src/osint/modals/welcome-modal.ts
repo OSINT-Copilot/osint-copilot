@@ -74,7 +74,13 @@ export class WelcomeModal extends Modal {
         // in the dialog AFTER onOpen() returns, which for this dialog is a link inside the
         // prose. Deferring puts the keyboard on the primary action instead, which is where
         // someone who just wants to get on with it will press Enter.
-        queueMicrotask(() => startButton.focus());
+        // preventScroll: the button sits at the end of the scrolling content, and focusing it
+        // the ordinary way opened the tour scrolled past its own title.
+        queueMicrotask(() => {
+            startButton.focus({ preventScroll: true });
+            this.contentEl.scrollTop = 0;
+            this.modalEl.scrollTop = 0;
+        });
     }
 
     onClose(): void {

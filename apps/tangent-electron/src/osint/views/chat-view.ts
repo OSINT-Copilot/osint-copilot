@@ -208,7 +208,7 @@ export class ChatView extends ItemView {
     this.noRuntimeAvailable = none;
     this.syncSendControls();
     this.sendButtonEl.title = none
-      ? "Install and configure Claude, Codex, Hermes, or a custom runtime in Settings → Tangent."
+      ? "Install and configure Claude, Codex, Hermes, or a custom runtime in Settings → OSINT Copilot."
       : "";
   }
 
@@ -222,7 +222,7 @@ export class ChatView extends ItemView {
     const configured = getConfiguredRuntimeOptions(this.plugin);
     if (av.availableIds.length === 0) {
       wrap.createEl("span", {
-        text: "No agent CLI detected. Configure Claude, Codex, Hermes, or a custom runtime under Settings → Tangent.",
+        text: "No agent CLI detected. Configure Claude, Codex, Hermes, or a custom runtime under Settings → OSINT Copilot.",
         cls: "setting-item-description",
       });
     }
@@ -477,7 +477,7 @@ export class ChatView extends ItemView {
     runtimeReady.catch((e) => {
       runtimeRow.empty();
       runtimeRow.createEl("span", {
-        text: "Could not detect agent runtimes. See Settings → Tangent.",
+        text: "Could not detect agent runtimes. See Settings → OSINT Copilot.",
         cls: "setting-item-description",
       });
       console.error("[OSINT Copilot] runtime availability probe failed:", e);
@@ -682,8 +682,16 @@ export class ChatView extends ItemView {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         // The same gate as the button: with no runtime the button is greyed out, but
-        // Enter still ran a full probe before saying so.
-        if (this.sendButtonEl?.disabled) return;
+        // Enter still ran a full probe before saying so. Say why instead of doing nothing.
+        if (this.sendButtonEl?.disabled) {
+          if (this.noRuntimeAvailable && !this.sending) {
+            new Notice(
+              "No agent runtime is available. Install Claude, Codex, Hermes, or a custom runtime and confirm Settings → OSINT Copilot.",
+              8000,
+            );
+          }
+          return;
+        }
         void this.handleSend();
       }
     });
@@ -1995,7 +2003,7 @@ export class ChatView extends ItemView {
     }
     if (availability.availableIds.length === 0) {
       new Notice(
-        "No agent runtime is available. Install Claude, Codex, Hermes, or a custom runtime and confirm settings under Tangent.",
+        "No agent runtime is available. Install Claude, Codex, Hermes, or a custom runtime and confirm Settings → OSINT Copilot.",
         8000,
       );
       return;
@@ -2018,7 +2026,7 @@ export class ChatView extends ItemView {
     if (needsImageRuntime && !availability.byId[imageRuntimeId]) {
       new Notice(
         `Image attachments are read by ${this.runtimeDisplayName(imageRuntimeId)}, which is unavailable, ` +
-        'so your message was not sent. Remove the images or configure that CLI in Settings → Tangent.',
+        'so your message was not sent. Remove the images or configure that CLI in Settings → OSINT Copilot.',
         9000,
       );
       return;

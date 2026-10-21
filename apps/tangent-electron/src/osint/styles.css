@@ -424,8 +424,15 @@
   font-weight: 600;
 }
 
-.vault-ai-send-btn:hover {
+.vault-ai-send-btn:hover:not(:disabled) {
   background-color: var(--interactive-accent-hover) !important;
+}
+
+/* Disabled must look disabled: with no agent CLI installed, a bright Send that does nothing
+   reads as a broken app rather than as "set up a runtime first". */
+.vault-ai-send-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .vault-ai-action-spacer {
