@@ -71,4 +71,4 @@ jobs:
           tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP" gitleaks
 
       - name: Scan Git history for secrets
-        run: "$RUNNER_TEMP/gitleaks" git --redact --verbose --no-banner
+        run: '"$RUNNER_TEMP/gitleaks" git --redact --verbose --no-banner'
