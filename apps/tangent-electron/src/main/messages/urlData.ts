@@ -5,9 +5,13 @@ import type { UrlData } from 'common/urlData'
 import { getWindowHandle } from 'main/workspaces'
 import chalk from 'chalk'
 import { isExternalLink } from 'common/links'
-import type { CheerioAPI } from 'cheerio'
 
 const log = Logger.get('url-data')
+
+// Taken from link-preview-js itself: it bundles its own cheerio, whose CheerioAPI type is
+// not the same as the one this package installs.
+type PreviewOptions = NonNullable<Parameters<typeof getLinkPreview>[1]>
+type ResponseHandler = NonNullable<PreviewOptions['onResponse']>
 
 type CacheItem = {
 	age: Date,
@@ -17,11 +21,12 @@ const previewCache = new Map<string, CacheItem>()
 
 const oneDayInMs = 24 * 60 * 60 * 1000;
 
-function getResponseHandlerURL(url: string) {
+function getResponseHandlerURL(url: string): ResponseHandler | undefined {
 	if (url.match(/wikipedia.org\/wiki/)) {
-		return (response, doc: CheerioAPI) => {
-			if (!response.description) {
-				response.description = doc('#mw-content-text p:not(.mw-empty-elt, table *)').first().text()
+		return (response, doc) => {
+			const page = response as { description?: string }
+			if (!page.description) {
+				page.description = doc('#mw-content-text p:not(.mw-empty-elt, table *)').first().text()
 			}
 			return response
 		}

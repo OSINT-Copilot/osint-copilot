@@ -1,7 +1,7 @@
 {
 	"appId": "com.probepoint.osint-copilot",
 	"productName": "OSINT Copilot",
-	"copyright": "Copyright © 2026 Probe Point Analytics LLC. Based on Tangent, © Taylor Hadden.",
+	"copyright": "Copyright © 2024-2026 Probe Point Analytics LLC. Based on Tangent, © Taylor Hadden.",
 
 	"generateUpdatesFilesForAllChannels": true,
 	"electronVersion": "42.1.0",
@@ -27,6 +27,20 @@
 			"from": "__build/bundle",
 			"to": "static",
 			"filter": ["*.css", "*.css.map"]
+		}
+	],
+	"extraResources": [
+		{
+			"from": "../../LICENSE.txt",
+			"to": "LICENSE.txt"
+		},
+		{
+			"from": "../../NOTICE",
+			"to": "NOTICE"
+		},
+		{
+			"from": "../../THIRD_PARTY_NOTICES.md",
+			"to": "THIRD_PARTY_NOTICES.md"
 		}
 	],
 
@@ -101,14 +115,14 @@
 	},
 
 	"nsis": {
-		"artifactName": "${productName}-Setup-${version}.${ext}",
+		"artifactName": "OSINT-Copilot-Setup-${version}.${ext}",
 		"oneClick": false,
 		"allowElevation": true,
 		"allowToChangeInstallationDirectory": true
 	},
 
 	"portable": {
-		"artifactName": "${productName}-Portable-${version}.${ext}"
+		"artifactName": "OSINT-Copilot-Portable-${version}.${ext}"
 	},
 
 	"appImage": {
@@ -183,11 +197,9 @@
 		]
 	},
 
-	// Releases go to a separate PUBLIC repository while the source stays private.
-	// GitHub has no per-release visibility: assets in a private repo need an
-	// authenticated token to download, so electron-updater cannot reach them without one
-	// being shipped inside the app. A public releases repo is what makes in-app updates
-	// possible without publishing the source or embedding a credential.
+	// Releases stay in the existing public feed for update compatibility. Every installed
+	// build has this owner/repository baked into resources/app-update.yml; moving the feed
+	// without a bridge release would strand those installations.
 	//
 	// This value is baked into resources/app-update.yml at package time, so an artifact
 	// looks for updates wherever this pointed WHEN IT WAS BUILT. Changing it requires

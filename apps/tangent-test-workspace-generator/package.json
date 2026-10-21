@@ -1,6 +1,7 @@
 {
   "name": "tangent-test-workspace-generator",
   "version": "0.0.1",
+  "private": true,
   "description": "A package that will generate test workspaces for Tangent.",
   "main": "index.js",
   "scripts": {
