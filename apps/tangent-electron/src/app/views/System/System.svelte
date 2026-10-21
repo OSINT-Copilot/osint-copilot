@@ -20,6 +20,7 @@ import Debug from './Debug.svelte'
 import OsintSettings from 'osint/integration/OsintSettings.svelte'
 import { anyShimModalIsOpen } from 'osint/obsidian-shim/ui/modal'
 import DocumentationLink from 'app/utils/DocumentationLink.svelte'
+import { PREMIUM_LICENSING_ENABLED } from 'common/premium'
 
 export let detailsOpen = false
 
@@ -89,12 +90,12 @@ const menus = [
 		name: 'Updates',
 		component: Updates
 	},
-	{
-		// No documentation page: the licence is ours, not something OSINT Copilot documents.
+	...(PREMIUM_LICENSING_ENABLED ? [{
+		// No documentation page: this is product licensing, not an upstream setting.
 		name: 'Licence',
 		component: License,
 		documentation: false
-	},
+	}] : []),
 	{
 		name: 'About',
 		component: About,

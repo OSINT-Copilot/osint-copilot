@@ -53,7 +53,7 @@ const userData = path.join(scratch, 'userData')
 test.use({
 	workspace,
 	resetWorkspace: true,
-	launchEnv: { OSINT_SKIP_LICENSE: '1', OC_TEST_AUTO_CONFIRM_PAIR: '1' },
+	launchEnv: { OC_TEST_AUTO_CONFIRM_PAIR: '1' },
 	launchArgs: [`--user-data-dir=${userData}`],
 })
 

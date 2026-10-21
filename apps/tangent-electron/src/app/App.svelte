@@ -12,11 +12,11 @@ import { Focus } from './utils/focus'
 import type { AnnotatedFocusEvent } from './utils/focus'
 import MessageToast from './views/MessageToast.svelte'
 import { isMac } from 'common/platform'
-import { mailTo } from 'common/email'
 import { mediaQueryStore } from './utils/svelte'
 import SvgIcon from './views/smart-icons/SVGIcon.svelte'
 import LicenseGate from './views/LicenseGate.svelte'
-import type { LicenseStatus } from 'common/license'
+import { openStatus, type LicenseStatus } from 'common/license'
+import { PREMIUM_LICENSING_ENABLED } from 'common/premium'
 
 import { dropAllTooltips, tooltips } from './utils/tooltips'
 import Tooltip from './utils/Tooltip.svelte'
@@ -32,11 +32,6 @@ let applicationState: 'initializing' | 'choosingWorkspace' | 'buildingWorkspace'
 let showLoading = false
 let showLoadingTimeout: number = null
 let workspace:Workspace = null
-let errorDetails: {
-	state: WorkspaceInitState,
-	error: any
-} = null 
-
 let api = (window as any).api as WindowApi
 
 if (isMac) {
@@ -192,29 +187,35 @@ window.addEventListener('keyup', (event:KeyboardEvent) => {
 })
 
 /**
- * The licence gate runs before anything else is built.
+ * A build that explicitly enables premium licensing runs its gate before anything else.
  *
  * `null` means "not asked yet", and the app renders nothing at all until main answers --
  * a few milliseconds -- because flashing the loading screen and then replacing it with a
  * licence prompt looks like a failure. No workspace is opened, and no vault is read,
- * until a key has been accepted.
+ * until a key has been accepted. The open-source build takes the `openStatus()` branch and
+ * starts normally without reading a stored key or contacting a licence server.
  */
-let licenseStatus: LicenseStatus = null
+let licenseStatus: LicenseStatus = PREMIUM_LICENSING_ENABLED ? null : openStatus()
 $: licensed = licenseStatus?.valid === true
 
-api.license.status().then(status => {
-	applyLicense(status)
-	if (status.valid) loadDefaultWorkspace()
-})
-.catch(e => {
-	console.error('Could not check the licence', e)
-	// Fail closed. A check that cannot run must not become a way past the gate.
-	applyLicense({
-		valid: false,
-		reason: 'missing',
-		message: 'The licence could not be checked. Please restart OSINT Copilot.'
+if (PREMIUM_LICENSING_ENABLED) {
+	api.license.status().then(status => {
+		applyLicense(status)
+		if (status.valid) loadDefaultWorkspace()
 	})
-})
+	.catch(e => {
+		console.error('Could not check the licence', e)
+		// Fail closed only when this build deliberately enables premium licensing.
+		applyLicense({
+			valid: false,
+			reason: 'missing',
+			message: 'The licence could not be checked. Please restart OSINT Copilot.'
+		})
+	})
+}
+else {
+	loadDefaultWorkspace()
+}
 
 function applyLicense(status: LicenseStatus) {
 	licenseStatus = status
@@ -269,10 +270,6 @@ async function setState(state: WorkspaceInitState) {
 			applicationState = 'usingWorkspace'
 		}
 		catch (e) {
-			errorDetails = {
-				state,
-				error: e
-			}
 			applicationState = 'error'
 			console.error('OSINT Copilot failed to initialize', e)
 			return
@@ -346,28 +343,6 @@ function tooltipContextInjection(injector) {
 	injector('workspace', workspace)
 }
 
-function getErrorEmail() {
-
-	const { state, error } = errorDetails
-
-	let body =`
-OSINT Copilot v${state.version} failed to initialize.
-
-Below is a stack trace of the error. Please provide any additional details above.\n\n` 
-
-	if (error instanceof Error) {
-		body += `${error.stack}`
-	}
-	else {
-		body += 'Error: ' + error
-	}
-
-	return mailTo('contact@tangentnotes.com', {
-		subject: `OSINT Copilot Initialization Error, v${state.version}`,
-		body
-	})
-}
-
 </script>
 
 <svelte:head>
@@ -375,7 +350,7 @@ Below is a stack trace of the error. Please provide any additional details above
 </svelte:head>
 <svelte:body on:focusin={onFocusIn} on:focusout={onFocusOut} on:contextmenu={dropAllTooltips} />
 
-{#if licenseStatus && !licensed}
+{#if PREMIUM_LICENSING_ENABLED && licenseStatus && !licensed}
 	<LicenseGate {api} status={licenseStatus} {onLicensed} />
 {:else if applicationState === 'initializing' && showLoading}
 	<div class="loading">
@@ -409,8 +384,8 @@ Below is a stack trace of the error. Please provide any additional details above
 		<p>OSINT Copilot encountered an issue while initializing.</p>
 		<p>
 			Please
-			<a href={getErrorEmail()}>click here</a>
-			to send an error report.
+			<a href="https://github.com/OSINT-Copilot/osint-copilot/issues/new?template=bug_report.yml"
+				target="_blank" rel="noreferrer noopener">open a bug report</a>.
 		</p>
 	</div>
 {/if}

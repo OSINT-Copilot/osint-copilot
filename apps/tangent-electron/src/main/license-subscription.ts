@@ -14,10 +14,9 @@ import {
 /**
  * Checking a subscription key against the OSINT Copilot dashboard.
  *
- * The dashboard (the `ready-saas` Django app) is the authority on who has paid for what.
- * This module is the only place that talks to it, and the only place that turns its JSON
- * into the app's own `LicenseStatus` — so a change to the server's field names lands in
- * exactly one function.
+ * The licence service is the authority on subscription state. This module is the only
+ * place that talks to it, and the only place that turns its JSON into the app's own
+ * `LicenseStatus` — so a change to the server's field names lands in exactly one function.
  *
  * ## What it deliberately does not do
  *
@@ -31,8 +30,8 @@ import {
  * `src/main/osint/node/net-guard.ts` refuses private and loopback addresses, because it
  * fetches URLs that a *model* chose. This is the opposite case: the address comes from
  * the build, or from a developer's own environment variable, and during development it is
- * deliberately `http://localhost:8000`. Running it through the guard would make the local
- * dashboard unusable while protecting against nothing.
+ * deliberately `http://localhost:8000`. Running it through the guard would make a local
+ * development service unusable while protecting against nothing.
  */
 
 /** Long enough for a slow connection; short enough not to hang a cold start. */

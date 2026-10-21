@@ -20,9 +20,9 @@
  *
  * ## The other kind of key
  *
- * Most users do not have one of those. They have a *subscription key*: the API key their
- * account issues on the OSINT Copilot dashboard (the `ready-saas` web app), which the
- * desktop app checks over HTTPS and which carries a tier — trial, basic or premium.
+ * When premium licensing is enabled, an account can instead have a *subscription key*:
+ * a URL-safe token issued by the licence service, checked over HTTPS, and associated with
+ * a tier — trial, basic, or premium.
  *
  * The two are told apart by shape, not by asking the user: an offline key starts with
  * `OSINT-`, a subscription key is a plain URL-safe token. See `licenseKeyKind`. Both end
@@ -55,9 +55,8 @@ export const LICENSE_PUBLIC_KEY_B64 = 'vfJVwoKdSteUyfyNsxKyz9iDzTBV7PN0fUL7iakm3
  * ------------------------------------------------------------------ */
 
 /**
- * What the app sells. Three, deliberately — the dashboard has more plans than this and
- * will grow more, and mapping them down happens on the server (orders/entitlements.py) so
- * a new plan never requires a new desktop build.
+ * The three tier names understood by the retained premium client. A future licence service
+ * may map any number of commercial plans onto these names without a desktop release.
  */
 export type AppTier = 'trial' | 'basic' | 'premium'
 
@@ -139,7 +138,7 @@ export type LicenseKeyKind = 'offline' | 'subscription'
  */
 export const DEFAULT_LICENSE_SERVER = 'https://osint-copilot.com'
 
-/** Path on that server. Answers with `{ ok, license }`; see orders/report_views.py. */
+/** Path on that server. Answers with the public `{ ok, license }` client contract. */
 export const LICENSE_ENDPOINT = '/api/desktop/license'
 
 /**
@@ -266,8 +265,8 @@ export type LicenseFailure =
 
 export interface LicenseStatus {
 	valid: boolean
-	/** Which kind of key produced this. Absent only before the first check. */
-	source?: LicenseKeyKind
+	/** Which kind of key produced this, or `open` when licensing is dormant. */
+	source?: LicenseKeyKind | 'open'
 	/** Present when an offline key produced this. */
 	payload?: LicensePayload
 	/** Present when a subscription key produced this, valid or not. */
@@ -381,4 +380,13 @@ export function licenseFailureMessage(reason: LicenseFailure): string {
 /** A failed status, carrying the sentence for its reason. */
 export function fail(reason: LicenseFailure): LicenseStatus {
 	return { valid: false, reason, message: licenseFailureMessage(reason) }
+}
+
+/** Full access for the open-source build while premium licensing is dormant. */
+export function openStatus(): LicenseStatus {
+	return {
+		valid: true,
+		source: 'open',
+		entitlements: { ...FULL_ENTITLEMENTS },
+	}
 }

@@ -89,9 +89,12 @@ test('Note Linking', async ({ tangent, workspace }) => {
 	await keyboard.type('Linking Note')
 	await keyboard.press('Enter')
 
-	// Link to another note
+	// Link to another note. The OSINT layer adds its entity folders (OSINTCopilot/Company,
+	// OSINTCopilot/Event, ...) as the workspace opens, and they are link targets too, so
+	// narrow the list rather than relying on which entry happens to be first.
 	await keyboard.type('Linking to [')
 	await keyboard.press('[')
+	await keyboard.type('Link No')
 	await keyboard.press('Enter')
 
 	const currentNoteTitle = window.locateCurrentNoteTitle()

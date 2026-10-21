@@ -18,6 +18,10 @@ const state = vi.hoisted(() => ({
 	requests: 0,
 }))
 
+// These tests pin the retained premium implementation. The separate dormant-mode suite
+// exercises the real, false-by-default product switch.
+vi.mock('../common/premium', () => ({ PREMIUM_LICENSING_ENABLED: true }))
+
 vi.mock('electron', () => ({
 	app: { getPath: () => state.userData, isPackaged: false },
 	ipcMain: { handle: () => {} },

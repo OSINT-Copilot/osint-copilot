@@ -54,7 +54,7 @@ const unreachable = (async () => { throw new TypeError('fetch failed') }) as unk
 
 describe('telling the two kinds of key apart', () => {
 	it('reads a dashboard token as a subscription key', () => {
-		expect(licenseKeyKind('kPqR3sT7uVwX2yZ4aB6cD8eF0gH1iJ3kL5mN7oP9')).toBe('subscription')
+		expect(licenseKeyKind('test-subscription-key-not-real-000000000')).toBe('subscription')
 	})
 
 	it('reads an OSINT- key as an offline key', () => {
@@ -67,7 +67,7 @@ describe('telling the two kinds of key apart', () => {
 	})
 
 	it('ignores the line breaks a pasted key arrives with', () => {
-		expect(licenseKeyKind('kPqR3sT7uVwX2yZ4\naB6cD8eF0gH1iJ3k')).toBe('subscription')
+		expect(licenseKeyKind('test-subscription-\nkey-not-real-000000000')).toBe('subscription')
 	})
 })
 
@@ -183,7 +183,7 @@ describe('reading what the dashboard said', () => {
 })
 
 describe('asking the dashboard', () => {
-	const KEY = 'kPqR3sT7uVwX2yZ4aB6cD8eF0gH1iJ3kL5mN7oP9'
+	const KEY = 'test-subscription-key-not-real-000000000'
 
 	it('sends the key as a bearer token to the licence endpoint', async () => {
 		let seenUrl = ''

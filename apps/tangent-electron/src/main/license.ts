@@ -9,10 +9,12 @@ import {
 	fail,
 	licenseKeyKind,
 	normalizeLicenseKey,
+	openStatus,
 	type LicenseKeyKind,
 	type LicenseStatus,
 	type SubscriptionDetails,
 } from '../common/license'
+import { PREMIUM_LICENSING_ENABLED } from '../common/premium'
 import { checkLicenseKey } from './license-verify'
 import { cachePolicy, statusFromCache, statusFromOfflinePayload } from './license-policy'
 import { checkSubscriptionKey, licenseServerUrl } from './license-subscription'
@@ -228,6 +230,7 @@ async function subscriptionStatus(stored: StoredLicense, force = false): Promise
  * costs one file read.
  */
 export async function licenseStatus(force = false): Promise<LicenseStatus> {
+	if (!PREMIUM_LICENSING_ENABLED) return openStatus()
 	if (developerBypass()) return bypassStatus()
 
 	const stored = readStored()
@@ -254,6 +257,7 @@ export async function licenseStatus(force = false): Promise<LicenseStatus> {
 
 /** Verifies a key and, if it is good, stores it. Returns what the user should be told. */
 export async function activateLicense(key: string): Promise<LicenseStatus> {
+	if (!PREMIUM_LICENSING_ENABLED) return openStatus()
 	const normalized = normalizeLicenseKey(key)
 	const kind = licenseKeyKind(normalized)
 	if (!kind) return fail('malformed')
@@ -297,12 +301,14 @@ export async function activateLicense(key: string): Promise<LicenseStatus> {
  * up their credits does not have to wait out the revalidation window or restart.
  */
 export async function refreshLicense(): Promise<LicenseStatus> {
+	if (!PREMIUM_LICENSING_ENABLED) return openStatus()
 	const status = await licenseStatus(true)
 	notifyLicenseChanged()
 	return status
 }
 
 export function clearLicense(): void {
+	if (!PREMIUM_LICENSING_ENABLED) return
 	cached = null
 	try {
 		rmSync(licenseFilePath(), { force: true })
