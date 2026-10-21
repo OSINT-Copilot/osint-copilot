@@ -12,7 +12,9 @@ the previous release, licence/notice files, and first-run behavior have been tes
 3. Commit with `Release X.Y.Z: <summary>` and create the annotated tag `vX.Y.Z`.
 4. Let the release workflow package the Linux and Windows (x64 and arm64) artifacts. A manual workflow run builds,
    verifies, and checksums artifacts but never publishes them. Only a matching pushed version tag
-   can run the final publisher. Build and dependency-install jobs receive no credentials; the
+   can run the final publisher, and only when the repository variable `PUBLISH_RELEASES` is
+   `true` and the protected `release` environment holds `RELEASES_TOKEN`; otherwise the run stops
+   after the verified, checksummed artifacts. Build and dependency-install jobs receive no credentials; the
    cross-repository token is exposed only to the final publish step.
 5. Review the draft in `OSINT-Copilot/osint-copilot-releases`. It is the permanent feed embedded
    in existing installations and must not be deleted or replaced without a bridge release.

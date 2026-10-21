@@ -260,9 +260,12 @@ jobs:
           retention-days: 30
           path: release-assets/
 
+  # Opt-in: set the repository variable PUBLISH_RELEASES to "true" once the protected
+  # "release" environment holds RELEASES_TOKEN. Until then a tag run builds, tests and
+  # checksums the artifacts (downloadable from the run) and stops short of publishing.
   publish:
     name: Create draft release
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    if: github.event_name == 'push' && github.ref_type == 'tag' && vars.PUBLISH_RELEASES == 'true'
     needs: [validate, assemble]
     runs-on: ubuntu-latest
     environment: release
