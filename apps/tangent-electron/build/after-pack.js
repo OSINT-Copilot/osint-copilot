@@ -93,24 +93,38 @@ esac
 [ -d "\$cache/OSINT Copilot" ] && rm -rf "\$cache/OSINT Copilot" 2>/dev/null || true
 helper="\$app/chrome-sandbox"
 
+# Chromium accepts the helper only when it is owned by root and setuid. The owner override is a
+# test seam; production never sets it and therefore always requires uid 0.
+helper_ready() {
+	expected_owner="\${OC_SANDBOX_OWNER_UID:-0}"
+	[ "$(stat -L -c '%u %a' "\$1" 2>/dev/null || echo "1 000")" = "\$expected_owner 4755" ]
+}
+
 # Unpack on the first start, and whenever the AppImage is a different version from the copy.
 if [ ! -x "\$app/${name}.bin" ] || [ "$(cat "\$app/.version" 2>/dev/null || true)" != "${version}" ]; then
 	echo "OSINT Copilot: unpacking to \$app (first start on this system)..." >&2
+	preserve_helper=""
+	if helper_ready "\$helper"; then
+		preserve_helper=1
+	fi
 	rm -rf "\$app.partial"
 	mkdir -p "\$app.partial"
 	cp -a "\$here/." "\$app.partial/"
 	printf '%s' "${version}" > "\$app.partial/.version"
+	# A user can rename a root-owned file between directories they own without changing its
+	# owner or mode. Carry the already-approved helper into the new version so an AppImage
+	# update does not make the user run the same sudo command again.
+	# Reuse the privileged helper only when Electron shipped the same bytes. A helper from
+	# another Electron/Chromium version may be incompatible and must be approved again.
+	if [ -n "\$preserve_helper" ] && cmp -s "\$helper" "\$app.partial/chrome-sandbox"; then
+		rm -f "\$app.partial/chrome-sandbox"
+		mv "\$helper" "\$app.partial/chrome-sandbox"
+	fi
 	rm -rf "\$app"
 	mv "\$app.partial" "\$app"
 fi
 
-# Chromium accepts the helper only when it is owned by root and setuid.
-helper_ready() {
-	# -L: follow the link if there is one, and read the owner of the file Chromium will exec.
-	[ "$(stat -L -c '%u %a' "\$helper" 2>/dev/null || echo "1 000")" = "0 4755" ]
-}
-
-if helper_ready; then
+if helper_ready "\$helper"; then
 	exec "\$app/${name}.bin" \$ozone "\$@"
 fi
 
@@ -142,6 +156,7 @@ exit 1
 `
 }
 
+exports.launcher = launcher
 exports.default = async function afterPack(context) {
 	if (context.electronPlatformName !== 'linux') return
 
