@@ -15,7 +15,6 @@ let settings = workspace.settings
 		Changing them can potentially break critical functionality!
 	</p>
 	<div class="settingsGroup">
-		<SettingView setting={settings.debug_sendCrashReports} />
 		<SettingView setting={settings.debug_createVirtualFiles} />
 		<SettingView setting={settings.debug_sendItemsToTrash} />
 		<SettingView setting={settings.debug_ioQueue_enable} />

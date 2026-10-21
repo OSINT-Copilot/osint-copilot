@@ -273,9 +273,15 @@ function onDetailsResized(entries: ResizeObserverEntry[]) {
 	{:else}
 		<div class="missing">
 			<p class="missing">
-				Tangent is not configured correctly to display {state.node.name}.
+					OSINT Copilot is not configured correctly to display {state.node.name}.
 			</p>
-			<p>If you see this, Taylor messed up.</p>
+				<p>
+					Please report this in the
+					<a target="_blank" rel="noreferrer noopener"
+						href="https://github.com/OSINT-Copilot/osint-copilot/issues/new?template=bug_report.yml">
+						OSINT Copilot repository
+					</a>.
+				</p>
 		</div>
 	{/if}
 

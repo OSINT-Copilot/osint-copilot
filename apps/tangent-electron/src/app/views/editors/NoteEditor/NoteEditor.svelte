@@ -1463,12 +1463,12 @@ function updateCodeBlockSizing(pre: HTMLElement, context: CodeBlockSizingContext
 >
 	<h1>Critical Error</h1>
 	<p>
-		Tangent encountered a critical error while processing this file.
+		OSINT Copilot encountered a critical error while processing this file.
 		The editor has fallen back to plain-text editing mode.
 	</p>
 	<p>
 		Please
-		<a target="_blank" rel="noreferrer" href="https://github.com/suchnsuch/Tangent/issues/new">
+		<a target="_blank" rel="noreferrer" href="https://github.com/OSINT-Copilot/osint-copilot/issues/new?template=bug_report.yml">
 			reach out to the developers
 		</a>
 		for support. Apologies for the inconvenience.</p>

@@ -182,7 +182,7 @@ ipcMain.handle('createFile', async (event, filepath, meta) => {
 				filepath, meta
 			})
 			const filename = workspace.contentsStore.pathToRelativePath(filepath) || filepath
-			windowHandle.postUserMessage('error', 'Failed to Create File', `The file "${filename}" failed to be created successfully.\nSave your work elsewhere and restart Tangent.`)
+				windowHandle.postUserMessage('error', 'Failed to Create File', `The file "${filename}" failed to be created successfully.\nSave your work elsewhere and restart OSINT Copilot.`)
 		}
 	}
 	else {
@@ -206,7 +206,7 @@ ipcMain.handle('createFolder', async (event, filepath) => {
 				filepath
 			})
 			const filename = workspace.contentsStore.pathToRelativePath(filepath) || filepath
-			windowHandle.postUserMessage('error', 'Failed to Create Folder', `The folder "${filename}" failed to be created successfully.\nSave your work elsewhere and restart Tangent.`)
+				windowHandle.postUserMessage('error', 'Failed to Create Folder', `The folder "${filename}" failed to be created successfully.\nSave your work elsewhere and restart OSINT Copilot.`)
 		}
 	}
 	else {
@@ -297,7 +297,7 @@ ipcMain.handle('move', async (event, filepath, newPath) => {
 		catch (err) {
 			log.error(`Failed to move ${filepath} to ${newPath}.`, err)
 			const filename = workspace.contentsStore.pathToRelativePath(filepath) || filepath
-			windowHandle.postUserMessage('error', `An error occured while moving ${filename}.\nPlease save your work elsewhere and restart Tangent.`)
+			windowHandle.postUserMessage('error', `An error occured while moving ${filename}.\nPlease save your work elsewhere and restart OSINT Copilot.`)
 		}
 	}
 	else {
@@ -320,7 +320,7 @@ ipcMain.handle('copy', async (event, filepath, newPath) => {
 		catch (err) {
 			log.error(`Failed to copy ${filepath} to ${newPath}.`, err)
 			const filename = workspace.contentsStore.pathToRelativePath(filepath) || filepath
-			windowHandle.postUserMessage('error', `An error occured while copying ${filename}.\nPlease save your work elsewhere and restart Tangent.`)
+			windowHandle.postUserMessage('error', `An error occured while copying ${filename}.\nPlease save your work elsewhere and restart OSINT Copilot.`)
 		}
 	}
 	else {
@@ -439,9 +439,9 @@ ipcMain.on('updateFile', (event, filepath, content) => {
 					'error',
 					'File Write Error',
 					`Could not write "${filepath}" to disk.
-Please copy your note elsewhere to avoid data loss and restart Tangent.
-Consider reaching out to the developer for support.
-Appologies for the inconvenience.`)
+Please copy your note elsewhere to avoid data loss and restart OSINT Copilot.
+If the problem continues, report it at https://github.com/OSINT-Copilot/osint-copilot/issues/new?template=bug_report.yml.
+Apologies for the inconvenience.`)
 			}
 		})
 	}

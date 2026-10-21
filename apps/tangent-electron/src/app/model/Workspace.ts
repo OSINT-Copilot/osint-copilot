@@ -325,7 +325,7 @@ export default class Workspace extends EventDispatcher {
 			this.api.postMessage({
 				type: 'error',
 				title: 'File Model Error',
-				message: 'The workspace attempted to construct a null node. This is invalid. Please reach out to the developers with your logs.'
+				message: 'The workspace attempted to construct a null node. This is invalid. Please report it with your logs at https://github.com/OSINT-Copilot/osint-copilot/issues/new?template=bug_report.yml.'
 			})
 			return null
 		}
@@ -333,7 +333,7 @@ export default class Workspace extends EventDispatcher {
 			this.api.postMessage({
 				type: 'error',
 				title: 'File Model Error',
-				message: 'The workspaces attempted to construct a node with an invalid fileType field. Please reach out to the developers with your logs.'
+				message: 'The workspace attempted to construct a node with an invalid fileType field. Please report it with your logs at https://github.com/OSINT-Copilot/osint-copilot/issues/new?template=bug_report.yml.'
 			})
 			console.error('Tree node has an invalid filetype:', raw)
 			return null

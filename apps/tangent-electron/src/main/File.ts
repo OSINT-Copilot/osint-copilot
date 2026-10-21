@@ -163,8 +163,8 @@ export default class File extends WorkspaceTreeNode {
 						'error',
 						'File Write Error',
 						`Could not write "${this.path}" to disk.
-Please copy your note elsewhere to avoid data loss and restart Tangent.
-Appologies for the inconvenience.`)
+Please copy your note elsewhere to avoid data loss and restart OSINT Copilot.
+Apologies for the inconvenience.`)
 				}
 				return FileSaveResult.Failed
 			}

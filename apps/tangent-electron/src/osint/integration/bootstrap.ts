@@ -36,7 +36,7 @@ const MANIFEST = {
     version: OSINT_VERSION,
     minAppVersion: '0.0.0',
     description: 'An OSINT investigation workspace built on local markdown notes.',
-    author: 'Probe Point Analytics LLC',
+    author: 'OSINT Copilot contributors',
 };
 
 let current: OsintRuntime | null = null;

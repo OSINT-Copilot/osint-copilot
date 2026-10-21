@@ -50,7 +50,7 @@ export default async function migrate(filepath: string, defaultsFolder: string):
 	}
 	catch (e) {
 		log.error('An error occured while migrating workspace data: ', e)
-		userFacingErrors.push('OSINT Copilot was unable to update workspace data. Please restart OSINT Copilot, or contact Probe Point Analytics if it keeps happening.')
+		userFacingErrors.push('OSINT Copilot was unable to update workspace data. Please restart OSINT Copilot. If it keeps happening, report it at https://github.com/OSINT-Copilot/osint-copilot/issues/new?template=bug_report.yml.')
 	}
 
 	const updateChannel = getVersionChannel()
@@ -97,7 +97,7 @@ async function ensureWorkspaceSettingsExist(tangentPath: string, defaultsFolder:
 		}
 		catch (e) {
 			log.error('Failed to copy default workspace settings. OSINT Copilot should be restarted.')
-			return ['OSINT Copilot was unable to initiaize workspace settings. Please restart Tangent.']
+				return ['OSINT Copilot was unable to initialize workspace settings. Please restart OSINT Copilot.']
 		}
 	}
 	return []

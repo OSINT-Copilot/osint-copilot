@@ -68,7 +68,7 @@ export function createWindow(assignedWorkspace?: string) {
 	newWindow.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
 		if (details.url.toLowerCase().startsWith('https://www.youtube.com/')) {
 			// Inject a non-local-host referer so that YouTube embeds work properly
-			details.requestHeaders.Referer = 'https://www.tangentnotes.com/'
+			details.requestHeaders.Referer = 'https://github.com/OSINT-Copilot/osint-copilot'
 		}
 		callback(details)
 	})
