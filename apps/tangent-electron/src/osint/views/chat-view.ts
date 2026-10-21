@@ -201,15 +201,15 @@ export class ChatView extends ItemView {
     }
   }
 
-  /** Applied once the runtime probe settles; see the note in render(). */
+  /**
+   * Applied once the runtime probe settles; see the note in render(). The probe is cached
+   * and often settles while render() is still awaiting the message list, before this
+   * render's Send button exists, so the state is recorded first and the button picks it
+   * up when it is created.
+   */
   private applyRuntimeAvailabilityToSendButton(av: ChatRuntimeAvailability): void {
-    if (!this.sendButtonEl) return;
-    const none = av.availableIds.length === 0;
-    this.noRuntimeAvailable = none;
+    this.noRuntimeAvailable = av.availableIds.length === 0;
     this.syncSendControls();
-    this.sendButtonEl.title = none
-      ? "Install and configure Claude, Codex, Hermes, or a custom runtime in Settings → OSINT Copilot."
-      : "";
   }
 
   private buildRuntimeHeaderRow(buttonGroup: HTMLElement, av: ChatRuntimeAvailability): void {
@@ -585,11 +585,11 @@ export class ChatView extends ItemView {
       cls: "vault-ai-send-btn"
     });
     this.sendButtonEl = sendBtn;
-    // Enabled optimistically: the probe above settles a moment later and disables Send
-    // only if nothing is actually available. Starting disabled would make the button
-    // look broken for the first few seconds.
-    sendBtn.disabled = false;
-    sendBtn.title = "";
+    // Enabled optimistically on the first render: the probe above settles a moment later
+    // and disables Send only if nothing is actually available, and starting disabled would
+    // make the button look broken for the first few seconds. A later render starts from
+    // whatever the probe last said, which may already have arrived during the awaits above.
+    this.syncSendControls();
     sendBtn.addEventListener("click", () => void this.handleSend());
 
     // Drag and Drop Overlay
@@ -1952,7 +1952,11 @@ export class ChatView extends ItemView {
   private noRuntimeAvailable = false;
 
   private syncSendControls(): void {
-    if (this.sendButtonEl) this.sendButtonEl.disabled = this.sending || this.noRuntimeAvailable;
+    if (!this.sendButtonEl) return;
+    this.sendButtonEl.disabled = this.sending || this.noRuntimeAvailable;
+    this.sendButtonEl.title = this.noRuntimeAvailable
+      ? "Install and configure Claude, Codex, Hermes, or a custom runtime in Settings → OSINT Copilot."
+      : "";
   }
 
   /** Puts a message and its attachments back after a send that could not go ahead. */
