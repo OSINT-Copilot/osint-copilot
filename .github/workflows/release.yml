@@ -169,7 +169,7 @@ jobs:
 
           test -f "release-assets/osint-copilot-$APP_VERSION-x86_64.AppImage"
           test -f "release-assets/osint-copilot-$APP_VERSION-arm64.AppImage"
-          test -f "release-assets/osint-copilot_$APP_VERSION_amd64.deb"
+          test -f "release-assets/osint-copilot_${APP_VERSION}_amd64.deb"
           test -f "release-assets/osint-copilot-$APP_VERSION.x86_64.rpm"
           test -f release-assets/latest-linux.yml
           test -f release-assets/latest-linux-arm64.yml
