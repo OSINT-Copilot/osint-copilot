@@ -12,8 +12,6 @@ let state = workspace.updateState
 
 let suppressUpdates = false
 
-$: channel = workspace.settings.updateChannel
-
 $: mode = state.mode
 $: lastChecked = state.lastChecked
 $: nextUpdate = state.nextUpdate
@@ -31,7 +29,7 @@ function getButtonText(_m?, _n?) {
 		case 'checking':
 			return 'Checking…'
 		case 'available':
-			return `Download ${version}`
+			return state.isPortable ? `Download ${version} Manually` : `Downloading ${version}`
 		case 'downloading':
 			return `Downloading ${version}`
 		case 'ready':
@@ -47,6 +45,9 @@ function buttonClicked() {
 		case 'up-to-date':
 		case 'error':
 			return state.checkForUpdate()
+		case 'available':
+			if (state.isPortable) return state.openManualDownload()
+			return
 		case 'ready':
 			return state.updateNow()
 	}
@@ -59,29 +60,12 @@ function laterButtonClick() {
 </script>
 
 <main>
-	<p>
-		<SettingView setting={channel} showReset={false} />
-	</p>
-	{#if $channel === 'beta'}
-		<p class="message">
-			The beta channel may contain bugs.
-			If you encounter a bug, please
-			<a target="_blank" rel="noreferrer" href="https://mastodon.social/@taylorhadden">tell me on Mastodon</a>.
-		</p>
-	{:else if $channel === 'alpha'}
-		<p class="message warning">
-			This channel <em>will</em> contain bugs.
-			Only select this channel if you are comfortable with risking stability.
-			If you encounter a bug, please
-			<a target="_blank" rel="noreferrer" href="https://mastodon.social/@taylorhadden">tell me on Mastodon</a>.
-		</p>
-	{/if}
-
 	<article>
 		<button
 			class="updateButton"
 			on:click={buttonClicked}
-			disabled={$mode === 'checking' || $mode === 'downloading'}
+			disabled={$mode === 'checking' || $mode === 'downloading'
+				|| ($mode === 'available' && !state.isPortable)}
 		>
 			<div>{buttonText}</div>
 			{#if downloadPercent}
@@ -94,6 +78,14 @@ function laterButtonClick() {
 		{#if $mode === 'up-to-date'}
 			<p class="info up-to-date" transition:slide={{ duration: 300 }}>
 				You are up to date!
+			</p>
+		{/if}
+
+		{#if $mode === 'available' && state.isPortable}
+			<p class="info ready" transition:slide={{ duration: 300 }}>
+				Portable copies update manually. Download the new portable executable from the
+				<a href="https://github.com/OSINT-Copilot/osint-copilot-releases/releases/latest"
+					target="_blank" rel="noreferrer noopener">latest release</a>.
 			</p>
 		{/if}
 
@@ -122,7 +114,8 @@ function laterButtonClick() {
 				</p>
 				<p>
 					You can try to check for updates again, or
-					<a href="http://tangentnotes.com/Download" target="_blank" rel="noreferrer">download the latest installer.</a>
+					<a href="https://github.com/OSINT-Copilot/osint-copilot-releases/releases/latest"
+						target="_blank" rel="noreferrer noopener">download the latest release.</a>
 				</p>
 			</div>
 			
@@ -140,12 +133,6 @@ function laterButtonClick() {
 </main>
 
 <style lang="scss">
-.message {
-	font-size: 80%;
-	margin: 1em 2em;
-	line-height: 1.25em;
-}
-
 .progressBar {
 	visibility: hidden;
 	height: 4px;
@@ -160,10 +147,6 @@ function laterButtonClick() {
 
 		transition: width .1s;
 	}
-}
-
-.warning {
-	color: var(--warningTextColor);
 }
 
 article {

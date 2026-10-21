@@ -277,6 +277,7 @@ export default interface WindowAPI {
 }
 
 export interface UpdateAPI {
+	isPortable(): boolean
 	onChecking(handler: () => void)
 	onAvailable(handler: (info: UpdateInfo) => void)
 	onNotAvailable(handler: () => void)
@@ -286,4 +287,5 @@ export interface UpdateAPI {
 
 	checkForUpdate()
 	update()
+	openManualDownload()
 }

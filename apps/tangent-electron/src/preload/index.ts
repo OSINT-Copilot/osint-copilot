@@ -1,6 +1,7 @@
 import type WindowApi from 'common/WindowApi'
 import type { UserMessage } from 'common/WindowApi'
 import { contextBridge, ipcRenderer } from 'electron'
+import { isPortableInstallation, UPDATE_DOWNLOAD_URL } from 'common/update-policy'
 
 function on(channel:string,  handler: (...args) => void) {
 	ipcRenderer.on(channel, (event, ...args) => {
@@ -28,6 +29,7 @@ on('message', onMessages)
 // One synchronous round trip, before the page loads: the renderer reads platform info
 // synchronously at seven sites and it cannot change during a run.
 const platformSnapshot = ipcRenderer.sendSync('osint:platform')
+const portableInstall = isPortableInstallation(process.env)
 
 const bridge: WindowApi = {
 
@@ -270,6 +272,9 @@ const bridge: WindowApi = {
 		}
 	},
 	update: {
+		isPortable() {
+			return portableInstall
+		},
 		onChecking(handler) {
 			on('checking-for-update', handler)
 		},
@@ -293,6 +298,9 @@ const bridge: WindowApi = {
 		},
 		update() {
 			ipcRenderer.send('update', 'now')
+		},
+		openManualDownload() {
+			ipcRenderer.invoke('openExternal', UPDATE_DOWNLOAD_URL)
 		}
 	},
 

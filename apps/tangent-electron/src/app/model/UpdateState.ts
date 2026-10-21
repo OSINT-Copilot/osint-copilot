@@ -7,6 +7,7 @@ type UpdateMode = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloadin
 export default class UpdateState {
 
 	private api: UpdateAPI
+	readonly isPortable: boolean
 
 	mode: WritableStore<UpdateMode> = new WritableStore('idle')
 	lastChecked: WritableStore<Date> = new WritableStore(null)
@@ -17,6 +18,7 @@ export default class UpdateState {
 
 	constructor(api: UpdateAPI) {
 		this.api = api
+		this.isPortable = api.isPortable()
 		api.onChecking(() => {
 			this.nextUpdate.set(null)
 			this.downloadProgress.set(null)
@@ -59,5 +61,9 @@ export default class UpdateState {
 
 	updateNow() {
 		this.api.update()
+	}
+
+	openManualDownload() {
+		this.api.openManualDownload()
 	}
 }

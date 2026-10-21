@@ -52,26 +52,12 @@ class KeymapSettings extends PatchableMap<string, string[], string[]> {
 export default class Settings extends ObjectStore {
 	updateChannel = new Setting<string>({
 		name: 'Update Channel',
-		description: 'Controls what versions OSINT Copilot will automatically update to.',
+		description: 'OSINT Copilot currently publishes updates on the stable channel.',
 		validValues: [
 			{
 				value: 'latest',
 				displayName: 'Stable',
-				description: 'OSINT Copilot will auto-update to the latest version hardened by a beta phase. ' +
-					'Choose this to prefer stability over new features.'
-			},
-			{
-				value: 'beta',
-				displayName: 'Beta',
-				description: 'OSINT Copilot will auto-update to the latest stable or beta version. ' +
-					'Choose this to participate in the beta period for a release. There may be bugs, but features should appear fully-formed.'
-			},
-			{
-				value: 'alpha',
-				displayName: 'Bleeding Edge',
-				description: 'OSINT Copilot will auto-update to the absolute latest version. ' +
-					'Choose this to get access to features as soon as they are developed. There will be bugs.'
-				
+				description: 'OSINT Copilot will update to the latest published stable release.'
 			}
 		]
 	})
@@ -687,8 +673,8 @@ export default class Settings extends ObjectStore {
 
 	// Debug
 	debug_sendCrashReports = new Setting<boolean>({
-		name: 'Send Crash Reports',
-		description: 'When enabled, if OSINT Copilot crashes, it will upload a crash report to a third party server to assist with debugging.',
+		name: 'Send Crash Reports (Unavailable)',
+		description: 'Reserved for a future project-owned, opt-in crash service. Automatic crash uploads are disabled.',
 		defaultValue: false
 	})
 

@@ -6,11 +6,17 @@ import { mode } from './environment'
 import { contentsMap, saveAndCloseWorkspaces } from './workspaces'
 import { subscribeToSettings } from './settings'
 import Logger from 'js-logger'
+import {
+	configureInstallPolicy,
+	configureUpdateChannel,
+	isPortableInstallation,
+	supportedUpdateChannel,
+} from '../common/update-policy'
 
 const log = Logger.get('updates')
 
-autoUpdater.autoDownload = true
-autoUpdater.autoInstallOnAppQuit = true
+const portable = isPortableInstallation(process.env)
+configureInstallPolicy(autoUpdater, portable)
 
 let lastUpdateChecked = null
 let readyUpdate: UpdateInfo = null
@@ -139,6 +145,10 @@ export function checkForUpdates() {
 ipcMain.on('update', async (event, message) => {
 	switch (message) {
 		case 'now':
+			if (portable) {
+				log.info('Ignoring automatic install request from a portable build')
+				break
+			}
 			if (readyUpdate) {
 				if (mode === 'production') {
 					log.info('Quitting and installing update by user request')
@@ -157,9 +167,9 @@ ipcMain.on('update', async (event, message) => {
 })
 
 subscribeToSettings(settings => {
-	const updateChannel = settings.updateChannel.value
+	const updateChannel = supportedUpdateChannel(settings.updateChannel.value)
 	if (updateChannel !== autoUpdater.channel) {
-		autoUpdater.channel = updateChannel
+		configureUpdateChannel(autoUpdater, updateChannel)
 		if (settings.automaticallyCheckForUpdates.value) {
 			checkForUpdates()
 		}
