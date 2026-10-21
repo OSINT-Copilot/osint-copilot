@@ -52,6 +52,7 @@
   "mapCustomTileUrl": "",
   "mapCustomTileAttribution": "",
   "mapOfflineBasemapPath": "",
+  "geocodingBaseUrl": "",
   "enabledSchemaFamilies": {
     "ftm": true,
     "stix2": true,

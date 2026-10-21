@@ -1,0 +1,24 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: f443bfd1-35cf-4cd5-9753-03ad142d07bf
+fromEntityId: d3e0a000-0000-4000-8000-000000000004
+toEntityId: d3e0a000-0000-4000-8000-000000000005
+fromLabel: Brightwater Holdings Ltd
+toLabel: Northgate Freight BV
+relationship: Ownership
+label: Brightwater Holdings Ltd → Ownership → Northgate Freight BV
+properties:
+  percentage: "60"
+  startDate: 2024-04-01
+ftmSchema: Ownership
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/Brightwater Holdings Ltd - Ownership - Northgate Freight BV.md
+osint_sources:
+  - id: src_f2977655b67b44c8
+    source_url: https://pastebin.news.example/raw/brightwater-invoice-0412
+    archive_status: skipped
+    inferred: false
+    rationale: Share transfer referenced on the invoice
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

@@ -1,0 +1,72 @@
+From: <Saved by Blink>
+Snapshot-Content-Location: http://northgate-freight.example/contact
+Subject: =?utf-8?Q?Contact=20=C2=B7=20Northgate=20Freight=20BV?=
+Date: Wed, 21 Oct 2026 17:19:50 +0200
+MIME-Version: 1.0
+Content-Type: multipart/related;
+	type="text/html";
+	boundary="----MultipartBoundary--PKSbmDlZXTzYiTm7xEKuRgcKDjCFHkbsWaYt1WHFSv----"
+
+
+------MultipartBoundary--PKSbmDlZXTzYiTm7xEKuRgcKDjCFHkbsWaYt1WHFSv----
+Content-Type: text/html
+Content-ID: <frame-134F8F084C4806E95F1FD3C33C964374@mhtml.blink>
+Content-Transfer-Encoding: quoted-printable
+Content-Location: http://northgate-freight.example/contact
+
+<!DOCTYPE html><html lang=3D"en"><head><meta http-equiv=3D"Content-Type" co=
+ntent=3D"text/html; charset=3DUTF-8"><link rel=3D"stylesheet" type=3D"text/=
+css" href=3D"cid:css-3ff15622-3a4e-43b2-a0fd-4df4ff4c9a9a@mhtml.blink" /><t=
+itle>Contact =C2=B7 Northgate Freight BV</title></head>
+<body><header><strong>Northgate Freight BV</strong> =C2=B7 Services =C2=B7 =
+Warehousing =C2=B7 Contact</header><main><h1>Contact Northgate Freight</h1>
+	<p>Consolidation, customs clearance and last-mile delivery across the EU.<=
+/p>
+	<table>
+		<tbody><tr><td>Warehouse</td><td>Waalhaven Zuidzijde, Rotterdam</td></tr>
+		<tr><td>UK sales line</td><td>+44 20 7946 0958</td></tr>
+		<tr><td>Board contact</td><td>m.koval@brightwater-holdings.example</td></=
+tr>
+		<tr><td>Quarterly reports</td><td><a href=3D"http://files.northgate-freig=
+ht.example/reports/q2-2024-consolidation.pdf">Q2 2024 consolidation manifes=
+t (PDF)</a></td></tr>
+	</tbody></table></main>
+<footer>A fictional page made for the OSINT Copilot demo investigation. Not=
+hing on it is real.</footer></body></html>
+------MultipartBoundary--PKSbmDlZXTzYiTm7xEKuRgcKDjCFHkbsWaYt1WHFSv----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-3ff15622-3a4e-43b2-a0fd-4df4ff4c9a9a@mhtml.blink
+
+@charset "utf-8";
+
+body { font: 16px / 1.5 Georgia, serif; margin: 0px; background: rgb(246, 2=
+44, 239); color: rgb(34, 34, 34); }
+
+header { background: rgb(31, 58, 77); color: rgb(255, 255, 255); padding: 1=
+4px 32px; }
+
+header a { color: rgb(207, 227, 242); }
+
+main { max-width: 820px; margin: 24px auto; padding: 0px 24px 48px; backgro=
+und: rgb(255, 255, 255); }
+
+.post { border-bottom: 1px solid rgb(221, 221, 221); padding: 16px 0px; }
+
+.meta { color: rgb(119, 119, 119); font-size: 13px; }
+
+code, pre { font-family: ui-monospace, monospace; font-size: 13px; backgrou=
+nd: rgb(241, 241, 241); }
+
+pre { padding: 8px 12px; white-space: pre-wrap; }
+
+table { border-collapse: collapse; width: 100%; }
+
+td { border-bottom: 1px solid rgb(238, 238, 238); padding: 6px 4px; vertica=
+l-align: top; }
+
+td:first-child { color: rgb(85, 85, 85); width: 38%; }
+
+footer { text-align: center; font: 12px sans-serif; color: rgb(153, 153, 15=
+3); padding: 16px; }
+------MultipartBoundary--PKSbmDlZXTzYiTm7xEKuRgcKDjCFHkbsWaYt1WHFSv------

@@ -1,9 +1,9 @@
 ---
-id: "eced9768-d501-4196-a6b9-d24f8897813a"
+id: "f3e0ad78-25a2-49a8-a2c5-5552d16c03dc"
 type: connection
 relationship: "USES_EMAIL"
 fromEntityId: "d3e0a000-0000-4000-8000-000000000001"
-toEntityId: "b95bff03-8b74-4df0-aa03-7cd0f5660429"
+toEntityId: "3337f912-808b-4291-b413-1e7891708fc3"
 fromEntity: "[[Marta Koval]]"
 toEntity: "[[m.koval@brightwater-holdings.example]]"
 schemaFamily: ftm

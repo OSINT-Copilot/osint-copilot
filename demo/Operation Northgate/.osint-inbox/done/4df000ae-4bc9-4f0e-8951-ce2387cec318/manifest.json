@@ -1,0 +1,23 @@
+{
+  "v": 1,
+  "bundleId": "4df000ae-4bc9-4f0e-8951-ce2387cec318",
+  "workspaceId": "VClqFaLRd7XJWp-Z0ilaTr",
+  "page": {
+    "url": "http://registry.cy.example/company/HE000000",
+    "title": "BRIGHTWATER HOLDINGS LTD · HE 000000 · Company Registry"
+  },
+  "clientTime": "2026-10-21T15:19:20.492Z",
+  "kind": "entity",
+  "entity": {
+    "kind": "email",
+    "value": "m.koval@brightwater-holdings.example",
+    "context": "Contact e-mail on file"
+  },
+  "server": {
+    "receivedAt": "2026-10-21T15:19:20.501Z",
+    "clientId": "DjZ3RfbCgAcRblvrn0K8BA",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0"
+  },
+  "mac": "LbYnGZEV3ptODunn5MmRrUQDRxw6EJ8Vvcv8R05NJ5w"
+}

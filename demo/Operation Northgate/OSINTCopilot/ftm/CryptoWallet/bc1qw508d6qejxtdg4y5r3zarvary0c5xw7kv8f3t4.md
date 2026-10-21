@@ -1,5 +1,5 @@
 ---
-id: "4275bd87-10ce-41df-b70c-aca2ff27d414"
+id: "4236cc3d-6d77-47d9-babc-0ecc701f7b33"
 type: CryptoWallet
 schemaFamily: ftm
 ftmSchema: CryptoWallet
@@ -8,16 +8,16 @@ publicKey: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
 currencySymbol: "BTC"
 osint_confidence: low
 osint_sources:
-  - id: ext_eb3d52f1-748b-4331-b142-dcfd54008430
+  - id: ext_e5534319-a619-4ab9-830f-25aa3911d129
     source_url: http://harbourmarket.example/thread/4471
     archive_status: skipped
     inferred: false
     rationale: 'Sent from the OSINT Copilot browser extension: "BTC payment address
       in post #1"'
-    captured_at: 2026-09-19T20:05:08.988Z
+    captured_at: 2026-10-21T15:18:34.854Z
     via: extension
-    client_id: 4BoIM8Mp_kM-n6xver6c8A
-    received_at: 2026-09-19T20:05:08.988Z
+    client_id: DjZ3RfbCgAcRblvrn0K8BA
+    received_at: 2026-10-21T15:18:34.854Z
 ---
 
 # bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4

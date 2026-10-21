@@ -7,7 +7,7 @@ properties:
   name: Northgate Freight BV
   jurisdiction: nl
   country: nl
-  registrationNumber: "81234567"
+  registrationNumber: "00000000"
   incorporationDate: 2019-06-12
   status: Active
   legalForm: Besloten vennootschap
@@ -16,7 +16,7 @@ properties:
   image: OSINTCopilot/Evidence/northgate-freight-bv-picture.png
   Name: Northgate Freight BV
   Jurisdiction: nl
-  Registration number: 81234567
+  Registration number: 0
   Incorporation date: 2019-06-12
   Country: nl
   Status: Active
@@ -27,8 +27,8 @@ ftmSchema: Company
 schemaFamily: ftm
 notePath: OSINTCopilot/ftm/Company/Northgate Freight BV.md
 osint_sources:
-  - id: src_828903f58428e7b2
-    source_url: https://kvk-register.example/company/81234567
+  - id: src_ac79436d1604c812
+    source_url: https://kvk-register.example/company/00000000
     archive_status: skipped
     inferred: false
     rationale: Trade register entry

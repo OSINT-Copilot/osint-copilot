@@ -90,7 +90,7 @@
     {
       "id": "forum-capture",
       "type": "file",
-      "file": "OSINTCopilot/Evidence/wts-oncology-generics-eu-shipping-harbour-market-d7dc97c2.viewport.png",
+      "file": "OSINTCopilot/Evidence/wts-oncology-generics-eu-shipping-harbour-market-9c77b707.viewport.png",
       "x": 1360,
       "y": 0,
       "width": 380,
@@ -99,12 +99,12 @@
     {
       "id": "registry-link",
       "type": "link",
-      "url": "http://registry.cy.example/company/HE412345",
+      "url": "http://registry.cy.example/company/HE000000",
       "x": 1800,
       "y": 0,
       "width": 340,
       "height": 180,
-      "osintLinkTitle": "BRIGHTWATER HOLDINGS LTD · HE 412345",
+      "osintLinkTitle": "BRIGHTWATER HOLDINGS LTD · HE 000000",
       "osintLinkDescription": "Registry extract: director, shareholder, registered office",
       "osintLinkSite": "registry.cy.example",
       "osintLinkFetchedAt": "2026-09-18T09:30:00.000Z"
@@ -126,7 +126,7 @@
       "id": "manifest",
       "type": "file",
       "file": "OSINTCopilot/ftm/Document/q2-2024-consolidation.pdf.md",
-      "osintEntityId": "8dfa3f52-f8b9-43ac-8632-de84c97d40b7",
+      "osintEntityId": "c8032393-908d-4bdd-af1c-a49f345770b0",
       "x": 1360,
       "y": 400,
       "width": 380,

@@ -1,0 +1,24 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: 63344dff-5eac-448a-bae6-eaed064a654a
+fromEntityId: d3e0a000-0000-4000-8000-000000000006
+toEntityId: d3e0a000-0000-4000-8000-000000000004
+fromLabel: Aurelia Trade LP
+toLabel: Brightwater Holdings Ltd
+relationship: Ownership
+label: Aurelia Trade LP → Ownership → Brightwater Holdings Ltd
+properties:
+  percentage: "100"
+  startDate: 2024-03-03
+ftmSchema: Ownership
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/Aurelia Trade LP - Ownership - Brightwater Holdings Ltd.md
+osint_sources:
+  - id: src_0de24cd57215950e
+    source_url: http://registry.cy.example/company/HE000000
+    archive_status: skipped
+    inferred: false
+    rationale: Sole shareholder
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

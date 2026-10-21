@@ -1,8 +1,8 @@
 ---
-id: "955cd87d-70dd-4a45-abdd-b3594dfb69f7"
+id: "699f8bdd-3a6b-4e3c-ae7f-2c137efe0afa"
 type: connection
 relationship: "shipped-via"
-fromEntityId: "0cc0809f-14a2-41a4-8eb5-bf5f40a4bab5"
+fromEntityId: "26da12c5-e51f-4790-a808-e105fc51e525"
 toEntityId: "d3e0a000-0000-4000-8000-000000000005"
 fromEntity: "[[Pallet NGF-2260 (38 parcels)]]"
 toEntity: "[[Northgate Freight BV]]"

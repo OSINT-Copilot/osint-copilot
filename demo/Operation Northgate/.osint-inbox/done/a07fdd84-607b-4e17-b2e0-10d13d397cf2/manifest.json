@@ -1,0 +1,23 @@
+{
+  "v": 1,
+  "bundleId": "a07fdd84-607b-4e17-b2e0-10d13d397cf2",
+  "workspaceId": "VClqFaLRd7XJWp-Z0ilaTr",
+  "page": {
+    "url": "http://harbourmarket.example/thread/4471",
+    "title": "[WTS] Oncology generics, EU shipping · Harbour Market"
+  },
+  "clientTime": "2026-10-21T15:18:41.965Z",
+  "kind": "entity",
+  "entity": {
+    "kind": "ip",
+    "value": "203.0.113.47",
+    "context": "Upstream named by the shop's checkout error (post #2)"
+  },
+  "server": {
+    "receivedAt": "2026-10-21T15:18:41.976Z",
+    "clientId": "DjZ3RfbCgAcRblvrn0K8BA",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0"
+  },
+  "mac": "zYtwD76VYV20gtLONIOFN4krlmysoY0nYSMDvUh13f8"
+}

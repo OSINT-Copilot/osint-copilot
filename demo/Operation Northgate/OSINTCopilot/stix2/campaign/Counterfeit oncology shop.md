@@ -1,5 +1,5 @@
 ---
-id: "7f267867-e0de-48f5-bfae-98f2cf4fdfac"
+id: "b52a55e6-77de-4b5a-85a9-a1d1667040c8"
 type: campaign
 schemaFamily: stix2
 label: "Counterfeit oncology shop"

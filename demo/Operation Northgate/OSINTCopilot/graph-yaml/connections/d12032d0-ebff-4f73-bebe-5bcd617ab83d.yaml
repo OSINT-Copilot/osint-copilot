@@ -1,0 +1,13 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: d12032d0-ebff-4f73-bebe-5bcd617ab83d
+fromEntityId: bae2810a-25cd-43ca-bdc6-3a7a8c459fdb
+toEntityId: b52a55e6-77de-4b5a-85a9-a1d1667040c8
+fromLabel: Checkout error page leaks its upstream
+toLabel: Counterfeit oncology shop
+relationship: indicates
+label: Checkout error page leaks its upstream → indicates → Counterfeit oncology shop
+properties: {}
+schemaFamily: stix2
+notePath: OSINTCopilot/Connections/Checkout error page leaks its upstream - indicates - Counterfeit oncology shop.md
+

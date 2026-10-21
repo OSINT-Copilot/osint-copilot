@@ -1,5 +1,5 @@
 ---
-id: "089ee18b-6ffe-4aae-9401-fcf8dcc0abe3"
+id: "63344dff-5eac-448a-bae6-eaed064a654a"
 type: connection
 relationship: "Ownership"
 fromEntityId: "d3e0a000-0000-4000-8000-000000000006"
@@ -13,8 +13,8 @@ percentage: "100"
 startDate: "2024-03-03"
 osint_confidence: low
 osint_sources:
-  - id: src_68e780383f0a3927
-    source_url: http://registry.cy.example/company/HE412345
+  - id: src_0de24cd57215950e
+    source_url: http://registry.cy.example/company/HE000000
     archive_status: skipped
     inferred: false
     rationale: Sole shareholder

@@ -1,5 +1,5 @@
 ---
-id: "4aeb5243-f1d5-4dbe-8448-0318dd9e99ba"
+id: "9fe78d6d-acb1-404a-867c-1fbe2319eef2"
 type: Domain
 schemaFamily: ftm
 ftmSchema: Domain
@@ -7,15 +7,15 @@ label: "medsupply-direct.example"
 name: "medsupply-direct.example"
 osint_confidence: low
 osint_sources:
-  - id: ext_0a850e57-95f5-4cc8-98ca-f12763e3fdd9
+  - id: ext_26a2d5cb-97e3-47d0-82a1-1053d07e0f95
     source_url: http://medsupply-direct.example/
     archive_status: skipped
     inferred: false
     rationale: Sent from the OSINT Copilot browser extension
-    captured_at: 2026-09-19T20:05:34.378Z
+    captured_at: 2026-10-21T15:18:58.635Z
     via: extension
-    client_id: 4BoIM8Mp_kM-n6xver6c8A
-    received_at: 2026-09-19T20:05:34.378Z
+    client_id: DjZ3RfbCgAcRblvrn0K8BA
+    received_at: 2026-10-21T15:18:58.635Z
 ---
 
 # medsupply-direct.example

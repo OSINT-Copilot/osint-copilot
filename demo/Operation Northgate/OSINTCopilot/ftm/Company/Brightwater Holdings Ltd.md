@@ -7,7 +7,7 @@ label: "Brightwater Holdings Ltd"
 name: "Brightwater Holdings Ltd"
 jurisdiction: "cy"
 country: "cy"
-registrationNumber: "HE 412345"
+registrationNumber: "HE 000000"
 incorporationDate: "2024-03-03"
 status: "Active"
 legalForm: "Private limited company"
@@ -16,8 +16,8 @@ notes: "Owns 60% of Northgate Freight BV since April 2024. Owned in turn by Aure
 image: "OSINTCopilot/Evidence/brightwater-holdings-ltd-picture.png"
 osint_confidence: conflicted
 osint_sources:
-  - id: src_baf6700340fbd3b6
-    source_url: http://registry.cy.example/company/HE412345
+  - id: src_670df6244cb8a179
+    source_url: http://registry.cy.example/company/HE000000
     archive_status: skipped
     inferred: false
     rationale: Registry extract
@@ -37,7 +37,7 @@ osint_sources:
 osint_contradictions:
   - field_path: properties.country
     entries:
-      - source_id: src_baf6700340fbd3b6
+      - source_id: src_670df6244cb8a179
         value: cy
       - source_id: src_014cb462f0e3f60d
         value: mt
@@ -49,7 +49,7 @@ osint_contradictions:
 
 - **Name**: Brightwater Holdings Ltd
 - **Jurisdiction**: cy
-- **Registration number**: HE 412345
+- **Registration number**: HE 000000
 - **Incorporation date**: 2024-03-03
 - **Country**: cy
 - **Status**: Active

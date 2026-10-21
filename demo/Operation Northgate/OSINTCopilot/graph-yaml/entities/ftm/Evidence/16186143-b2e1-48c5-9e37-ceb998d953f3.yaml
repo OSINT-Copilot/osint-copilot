@@ -1,0 +1,44 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: 16186143-b2e1-48c5-9e37-ceb998d953f3
+type: Evidence
+label: MedSupply Direct · Oncology generics without prescription
+properties:
+  name: MedSupply Direct · Oncology generics without prescription
+  url: http://medsupply-direct.example/
+  sha256: 6cd15ad98ab1b0501dda9a9de4a4f1cad8ec215a336ec9aa4b321d164a7b306c
+  description: "Web page captured by the OSINT Copilot browser extension from http://medsupply-direct.example/, received
+    2026-10-21T15:19:14.327Z. The archive is the page's DOM after JavaScript ran, with scripts removed: not the bytes
+    the server sent."
+  filePath: OSINTCopilot/Evidence/medsupply-direct-oncology-generics-without-prescription-6cd15ad9.md
+  Name: MedSupply Direct · Oncology generics without prescription
+  Description: "Web page captured by the OSINT Copilot browser extension from http://medsupply-direct.example/, received
+    2026-10-21T15:19:14.327Z. The archive is the page's DOM after JavaScript ran, with scripts removed: not the bytes
+    the server sent."
+ftmSchema: Document
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Document/MedSupply Direct · Oncology generics without prescription.md
+osint_sources:
+  - id: ext_05e6a678-045e-4361-82e7-dc3c1991abea
+    source_url: http://medsupply-direct.example/
+    archive_status: skipped
+    inferred: false
+    rationale: Captured by the OSINT Copilot browser extension; received 2026-10-21T15:19:14.327Z.
+    captured_at: 2026-10-21T15:19:14.327Z
+    via: extension
+    client_id: DjZ3RfbCgAcRblvrn0K8BA
+    received_at: 2026-10-21T15:19:14.327Z
+  - id: ext_05e6a678-045e-4361-82e7-dc3c1991abea_archive
+    source_url: vault://OSINTCopilot/Evidence/medsupply-direct-oncology-generics-without-prescription-6cd15ad9.mhtml
+    archive_status: skipped
+    inferred: false
+    rationale: "Captured by the OSINT Copilot browser extension: local MHTML archive of the page as it rendered, sha256
+      6cd15ad98ab1b0501dda9a9de4a4f1cad8ec215a336ec9aa4b321d164a7b306c. Attests that the archive has not changed since
+      it was received; it is not a record of what the server sent."
+    captured_at: 2026-10-21T15:19:14.327Z
+    via: extension
+    client_id: DjZ3RfbCgAcRblvrn0K8BA
+    sha256: 6cd15ad98ab1b0501dda9a9de4a4f1cad8ec215a336ec9aa4b321d164a7b306c
+    received_at: 2026-10-21T15:19:14.327Z
+osint_confidence: medium
+

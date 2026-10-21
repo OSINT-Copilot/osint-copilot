@@ -1,9 +1,9 @@
 ---
-id: "4023c7ae-2960-4004-908e-1b059f8a7fc6"
+id: "d12032d0-ebff-4f73-bebe-5bcd617ab83d"
 type: connection
 relationship: "indicates"
-fromEntityId: "2d8ae4a3-7d7f-499d-ac0f-230604542993"
-toEntityId: "7f267867-e0de-48f5-bfae-98f2cf4fdfac"
+fromEntityId: "bae2810a-25cd-43ca-bdc6-3a7a8c459fdb"
+toEntityId: "b52a55e6-77de-4b5a-85a9-a1d1667040c8"
 fromEntity: "[[Checkout error page leaks its upstream]]"
 toEntity: "[[Counterfeit oncology shop]]"
 schemaFamily: stix2

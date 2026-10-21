@@ -1,0 +1,25 @@
+{
+  "v": 1,
+  "steps": [
+    {
+      "step": "highlight",
+      "at": "2026-10-21T15:18:44.688Z",
+      "data": {
+        "path": "OSINTCopilot/Sources/wts-oncology-generics-eu-shipping-harbour-market-5f6a529d2fd6.md",
+        "outcome": "created"
+      }
+    },
+    {
+      "step": "applied",
+      "at": "2026-10-21T15:18:44.702Z",
+      "data": {
+        "entityId": null,
+        "entityLabel": null,
+        "created": false,
+        "addedSourceIds": [],
+        "sourcesNotePath": "OSINTCopilot/Sources/wts-oncology-generics-eu-shipping-harbour-market-5f6a529d2fd6.md",
+        "placedFiles": []
+      }
+    }
+  ]
+}

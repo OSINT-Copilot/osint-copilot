@@ -1,0 +1,20 @@
+{
+  "v": 1,
+  "bundleId": "76497a03-adb0-407d-9cdf-44b2496a23c7",
+  "status": "done",
+  "archiveSha256": "9d0c773e4c92dad5f44905feb146ed332f67afcb3b851e80d10d80c8a8327efd",
+  "contentLocation": "http://registry.cy.example/company/HE000000",
+  "urlMismatch": false,
+  "title": "BRIGHTWATER HOLDINGS LTD · HE 000000 · Company Registry",
+  "errors": [],
+  "derivedAt": "2026-10-21T15:19:36.844Z",
+  "markdown": {
+    "file": "page.markdown",
+    "sha256": "194a962ab7da9edf34548b18da8f20cf3b6e217f64db1f4c084546ce3204fe3a"
+  },
+  "fullpage": {
+    "file": "fullpage.png",
+    "sha256": "d9c8410e117fc988dffddd03a99735290b6fb8c7e1c81d722f263fe8fb7fb746"
+  },
+  "mac": "8N4njOiGyDTR6oD7Pk5tYsI5r8FSvITyhNSUCpSATAc"
+}

@@ -39,7 +39,7 @@ const scratch = path.join(os.tmpdir(), `oc-demo-${process.pid}`)
 test.use({
 	workspace,
 	resetWorkspace: false,
-	launchEnv: { OSINT_SKIP_LICENSE: '1', OC_TEST_AUTO_CONFIRM_PAIR: '1' },
+	launchEnv: { OC_TEST_AUTO_CONFIRM_PAIR: '1' },
 })
 
 /** The Chromium to launch, resolved as the extension's e2e does. */
@@ -522,7 +522,7 @@ test('build the demo investigation', async ({ tangent }) => {
 				{ id: 'g-evidence', type: 'group', label: 'Evidence', x: 1320, y: -60, width: 860, height: 730 },
 				{ id: 'forum-capture', type: 'file', file: fileOf(forumCapture, 'viewport') ?? fileOf(forumCapture, 'fullpage'), x: 1360, y: 0, width: 380, height: 300 },
 				{ id: 'registry-link', type: 'link', url: URLS.registry, x: 1800, y: 0, width: 340, height: 180,
-					osintLinkTitle: 'BRIGHTWATER HOLDINGS LTD · HE 412345', osintLinkDescription: 'Registry extract: director, shareholder, registered office',
+					osintLinkTitle: 'BRIGHTWATER HOLDINGS LTD · HE 000000', osintLinkDescription: 'Registry extract: director, shareholder, registered office',
 					osintLinkSite: HOSTS.registry, osintLinkFetchedAt: CAPTURED },
 				{ id: 'news-link', type: 'link', url: URLS.news, x: 1800, y: 220, width: 340, height: 180,
 					osintLinkTitle: 'Rotterdam customs seize counterfeit cancer drugs', osintLinkDescription: '38 parcels declared as food supplements, forwarded by Northgate Freight BV',

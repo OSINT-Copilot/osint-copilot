@@ -54,10 +54,10 @@ export const URLS = {
 	forumThread: `http://${HOSTS.forum}/thread/4471`,
 	shop: `http://${HOSTS.shop}/`,
 	shopCheckout: `http://${HOSTS.shop}/checkout`,
-	registry: `http://${HOSTS.registry}/company/HE412345`,
+	registry: `http://${HOSTS.registry}/company/HE000000`,
 	northgateContact: `http://${HOSTS.northgate}/contact`,
 	manifestPdf: `http://${HOSTS.files}/reports/q2-2024-consolidation.pdf`,
-	kvk: `https://${HOSTS.kvk}/company/81234567`,
+	kvk: `https://${HOSTS.kvk}/company/00000000`,
 	news: `https://${HOSTS.news}/2024/06/21/rotterdam-customs-seize-counterfeit-cancer-drugs`,
 	customs: `https://${HOSTS.customs}/press/2024-06-20-parcel-seizure`,
 	leakedInvoice: `https://pastebin.${HOSTS.news}/raw/brightwater-invoice-0412`,
@@ -153,12 +153,12 @@ function shop(): string {
 
 function registry(): string {
 	return page(
-		'BRIGHTWATER HOLDINGS LTD · HE 412345 · Company Registry',
-		'<strong>Registrar of Companies</strong> (fictional) · Search › HE 412345',
+		'BRIGHTWATER HOLDINGS LTD · HE 000000 · Company Registry',
+		'<strong>Registrar of Companies</strong> (fictional) · Search › HE 000000',
 		`<h1>BRIGHTWATER HOLDINGS LTD</h1>
 	<p>${HIGHLIGHTS.incorporated}</p>
 	<table>
-		<tr><td>Registration number</td><td>HE 412345</td></tr>
+		<tr><td>Registration number</td><td>HE 000000</td></tr>
 		<tr><td>Status</td><td>Active</td></tr>
 		<tr><td>Registered office</td><td>Arch. Makariou III Avenue, Limassol</td></tr>
 		<tr><td>Director</td><td>Marta Koval (appointed 3 March 2024)</td></tr>
@@ -295,7 +295,7 @@ export const ENTITIES: EntitySpec[] = [
 	{
 		key: 'brightwater', id: demoId(4), api: 'ftm', schema: 'Company', label: 'Brightwater Holdings Ltd',
 		properties: {
-			name: 'Brightwater Holdings Ltd', jurisdiction: 'cy', country: 'cy', registrationNumber: 'HE 412345',
+			name: 'Brightwater Holdings Ltd', jurisdiction: 'cy', country: 'cy', registrationNumber: 'HE 000000',
 			incorporationDate: '2024-03-03', status: 'Active', legalForm: 'Private limited company', sector: 'Holding company',
 			notes: 'Owns 60% of Northgate Freight BV since April 2024. Owned in turn by Aurelia Trade LP (Seychelles).',
 		},
@@ -308,7 +308,7 @@ export const ENTITIES: EntitySpec[] = [
 	{
 		key: 'northgate', id: demoId(5), api: 'ftm', schema: 'Company', label: 'Northgate Freight BV',
 		properties: {
-			name: 'Northgate Freight BV', jurisdiction: 'nl', country: 'nl', registrationNumber: '81234567',
+			name: 'Northgate Freight BV', jurisdiction: 'nl', country: 'nl', registrationNumber: '00000000',
 			incorporationDate: '2019-06-12', status: 'Active', legalForm: 'Besloten vennootschap', sector: 'Freight forwarding',
 			website: `https://${HOSTS.northgate}`,
 		},

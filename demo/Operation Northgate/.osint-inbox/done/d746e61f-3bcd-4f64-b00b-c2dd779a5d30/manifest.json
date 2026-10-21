@@ -1,0 +1,63 @@
+{
+  "v": 1,
+  "bundleId": "d746e61f-3bcd-4f64-b00b-c2dd779a5d30",
+  "workspaceId": "VClqFaLRd7XJWp-Z0ilaTr",
+  "page": {
+    "url": "http://registry.cy.example/company/HE000000",
+    "title": "BRIGHTWATER HOLDINGS LTD · HE 000000 · Company Registry"
+  },
+  "clientTime": "2026-10-21T15:19:21.828Z",
+  "kind": "highlight",
+  "highlight": {
+    "annotation": {
+      "id": "urn:uuid:3da2fc86-3d53-4b40-bbd5-c0a4d103eb55",
+      "textModel": "v1",
+      "created": "2026-10-21T15:19:21.828Z",
+      "modified": "2026-10-21T15:19:21.828Z",
+      "target": {
+        "source": "http://registry.cy.example/company/HE000000",
+        "selector": [
+          {
+            "type": "TextQuoteSelector",
+            "exact": "Brightwater Holdings Ltd was incorporated on 3 March 2024.",
+            "prefix": "000000BRIGHTWATER HOLDINGS LTD\n\t",
+            "suffix": "\n\t\n\t\tRegistration numberHE 00000"
+          },
+          {
+            "type": "TextPositionSelector",
+            "start": 81,
+            "end": 139
+          },
+          {
+            "type": "RangeSelector",
+            "startSelector": {
+              "type": "XPathSelector",
+              "value": "/html[1]/body[1]/main[1]/p[1]",
+              "refinedBy": {
+                "type": "TextPositionSelector",
+                "start": 0,
+                "end": 0
+              }
+            },
+            "endSelector": {
+              "type": "XPathSelector",
+              "value": "/html[1]/body[1]/main[1]/p[1]",
+              "refinedBy": {
+                "type": "TextPositionSelector",
+                "start": 58,
+                "end": 58
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "server": {
+    "receivedAt": "2026-10-21T15:19:21.837Z",
+    "clientId": "DjZ3RfbCgAcRblvrn0K8BA",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0"
+  },
+  "mac": "jujE95wtwQ5zEDRB5tt7pz3WZJV9NsjPjXjMb80mz1U"
+}

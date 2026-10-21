@@ -1,0 +1,21 @@
+{
+  "v": 1,
+  "bundleId": "185c1669-b644-4b44-afd0-9dd10c41c1be",
+  "workspaceId": "VClqFaLRd7XJWp-Z0ilaTr",
+  "page": {
+    "url": "http://harbourmarket.example/thread/4471",
+    "title": "[WTS] Oncology generics, EU shipping · Harbour Market"
+  },
+  "clientTime": "2026-10-21T15:18:25.846Z",
+  "kind": "note",
+  "note": {
+    "text": "harbor_pharma sells \"oncology generics\" without prescription, ships from a Rotterdam partner, and takes BTC or ETH only.\nThe clearnet shop is medsupply-direct.example."
+  },
+  "server": {
+    "receivedAt": "2026-10-21T15:18:25.864Z",
+    "clientId": "DjZ3RfbCgAcRblvrn0K8BA",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0"
+  },
+  "mac": "e9ouCw0OaZ0kfI3kYygL872tPU2K-e1CplpkCJZYZ2U"
+}

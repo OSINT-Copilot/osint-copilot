@@ -1,0 +1,14 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: 699f8bdd-3a6b-4e3c-ae7f-2c137efe0afa
+fromEntityId: 26da12c5-e51f-4790-a808-e105fc51e525
+toEntityId: d3e0a000-0000-4000-8000-000000000005
+fromLabel: Pallet NGF-2260 (38 parcels)
+toLabel: Northgate Freight BV
+relationship: shipped-via
+label: Pallet NGF-2260 (38 parcels) → shipped-via → Northgate Freight BV
+properties:
+  description: Held by customs on arrival at the warehouse
+schemaFamily: user
+notePath: OSINTCopilot/Connections/Pallet NGF-2260 (38 parcels) - shipped-via - Northgate Freight BV.md
+

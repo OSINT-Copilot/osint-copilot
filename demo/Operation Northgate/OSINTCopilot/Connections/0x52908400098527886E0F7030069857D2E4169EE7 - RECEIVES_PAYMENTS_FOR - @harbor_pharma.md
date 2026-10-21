@@ -1,9 +1,9 @@
 ---
-id: "50b603c1-f09e-4d69-8fac-0384063936eb"
+id: "461d4c8b-4890-4723-a622-d4d5d37734e2"
 type: connection
 relationship: "RECEIVES_PAYMENTS_FOR"
-fromEntityId: "26384d9b-0e61-4d7f-9d9c-092b338b53c3"
-toEntityId: "0b313e90-4533-44e3-99ca-32998b34a33d"
+fromEntityId: "a91a3f93-b01d-4b5c-b82c-52eaa5c5b415"
+toEntityId: "bba91d64-2f13-4a7e-8ce8-423f94f1c9a5"
 fromEntity: "[[0x52908400098527886E0F7030069857D2E4169EE7]]"
 toEntity: "[[@harbor_pharma]]"
 schemaFamily: ftm

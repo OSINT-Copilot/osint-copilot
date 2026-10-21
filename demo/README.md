@@ -2,7 +2,7 @@
 
 A complete, fictional investigation that uses every part of OSINT Copilot: entities and their sources, the graph, the timeline, the map, a canvas board, saved chat conversations, skills, enrichers, a task agent, and material collected from web pages with the browser extension.
 
-**Everything in it is invented.** No person, company, address or account named here exists. Domains use the reserved `.example` top-level domain, and IP addresses come from the documentation ranges. The wallet addresses are the worked examples from the BIP-173 and EIP-55 specifications, and the phone number is from Ofcom's range for drama.
+**The people, companies, accounts, and case are invented.** Company identifiers are deliberately invalid, domains use the reserved `.example` top-level domain, and IP addresses come from documentation ranges. Real city and street names are used only to make the fictional map legible; they do not identify a real subject or claim that anything happened at those locations. The wallet addresses are worked examples from the BIP-173 and EIP-55 specifications, and the phone number is from Ofcom's range for drama.
 
 ## The case
 

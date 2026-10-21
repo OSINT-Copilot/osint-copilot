@@ -11,7 +11,7 @@ A fictional investigation, made to show what OSINT Copilot does. Everything in i
 - **Chat**: four saved conversations. *Map the parcel route* ends with proposed graph changes to apply; *Add a breach lookup* with proposed vault changes (a skill, an enricher, a credentials file and a script diff).
 - **Tools & Skills**: three case skills, four enrichers (runnable, keyed, draft) and the *Case memo* task agent, whose output is in OSINTCopilot/custom/outputs/memos.
 - **Canvas**: OSINTCopilot/boards/Case board.canvas.
-- **Sources**: one note per page the extension sent from, with its highlights and notes. The registry page: [[OSINTCopilot/Sources/brightwater-holdings-ltd-he-412345-company-registry-bbc33d08c675]].
+- **Sources**: one note per page the extension sent from, with its highlights and notes. The registry page: [[OSINTCopilot/Sources/brightwater-holdings-ltd-he-000000-company-registry-7177b8f76583]].
 - **Evidence**: page captures (archive, screenshots, page text) and the forwarder's PDF manifest, each with its SHA-256.
 - **Browser extension activity** (command palette): everything the extension sent, including one note taken back out with Remove.
 

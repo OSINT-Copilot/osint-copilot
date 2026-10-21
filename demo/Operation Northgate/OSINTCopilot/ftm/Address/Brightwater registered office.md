@@ -14,8 +14,8 @@ location_type: "registered office"
 significance: "A registered agent's address, shared by about 200 companies"
 osint_confidence: low
 osint_sources:
-  - id: src_a5822ecc5f2a92a1
-    source_url: http://registry.cy.example/company/HE412345
+  - id: src_3bf9e4ff9098ffb2
+    source_url: http://registry.cy.example/company/HE000000
     archive_status: skipped
     inferred: false
     rationale: Registered office in the registry extract

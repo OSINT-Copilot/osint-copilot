@@ -1,9 +1,9 @@
 ---
-id: "8a2177e7-c677-4254-aba3-a750c20c2821"
+id: "f5fb3a22-9814-4694-aed6-905bdd72e827"
 type: connection
 relationship: "uses"
-fromEntityId: "7f267867-e0de-48f5-bfae-98f2cf4fdfac"
-toEntityId: "68a63fb4-34b0-4843-b437-04e9c47b9710"
+fromEntityId: "b52a55e6-77de-4b5a-85a9-a1d1667040c8"
+toEntityId: "48f7b2da-6d22-4427-95cc-4be65162e817"
 fromEntity: "[[Counterfeit oncology shop]]"
 toEntity: "[[Acquire Infrastructure: Domains]]"
 schemaFamily: stix2

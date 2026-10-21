@@ -7,7 +7,7 @@ label: "Northgate Freight BV"
 name: "Northgate Freight BV"
 jurisdiction: "nl"
 country: "nl"
-registrationNumber: "81234567"
+registrationNumber: "00000000"
 incorporationDate: "2019-06-12"
 status: "Active"
 legalForm: "Besloten vennootschap"
@@ -16,8 +16,8 @@ website: "https://northgate-freight.example"
 image: "OSINTCopilot/Evidence/northgate-freight-bv-picture.png"
 osint_confidence: high
 osint_sources:
-  - id: src_828903f58428e7b2
-    source_url: https://kvk-register.example/company/81234567
+  - id: src_ac79436d1604c812
+    source_url: https://kvk-register.example/company/00000000
     archive_status: skipped
     inferred: false
     rationale: Trade register entry
@@ -42,7 +42,7 @@ osint_sources:
 
 - **Name**: Northgate Freight BV
 - **Jurisdiction**: nl
-- **Registration number**: 81234567
+- **Registration number**: 00000000
 - **Incorporation date**: 2019-06-12
 - **Country**: nl
 - **Status**: Active

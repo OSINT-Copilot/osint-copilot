@@ -1,0 +1,30 @@
+{
+  "v": 1,
+  "bundleId": "76497a03-adb0-407d-9cdf-44b2496a23c7",
+  "workspaceId": "VClqFaLRd7XJWp-Z0ilaTr",
+  "page": {
+    "url": "http://registry.cy.example/company/HE000000",
+    "title": "BRIGHTWATER HOLDINGS LTD · HE 000000 · Company Registry"
+  },
+  "clientTime": "2026-10-21T15:19:36.081Z",
+  "kind": "capture",
+  "capture": {
+    "files": {
+      "page.mhtml": {
+        "size": 3162,
+        "sha256": "9d0c773e4c92dad5f44905feb146ed332f67afcb3b851e80d10d80c8a8327efd"
+      },
+      "viewport.png": {
+        "size": 60587,
+        "sha256": "7327fdb5c2153e76aa847eecfaed07177fdf8c2bba5ef70c3a3b6d07984ef71e"
+      }
+    }
+  },
+  "server": {
+    "receivedAt": "2026-10-21T15:19:36.091Z",
+    "clientId": "DjZ3RfbCgAcRblvrn0K8BA",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0"
+  },
+  "mac": "eR21MaN9EvMGwzJUxDK0-1TiuGoQDw284QC6YS3XbeA"
+}

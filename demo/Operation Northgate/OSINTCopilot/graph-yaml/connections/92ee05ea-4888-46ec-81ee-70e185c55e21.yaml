@@ -1,0 +1,14 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: 92ee05ea-4888-46ec-81ee-70e185c55e21
+fromEntityId: bba91d64-2f13-4a7e-8ce8-423f94f1c9a5
+toEntityId: d3e0a000-0000-4000-8000-000000000007
+fromLabel: "@harbor_pharma"
+toLabel: Harbour Market
+relationship: SELLS_ON
+label: "@harbor_pharma → SELLS_ON → Harbour Market"
+properties: {}
+ftmSchema: SELLS_ON
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/@harbor_pharma - SELLS_ON - Harbour Market.md
+

@@ -1,0 +1,45 @@
+{
+  "v": 1,
+  "steps": [
+    {
+      "step": "entity-plan",
+      "at": "2026-10-21T15:19:40.454Z",
+      "data": {
+        "plannedEntityId": "d815f3fe-2f4e-496f-ae41-f0710c22e51b"
+      }
+    },
+    {
+      "step": "entity",
+      "at": "2026-10-21T15:19:40.497Z",
+      "data": {
+        "entityId": "d815f3fe-2f4e-496f-ae41-f0710c22e51b",
+        "created": true,
+        "label": "+44 20 7946 0958",
+        "addedSourceIds": [
+          "ext_2b8e3a4b-8d9e-4c33-a8bd-19a0d7774be6"
+        ]
+      }
+    },
+    {
+      "step": "sources-note",
+      "at": "2026-10-21T15:19:40.518Z",
+      "data": {
+        "path": "OSINTCopilot/Sources/contact-northgate-freight-bv-8ca4c9feb624.md"
+      }
+    },
+    {
+      "step": "applied",
+      "at": "2026-10-21T15:19:40.538Z",
+      "data": {
+        "entityId": "d815f3fe-2f4e-496f-ae41-f0710c22e51b",
+        "entityLabel": "+44 20 7946 0958",
+        "created": true,
+        "addedSourceIds": [
+          "ext_2b8e3a4b-8d9e-4c33-a8bd-19a0d7774be6"
+        ],
+        "sourcesNotePath": "OSINTCopilot/Sources/contact-northgate-freight-bv-8ca4c9feb624.md",
+        "placedFiles": []
+      }
+    }
+  ]
+}

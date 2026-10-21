@@ -1,5 +1,5 @@
 ---
-id: "c72e7fad-27d9-44f4-8c72-a1c18b7b7b0e"
+id: "0e636db6-de78-4e60-9304-99d79dcdf2d7"
 type: connection
 relationship: "Directorship"
 fromEntityId: "d3e0a000-0000-4000-8000-000000000001"
@@ -13,8 +13,8 @@ role: "Director"
 startDate: "2024-03-03"
 osint_confidence: low
 osint_sources:
-  - id: src_399361339e6a72b2
-    source_url: http://registry.cy.example/company/HE412345
+  - id: src_8ba86d5cdbfd8675
+    source_url: http://registry.cy.example/company/HE000000
     archive_status: skipped
     inferred: false
     rationale: Appointment in the registry extract

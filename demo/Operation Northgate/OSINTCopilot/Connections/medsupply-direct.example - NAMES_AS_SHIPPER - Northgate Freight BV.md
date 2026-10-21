@@ -1,8 +1,8 @@
 ---
-id: "ad694bc8-4a84-4aec-b0c9-641299fe15bf"
+id: "bd437760-a2cd-43a5-93e4-295b511fcb45"
 type: connection
 relationship: "NAMES_AS_SHIPPER"
-fromEntityId: "4aeb5243-f1d5-4dbe-8448-0318dd9e99ba"
+fromEntityId: "9fe78d6d-acb1-404a-867c-1fbe2319eef2"
 toEntityId: "d3e0a000-0000-4000-8000-000000000005"
 fromEntity: "[[medsupply-direct.example]]"
 toEntity: "[[Northgate Freight BV]]"

@@ -14,8 +14,8 @@ notes: "Sole director of Brightwater since incorporation. Her e-mail is also the
 image: "OSINTCopilot/Evidence/marta-koval-picture.png"
 osint_confidence: low
 osint_sources:
-  - id: src_306b1297cfd0c10e
-    source_url: http://registry.cy.example/company/HE412345
+  - id: src_15856cbc0b96072d
+    source_url: http://registry.cy.example/company/HE000000
     archive_status: skipped
     inferred: false
     rationale: Named as director in the registry extract

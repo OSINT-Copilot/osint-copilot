@@ -1,8 +1,8 @@
 ---
-id: "64e198b2-39ee-4b9e-be82-b8e5497bfee8"
+id: "92ee05ea-4888-46ec-81ee-70e185c55e21"
 type: connection
 relationship: "SELLS_ON"
-fromEntityId: "0b313e90-4533-44e3-99ca-32998b34a33d"
+fromEntityId: "bba91d64-2f13-4a7e-8ce8-423f94f1c9a5"
 toEntityId: "d3e0a000-0000-4000-8000-000000000007"
 fromEntity: "[[@harbor_pharma]]"
 toEntity: "[[Harbour Market]]"

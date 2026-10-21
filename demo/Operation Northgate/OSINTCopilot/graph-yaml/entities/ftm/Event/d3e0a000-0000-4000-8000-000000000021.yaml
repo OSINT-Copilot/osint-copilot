@@ -12,8 +12,8 @@ ftmSchema: Event
 schemaFamily: ftm
 notePath: OSINTCopilot/ftm/Event/Brightwater Holdings Ltd incorporated.md
 osint_sources:
-  - id: src_bbed9f836b32844a
-    source_url: http://registry.cy.example/company/HE412345
+  - id: src_08dda4047ff63c05
+    source_url: http://registry.cy.example/company/HE000000
     archive_status: skipped
     inferred: false
     rationale: Reported here

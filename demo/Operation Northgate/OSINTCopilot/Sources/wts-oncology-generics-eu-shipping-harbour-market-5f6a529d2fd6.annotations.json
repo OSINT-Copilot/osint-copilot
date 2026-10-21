@@ -2,12 +2,12 @@
 	"version": 1,
 	"normalised_url": "http://harbourmarket.example/thread/4471",
 	"highlights": {
-		"urn:uuid:63fdc4b0-ff25-46c0-b26c-d6a4e001676d": {
+		"urn:uuid:8e5895bd-5fc1-4414-863f-dfdaaadd70d0": {
 			"annotation": {
-				"id": "urn:uuid:63fdc4b0-ff25-46c0-b26c-d6a4e001676d",
+				"id": "urn:uuid:8e5895bd-5fc1-4414-863f-dfdaaadd70d0",
 				"textModel": "v1",
-				"created": "2026-09-19T20:05:22.506Z",
-				"modified": "2026-09-19T20:05:24.565Z",
+				"created": "2026-10-21T15:18:44.615Z",
+				"modified": "2026-10-21T15:18:48.643Z",
 				"target": {
 					"source": "http://harbourmarket.example/thread/4471",
 					"selector": [
@@ -51,9 +51,9 @@
 					"value": "Rotterdam partner: the shop names Northgate Freight BV. Check the Waalhaven warehouse."
 				}
 			},
-			"section": "7ca5bc42-d948-4ede-9dab-0d51a4e25d64",
-			"modified": "2026-09-19T20:05:24.565Z",
-			"receivedAt": "2026-09-19T20:05:22.513Z",
+			"section": "7527aaec-756b-4d2e-a83f-c49aacd53d23",
+			"modified": "2026-10-21T15:18:48.643Z",
+			"receivedAt": "2026-10-21T15:18:44.629Z",
 			"deleted": false
 		}
 	}

@@ -1,5 +1,5 @@
 ---
-id: "e617ce48-8d70-446d-8282-fdc9e7f35a6b"
+id: "9523912f-3be9-4486-aa97-a0ccf557fac7"
 type: Email
 schemaFamily: ftm
 ftmSchema: Email
@@ -7,15 +7,15 @@ label: "sales@medsupply-direct.example"
 address: "sales@medsupply-direct.example"
 osint_confidence: low
 osint_sources:
-  - id: ext_bc29e0ea-ca73-46d4-b7fb-b0cf50d84805
+  - id: ext_13e93aeb-8282-404f-860b-eb25973ea242
     source_url: http://medsupply-direct.example/
     archive_status: skipped
     inferred: false
     rationale: 'Sent from the OSINT Copilot browser extension: "Orders and support"'
-    captured_at: 2026-09-19T20:05:31.319Z
+    captured_at: 2026-10-21T15:18:56.118Z
     via: extension
-    client_id: 4BoIM8Mp_kM-n6xver6c8A
-    received_at: 2026-09-19T20:05:31.319Z
+    client_id: DjZ3RfbCgAcRblvrn0K8BA
+    received_at: 2026-10-21T15:18:56.118Z
 ---
 
 # sales@medsupply-direct.example

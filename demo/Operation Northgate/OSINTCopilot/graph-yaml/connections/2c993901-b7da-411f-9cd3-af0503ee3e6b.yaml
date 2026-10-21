@@ -1,0 +1,13 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: 2c993901-b7da-411f-9cd3-af0503ee3e6b
+fromEntityId: b52a55e6-77de-4b5a-85a9-a1d1667040c8
+toEntityId: 9fe78d6d-acb1-404a-867c-1fbe2319eef2
+fromLabel: Counterfeit oncology shop
+toLabel: medsupply-direct.example
+relationship: related-to
+label: Counterfeit oncology shop → related-to → medsupply-direct.example
+properties: {}
+schemaFamily: stix2
+notePath: OSINTCopilot/Connections/Counterfeit oncology shop - related-to - medsupply-direct.example.md
+

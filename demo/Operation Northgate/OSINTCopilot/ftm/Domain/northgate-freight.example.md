@@ -7,8 +7,8 @@ label: "northgate-freight.example"
 name: "northgate-freight.example"
 osint_confidence: low
 osint_sources:
-  - id: src_7f843b3f44dd5f88
-    source_url: https://kvk-register.example/company/81234567
+  - id: src_fb7a7d5717c22768
+    source_url: https://kvk-register.example/company/00000000
     archive_status: skipped
     inferred: false
     rationale: Website listed in the trade register

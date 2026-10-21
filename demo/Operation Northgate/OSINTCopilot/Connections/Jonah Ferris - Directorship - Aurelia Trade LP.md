@@ -1,5 +1,5 @@
 ---
-id: "e07a8e2d-e8e8-47ac-b132-3d9b629ead2e"
+id: "551f800c-d903-494f-8dc2-5c5ff557a103"
 type: connection
 relationship: "Directorship"
 fromEntityId: "d3e0a000-0000-4000-8000-000000000003"

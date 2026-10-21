@@ -1,0 +1,14 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: 8571f49b-e302-48a6-bbf8-4ddd1c6cc8d5
+fromEntityId: 4236cc3d-6d77-47d9-babc-0ecc701f7b33
+toEntityId: bba91d64-2f13-4a7e-8ce8-423f94f1c9a5
+fromLabel: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4
+toLabel: "@harbor_pharma"
+relationship: RECEIVES_PAYMENTS_FOR
+label: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4 → RECEIVES_PAYMENTS_FOR → @harbor_pharma
+properties: {}
+ftmSchema: RECEIVES_PAYMENTS_FOR
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4 - RECEIVES_PAYMENTS_FOR - @harbor_pharma.md
+

@@ -13,8 +13,8 @@ notes: "Quoted in the customs seizure coverage as saying the pallets were \"decl
 image: "OSINTCopilot/Evidence/daniel-arendt-picture.png"
 osint_confidence: medium
 osint_sources:
-  - id: src_fd64e417871bbc92
-    source_url: https://kvk-register.example/company/81234567
+  - id: src_33e6f70fcaf4c772
+    source_url: https://kvk-register.example/company/00000000
     archive_status: skipped
     inferred: false
     rationale: Managing director in the trade register

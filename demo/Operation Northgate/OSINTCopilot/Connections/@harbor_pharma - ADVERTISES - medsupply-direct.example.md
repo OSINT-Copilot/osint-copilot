@@ -1,9 +1,9 @@
 ---
-id: "8babd7d3-ce12-41da-96c4-e0b645c18302"
+id: "ff346bed-db52-47cb-a84f-d960271e637f"
 type: connection
 relationship: "ADVERTISES"
-fromEntityId: "0b313e90-4533-44e3-99ca-32998b34a33d"
-toEntityId: "4aeb5243-f1d5-4dbe-8448-0318dd9e99ba"
+fromEntityId: "bba91d64-2f13-4a7e-8ce8-423f94f1c9a5"
+toEntityId: "9fe78d6d-acb1-404a-867c-1fbe2319eef2"
 fromEntity: "[[@harbor_pharma]]"
 toEntity: "[[medsupply-direct.example]]"
 schemaFamily: ftm

@@ -1,0 +1,44 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: c1b27adc-63be-45e0-98af-b4b12c84fcaf
+type: Evidence
+label: BRIGHTWATER HOLDINGS LTD · HE 000000 · Company Registry
+properties:
+  name: BRIGHTWATER HOLDINGS LTD · HE 000000 · Company Registry
+  url: http://registry.cy.example/company/HE000000
+  sha256: 9d0c773e4c92dad5f44905feb146ed332f67afcb3b851e80d10d80c8a8327efd
+  description: "Web page captured by the OSINT Copilot browser extension from http://registry.cy.example/company/HE000000,
+    received 2026-10-21T15:19:36.091Z. The archive is the page's DOM after JavaScript ran, with scripts removed: not the
+    bytes the server sent."
+  filePath: OSINTCopilot/Evidence/brightwater-holdings-ltd-he-000000-company-registry-9d0c773e.md
+  Name: BRIGHTWATER HOLDINGS LTD · HE 000000 · Company Registry
+  Description: "Web page captured by the OSINT Copilot browser extension from http://registry.cy.example/company/HE000000,
+    received 2026-10-21T15:19:36.091Z. The archive is the page's DOM after JavaScript ran, with scripts removed: not the
+    bytes the server sent."
+ftmSchema: Document
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Document/BRIGHTWATER HOLDINGS LTD · HE 000000 · Company Registry.md
+osint_sources:
+  - id: ext_76497a03-adb0-407d-9cdf-44b2496a23c7
+    source_url: http://registry.cy.example/company/HE000000
+    archive_status: skipped
+    inferred: false
+    rationale: Captured by the OSINT Copilot browser extension; received 2026-10-21T15:19:36.091Z.
+    captured_at: 2026-10-21T15:19:36.091Z
+    via: extension
+    client_id: DjZ3RfbCgAcRblvrn0K8BA
+    received_at: 2026-10-21T15:19:36.091Z
+  - id: ext_76497a03-adb0-407d-9cdf-44b2496a23c7_archive
+    source_url: vault://OSINTCopilot/Evidence/brightwater-holdings-ltd-he-000000-company-registry-9d0c773e.mhtml
+    archive_status: skipped
+    inferred: false
+    rationale: "Captured by the OSINT Copilot browser extension: local MHTML archive of the page as it rendered, sha256
+      9d0c773e4c92dad5f44905feb146ed332f67afcb3b851e80d10d80c8a8327efd. Attests that the archive has not changed since
+      it was received; it is not a record of what the server sent."
+    captured_at: 2026-10-21T15:19:36.091Z
+    via: extension
+    client_id: DjZ3RfbCgAcRblvrn0K8BA
+    sha256: 9d0c773e4c92dad5f44905feb146ed332f67afcb3b851e80d10d80c8a8327efd
+    received_at: 2026-10-21T15:19:36.091Z
+osint_confidence: medium
+

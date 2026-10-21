@@ -9,8 +9,8 @@ add_to_timeline: true
 start_date: "2024-03-03"
 osint_confidence: low
 osint_sources:
-  - id: src_bbed9f836b32844a
-    source_url: http://registry.cy.example/company/HE412345
+  - id: src_08dda4047ff63c05
+    source_url: http://registry.cy.example/company/HE000000
     archive_status: skipped
     inferred: false
     rationale: Reported here

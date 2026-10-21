@@ -9,8 +9,8 @@ add_to_timeline: true
 start_date: "2019-06-12"
 osint_confidence: low
 osint_sources:
-  - id: src_c67ecd4f2bc3ab52
-    source_url: https://kvk-register.example/company/81234567
+  - id: src_2fa03e07c6129db2
+    source_url: https://kvk-register.example/company/00000000
     archive_status: skipped
     inferred: false
     rationale: Reported here

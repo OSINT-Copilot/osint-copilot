@@ -1,0 +1,20 @@
+{
+  "v": 1,
+  "bundleId": "b23e5ef1-8f3d-4022-baec-82fe72e5a6a2",
+  "status": "done",
+  "archiveSha256": "983c40b6913a4b092c1b3f281679f9841d38c332a7b08fc0ae27f6468a8ecab3",
+  "contentLocation": "http://files.northgate-freight.example/reports/q2-2024-consolidation.pdf",
+  "urlMismatch": false,
+  "title": "",
+  "errors": [],
+  "derivedAt": "2026-10-21T15:19:56.240Z",
+  "markdown": {
+    "file": "page.markdown",
+    "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+  },
+  "fullpage": {
+    "file": "fullpage.png",
+    "sha256": "2d5ffdae4a7fadcce58837e07baf2502e15bde47691eecb849596dbb8d4253bd"
+  },
+  "mac": "0HmuILzG8CS9vOflD7bautuu_6sQ-ObMvPsOGpj-e74"
+}

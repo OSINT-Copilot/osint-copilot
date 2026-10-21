@@ -11,8 +11,8 @@ nomineeDirector: "Jonah Ferris"
 incorporationDate: "2023-11-20"
 osint_confidence: low
 osint_sources:
-  - id: src_4e4b9a9a58c41c6d
-    source_url: http://registry.cy.example/company/HE412345
+  - id: src_6f4d688fa878d93c
+    source_url: http://registry.cy.example/company/HE000000
     archive_status: skipped
     inferred: false
     rationale: Listed as Brightwater's sole shareholder
