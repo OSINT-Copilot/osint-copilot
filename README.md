@@ -55,6 +55,13 @@ on the GitHub release before running a download.
 Everything is free and available in the open-source build. The retained premium infrastructure
 is dormant and makes no licence-server request; see [Premium status](docs/premium.md).
 
+### Hosted version
+
+The same application also runs in the browser at [osint-copilot.com](https://osint-copilot.com),
+for subscribers, with investigations stored on the service and Claude as the assistant. It is a
+separate paid service; the desktop app does not depend on it. An investigation downloaded from
+the hosted version opens in the desktop app unchanged. See [The hosted version](docs/hosted-version.md).
+
 ## Browser extension
 
 Unzip the extension release into a permanent folder and load it with **Developer mode** from
@@ -100,6 +107,7 @@ details.
   [macOS](docs/install/macos.md)
 - [Browser extension](docs/browser-extension.md)
 - [AI runtimes](docs/ai-runtimes.md)
+- [The hosted version](docs/hosted-version.md), and moving an investigation from it
 - [Updates](docs/updates.md)
 - [Privacy and data](docs/privacy-and-data.md)
 - [Architecture](docs/architecture.md)

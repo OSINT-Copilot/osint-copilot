@@ -12,6 +12,8 @@ If an earlier version stored a key in the application profile, free mode leaves 
 place but does not read, validate, transmit, or delete it. You may remove the profile yourself
 if you want to erase it.
 
-Any future paid service must provide server-side value and be documented before activation.
-Because this client is open source, a client-only feature gate cannot be treated as security or
-effective enforcement. No future plan, price, or activation date is promised here.
+Any paid service must provide server-side value and be documented. The one that exists is
+[the hosted version](hosted-version.md) at osint-copilot.com, which runs this application on the
+service's servers; it changes nothing in the desktop app. Because this client is open source, a
+client-only feature gate cannot be treated as security or effective enforcement, and none is
+planned.
