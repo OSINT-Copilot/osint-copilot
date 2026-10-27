@@ -1,0 +1,15 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: 9b2fa4ef-1f35-4279-b2f8-e2e3bde53b44
+fromEntityId: d3e0a000-0000-4000-8000-000000000001
+toEntityId: d3e0a000-0000-4000-8000-000000000002
+fromLabel: Marta Koval
+toLabel: Daniel Arendt
+relationship: Associate
+label: Marta Koval → Associate → Daniel Arendt
+properties:
+  relationship: Business associates; met at the warehouse
+ftmSchema: Associate
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/Marta Koval - Associate - Daniel Arendt.md
+

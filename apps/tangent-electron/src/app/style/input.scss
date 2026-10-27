@@ -1,0 +1,283 @@
+:root {
+	--inputBorderRadius: 4px;
+}
+
+input, button, select, textarea, .button {
+	font-family: inherit;
+	font-size: inherit;
+	-webkit-padding: 0.4em 0;
+	padding: 0.4em;
+	margin: 0 0 0 0;
+	box-sizing: border-box;
+	border: 1px solid var(--borderColor);
+	border-radius: var(--inputBorderRadius);
+
+	outline: none;
+}
+
+input {
+	color: var(--textColor);
+	background-color: var(--buttonBackgroundColor);
+
+	&:disabled {
+		color: #ccc;
+	}
+
+	&:focus {
+		outline: none;
+	}
+}
+
+input, textarea {
+	&::placeholder {
+		color: var(--deemphasizedTextColor);
+		font-style: italic;
+	}
+}
+
+input[type="number"], input[type="text"] {
+	border: none;
+}
+
+input[type="number"] {
+	box-shadow: -1px 1px 2px 1px rgba(0, 0, 0, .2) inset;
+}
+
+input {
+	--controlColor: white;
+}
+
+.dark input {
+	--controlColor: var(--textColor);
+}
+
+input[type="checkbox"] {
+	appearance: none;
+	width: 3.5em;
+	height: 2em;
+	padding: 0;
+	border-radius: 2em;
+	position: relative;
+
+	cursor: pointer;
+
+	transition: background-color .125s;
+	box-shadow: -1px 1px 1px 1px rgba(0, 0, 0, .1) inset;
+
+	&::after {
+		content: '';
+		width: 1.6em;
+		height: 1.6em;
+		border-radius: 1.6em;
+		background-color: var(--controlColor);
+		position: absolute;
+		top: .125em;
+		left: .125em;
+
+		transition: left .125s;
+		box-shadow: -1px 1px 1px 1px rgba(0, 0, 0, .1);
+	}
+	&:checked {
+		background-color: var(--accentActiveBackgroundColor);
+		&::after {
+			left: 1.6em;
+		}
+	}
+	&:hover {
+		background-color: var(--accentBackgroundColor);
+	}
+}
+
+input[type="range"] {
+	appearance: none;
+	padding: 0;
+	position: relative;
+	border-radius: 1em;
+	align-self: center;
+
+	cursor: pointer;
+	background-color: transparent;
+	border: none;
+
+	&::-webkit-slider-runnable-track {
+		height: 50%;
+		background-color: var(--buttonBackgroundColor);
+		border-radius: 1em;
+	}
+
+	&::-webkit-slider-thumb {
+		top: -50%;
+		appearance: none;
+		position: relative;
+		width: 1em;
+		height: 1em;
+		background-color: var(--controlColor);
+		border-radius: 1em;
+
+		&:hover {
+			background-color: var(--accentBackgroundColor);
+		}
+	}
+}
+
+.light input[type="range"] {
+	--controlColor: var(--accentActiveBackgroundColor);
+}
+
+textarea {
+	color: var(--textColor);
+	background-color: var(--buttonBackgroundColor);
+	resize: vertical;
+}
+
+.dark {
+	input[type="number"] {
+		box-shadow: -1px 1px 2px 1px rgba(0, 0, 0, .5) inset;
+	}
+}
+
+button, .button, select {
+	color: inherit; // This allows context colors to easily apply.
+	background-color: var(--buttonBackgroundColor);
+	transition: background-color .2s, border-color .2s, outline-color .2s, color .2s;
+	outline: none;
+	outline-color: transparent; // Prevents wonky transitions
+	border: none;
+
+	&:focus {
+		outline: none;
+	}
+
+	&:disabled {
+		color: #999;
+	}
+
+	&:not(:disabled):hover {
+		background-color: var(--buttonHoverColor);
+	}
+}
+
+button, .button {
+
+	--bgColor_Selected: var(--accentBackgroundColor);
+	--bgColor_Active: var(--accentActiveBackgroundColor);
+	--bgColor_Checked: var(--accentBackgroundColor);
+
+	&.subtle, &.no-callout {
+		background-color: transparent;
+	}
+
+	&.subtle {
+		--bgColor_Selected: var(--buttonHoverColor);
+		--bgColor_Checked: var(--selectionBackgroundColor);
+		--bgColor_Active: var(--selectionPressedBackgroundColor);
+	}
+	
+	&.relaxed {
+		padding: .4em 1.2em;
+	}
+
+	&:disabled {
+		svg {
+			opacity: 50%;
+		}
+	}
+
+	&[checked="true"], &.active {
+		svg {
+			opacity: 100%;
+		}
+	}
+
+	&:not(:disabled) {
+		&:hover {
+			cursor: pointer;
+			background-color: var(--bgColor_Selected);
+		}
+	}
+
+	&:not(:disabled):active, &.active {
+		background-color: var(--bgColor_Active);
+		color: var(--textColor);
+	}
+
+	&[checked="true"], &.open {
+		background-color: var(--bgColor_Checked);
+		color: var(--textColor);
+	}
+
+	&:focus {
+		border-color: #666;
+	}
+}
+
+input, button, select, textarea, .button {
+	&.focusable {
+		outline: 2px solid transparent;
+
+		&.focused:not(:focus):not(:hover) {
+			outline-color: #666;
+		}
+
+		&:focus {
+			z-index: 1;
+			outline-color: var(--bgColor_Selected, var(--accentBackgroundColor));
+		}
+		&:active {
+			outline-color: var(--bgColor_Active, var(--accentActiveBackgroundColor));
+		}
+	}
+}
+
+// A horizontal set of buttons
+.buttonBar {
+	display: flex;
+	align-items: stretch;
+
+	button, .button {
+		min-height: 28px;
+		padding: 0 4px;
+		display: flex;
+		align-items: center;
+		gap: .25em;
+	}
+
+	.spacer {
+		width: 1.5em;
+	}
+}
+
+.buttonGroup {
+	display: flex;
+	flex-direction: row;
+
+	button, .button, input {
+		border-radius: 0;
+	}
+
+	&:not(.vertical) {
+		button, .button, input {
+			&:first-child {
+				border-top-left-radius: var(--inputBorderRadius);
+				border-bottom-left-radius: var(--inputBorderRadius);
+			}
+			&:last-child {
+				border-top-right-radius: var(--inputBorderRadius);
+				border-bottom-right-radius: var(--inputBorderRadius);
+			}
+		}
+	}
+	&.vertical {
+		flex-direction: column;
+		button, .button, input {
+			&:first-child {
+				border-top-left-radius: var(--inputBorderRadius);
+				border-top-right-radius: var(--inputBorderRadius);
+			}
+			&:last-child {
+				border-bottom-left-radius: var(--inputBorderRadius);
+				border-bottom-right-radius: var(--inputBorderRadius);
+			}
+		}
+	}
+}

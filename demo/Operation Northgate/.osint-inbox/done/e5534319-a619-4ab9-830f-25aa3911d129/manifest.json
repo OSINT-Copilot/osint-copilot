@@ -1,0 +1,24 @@
+{
+  "v": 1,
+  "bundleId": "e5534319-a619-4ab9-830f-25aa3911d129",
+  "workspaceId": "VClqFaLRd7XJWp-Z0ilaTr",
+  "page": {
+    "url": "http://harbourmarket.example/thread/4471",
+    "title": "[WTS] Oncology generics, EU shipping · Harbour Market"
+  },
+  "clientTime": "2026-10-21T15:18:34.844Z",
+  "kind": "entity",
+  "entity": {
+    "kind": "wallet",
+    "value": "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+    "chain": "btc",
+    "context": "BTC payment address in post #1"
+  },
+  "server": {
+    "receivedAt": "2026-10-21T15:18:34.854Z",
+    "clientId": "DjZ3RfbCgAcRblvrn0K8BA",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0"
+  },
+  "mac": "bvRANnQVaQw-39OszUK_IinFHxGYww1F-iX4b50JebE"
+}

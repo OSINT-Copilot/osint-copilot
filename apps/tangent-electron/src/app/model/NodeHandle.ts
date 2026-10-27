@@ -1,0 +1,215 @@
+import type { HrefFormedLink } from 'common/indexing/indexTypes'
+import { resolveLink } from 'common/markdownModel/links'
+import type { TreeChange, TreeNode } from 'common/trees'
+import WorkspaceTreeNode from './WorkspaceTreeNode'
+import type { UrlData } from 'common/urlData'
+import Workspace from './Workspace'
+import { deepEqual } from 'fast-equals'
+import { isExternalLink } from 'common/links'
+import { linkPreviewSuppressedFor, PREVIEW_SUPPRESSED_MESSAGE } from 'osint/integration/link-previews'
+
+type MaybeSubscribableNode = TreeNode & { subscribe?: any }
+export type HandleResult = string | MaybeSubscribableNode | MaybeSubscribableNode[] | UrlData
+
+export function handleIsNode(handle: HandleResult): handle is MaybeSubscribableNode {
+	return typeof handle === 'object' && !Array.isArray(handle) && isNode(handle)
+}
+
+export function isNode(obj: MaybeSubscribableNode | UrlData): obj is MaybeSubscribableNode {
+	return obj && 'path' in obj
+}
+
+export function isUrlData(obj: MaybeSubscribableNode | UrlData): obj is UrlData {
+	return obj && 'url' in obj
+}
+
+function pathAffectsPath(a: string, b: string): boolean {
+	if (a === b) return true
+	if (a.length < b.length) {
+		return b.startsWith(a)
+	}
+	else return a.startsWith(b)
+}
+
+export default class NodeHandle {
+	workspace: Workspace
+
+	node: WorkspaceTreeNode
+	link: HrefFormedLink
+	set: (value: HandleResult) => void
+
+	dirty = false
+
+	private value: HandleResult
+	private targetUnobserver: () => void
+	private _requestId = 0
+
+	constructor(
+		workspace: Workspace,
+		set: (value: HandleResult) => void,
+		node: WorkspaceTreeNode,
+		link: HrefFormedLink
+	) {
+		this.workspace = workspace
+		this.set = set
+		this.node = node
+		this.link = link
+	}
+
+	pushChangesIfDirty() {
+		if (this.dirty) {
+			if (this.workspace.debug.nodeHandles) {
+				console.log('Pushing dirty changes for', this.link, this.value)
+			}
+			this.set(this.value)
+			this.dirty = false
+		}
+	}
+
+	resolve() {
+		const newValue = this.node ?? (resolveLink(this.workspace.directoryStore, this.link) || null)
+		if (newValue !== this.value) {
+			if (this.targetUnobserver) {
+				this.targetUnobserver()
+				this.targetUnobserver = null
+			}
+
+			const requestId = this._requestId += 1
+
+			if (typeof newValue === 'string') {
+				if (isExternalLink(newValue) && linkPreviewSuppressedFor(this.link?.from)) {
+					// OSINT fork: fetching a preview would contact the investigated site on a
+					// mere hover (see osint/integration/link-previews.ts). An error value
+					// shows the plain URL and embeds nothing.
+					this.value = { mediaType: 'error', message: PREVIEW_SUPPRESSED_MESSAGE }
+					this.dirty = true
+				}
+				else if (isExternalLink(newValue)) {
+					// Get information about the external link
+					this.workspace.api.links.getUrlData(newValue).then(result => {
+						if (this._requestId === requestId && !deepEqual(this.value, result)) {
+							this.value = result
+							this.dirty = true
+							this.pushChangesIfDirty()
+						}
+					})
+				}
+				else {
+					this.value = newValue
+				}
+			}
+			else {
+				this.value = newValue
+
+				if (newValue && !Array.isArray(newValue)) {
+					if ((newValue as any).subscribe) {
+						this.targetUnobserver = (newValue as any).subscribe(t => {
+							// Notify when the node changes
+							this.set(t)
+						})
+					}
+				}
+				this.dirty = true
+			}
+		}
+	}
+
+	*iterPaths() {
+		if (!this.value) return
+		if (typeof this.value === 'string') {
+			yield this.value
+			return
+		}
+		if (Array.isArray(this.value)) {
+			for (const v of this.value) {
+				yield v.path
+			}
+		}
+		else if (isNode(this.value)) {
+			yield this.value.path
+		}
+	}
+
+	checkTreeChange(change: TreeChange) {
+		if (this.dirty) return
+		if (!this.value || Array.isArray(this.value) && this.value.length == 0) {
+			if (change.added || change.moved) {
+				// Empty results must always consider new & moved nodes
+				this.dirty = true
+			}
+			return
+		}
+		
+		for (const path of this.iterPaths()) {
+			if (change.removed) {
+				for (const filepath of change.removed) {
+					if (pathAffectsPath(filepath, path)) {
+						if (this.workspace.debug.nodeHandles) {
+							console.log('Handle Triggered', {
+								watching: path,
+								removed: filepath
+							})
+						}
+						this.dirty = true
+						return
+					}
+				}
+			}
+
+			if (change.moved) {
+				for (const item of change.moved) {
+					if (pathAffectsPath(item.oldPath, path)) {
+						if (this.workspace.debug.nodeHandles) {
+							console.log('Handle Triggered from move', {
+								watching: path,
+								oldPath: item.oldPath
+							})
+						}
+						this.dirty = true
+						return
+					}
+					if (pathAffectsPath(item.node.path, path)) {
+						if (this.workspace.debug.nodeHandles) {
+							console.log('Handle Triggered from move', {
+								watching: path,
+								newPath: item.node.path
+							})
+						}
+						this.dirty = true
+						return
+					}
+				}
+			}
+
+			if (change.added) {
+				for (let newNode of change.added) {
+					if (pathAffectsPath(newNode.path, path)) {
+						if (this.workspace.debug.nodeHandles) {
+							console.log('Handle Triggered', {
+								watching: path,
+								added: newNode.path
+							})
+						}
+						this.dirty = true
+						return
+					}
+				}
+			}
+
+			if (change.changed) {
+				for (let item of change.changed) {
+					if (pathAffectsPath(item.path, path)) {
+						if (this.workspace.debug.nodeHandles) {
+							console.log('Handle Triggered', {
+								watching: path,
+								changed: item.path
+							})
+						}
+						this.dirty = true
+						return
+					}
+				}
+			}
+		}
+	}
+}

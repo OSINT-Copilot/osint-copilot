@@ -1,0 +1,28 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000006
+type: ShellCompany
+label: Aurelia Trade LP
+properties:
+  name: Aurelia Trade LP
+  country: sc
+  registeredAgent: Corpserve (Seychelles) Ltd
+  nomineeDirector: Jonah Ferris
+  incorporationDate: 2023-11-20
+  Registered agent: Corpserve (Seychelles) Ltd
+  Nominee director: Jonah Ferris
+  Name: Aurelia Trade LP
+  Country: sc
+  Incorporation date: 2023-11-20
+ftmSchema: ShellCompany
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/ShellCompany/Aurelia Trade LP.md
+osint_sources:
+  - id: src_6f4d688fa878d93c
+    source_url: http://registry.cy.example/company/HE000000
+    archive_status: skipped
+    inferred: false
+    rationale: Listed as Brightwater's sole shareholder
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

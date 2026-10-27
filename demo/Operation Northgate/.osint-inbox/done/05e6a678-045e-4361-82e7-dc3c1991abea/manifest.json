@@ -1,0 +1,40 @@
+{
+  "v": 1,
+  "bundleId": "05e6a678-045e-4361-82e7-dc3c1991abea",
+  "workspaceId": "VClqFaLRd7XJWp-Z0ilaTr",
+  "page": {
+    "url": "http://medsupply-direct.example/",
+    "title": "MedSupply Direct · Oncology generics without prescription"
+  },
+  "clientTime": "2026-10-21T15:19:14.319Z",
+  "kind": "capture",
+  "capture": {
+    "files": {
+      "page.mhtml": {
+        "size": 3008,
+        "sha256": "6cd15ad98ab1b0501dda9a9de4a4f1cad8ec215a336ec9aa4b321d164a7b306c"
+      },
+      "viewport.png": {
+        "size": 51818,
+        "sha256": "190e21bc26cf3e79715cc9a5e8e1cd8d795faffb90d24cea8c31834d3ee3808a"
+      }
+    }
+  },
+  "server": {
+    "receivedAt": "2026-10-21T15:19:14.327Z",
+    "clientId": "DjZ3RfbCgAcRblvrn0K8BA",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0",
+    "files": {
+      "page.mhtml": {
+        "size": 3008,
+        "sha256": "6cd15ad98ab1b0501dda9a9de4a4f1cad8ec215a336ec9aa4b321d164a7b306c"
+      },
+      "viewport.png": {
+        "size": 51818,
+        "sha256": "190e21bc26cf3e79715cc9a5e8e1cd8d795faffb90d24cea8c31834d3ee3808a"
+      }
+    }
+  },
+  "mac": "Btnli29E5gKj9Fgx8pESomQinoGmvXp8lmsW7MGcVBo"
+}

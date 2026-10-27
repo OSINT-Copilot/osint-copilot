@@ -1,0 +1,1256 @@
+import { isUsableTileUrl } from '../services/basemap/basemap-types';
+import { ConfirmModal } from '../modals/confirm-modal';
+import { coerceInteger, validateCustomRootFolder, validateVaultFolder } from './settings-validation';
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import type { EnabledSchemaFamilies } from "../services/schema-catalog-types";
+import { VaultPromptBootstrapService } from "../services/vault-prompt-bootstrap";
+import { TaskAgentBootstrapService } from "../task-agents/task-agent-bootstrap";
+import { SkillBootstrapService } from "../skills/skill-bootstrap";
+import {
+	ensureCredentialsFolder,
+	ensureScriptsDefaultsInstalled,
+} from "../services/custom-vault-writer";
+import { runtimeSettingsVisibility } from "../chat/runtime-settings-visibility";
+import { host as osintHost } from "../host";
+import { basemapProblemMessage } from "../services/basemap/basemap-types";
+import type { VaultAISettings } from "./vault-ai-settings";
+import type { BasemapOpenResult } from "../host/types";
+import { CLAUDE_RUNTIME_ID, CODEX_RUNTIME_ID, getConfiguredRuntimeOptions, normalizeCustomRuntimeId, type CustomAgentRuntime } from "../services/agent-runtime/runtime-registry";
+import { createAgentProvider } from "../services/agent-runtime/create-agent-provider";
+import { HermesAgentProvider } from "../services/agent-runtime/hermes-agent-provider";
+import { isTaskAgentRunnable } from "../task-agents/task-agent-settings";
+import { ClaudeCodeService } from "../services/claude-code-service";
+import { CodexCliService } from "../services/codex-cli-service";
+import { importMiroBoard, MiroImportError } from "../services/miro-import-service";
+import { normalizeGeocodingBaseUrl } from "../services/geocoding-service";
+import { DEFAULT_SETTINGS } from "./vault-ai-settings";
+import { ensureFolderExists } from "../utils/vault-bootstrap-fs";
+import {
+	DEFAULT_CONVERSATION_FOLDER,
+	DEFAULT_CREDENTIALS_FOLDER,
+	DEFAULT_ENRICHERS_FOLDER,
+	DEFAULT_MIRO_BOARDS_FOLDER,
+	DEFAULT_PROMPTS_FOLDER,
+	DEFAULT_SCRIPTS_FOLDER,
+	DEFAULT_SKILLS_FOLDER,
+	DEFAULT_TASK_AGENTS_FOLDER,
+	DEFAULT_TASK_AGENT_OUTPUT_ALLOWLIST,
+} from "../constants/vault-layout";
+import type VaultAIPlugin from "../plugin/vault-ai-plugin";
+
+export class VaultAISettingTab extends PluginSettingTab {
+	declare plugin: VaultAIPlugin;
+	private _settingsDisplayDepth = 0;
+	private _settingsDisplayQueued = false;
+
+	constructor(app: App, plugin: VaultAIPlugin) {
+		super(app, plugin);
+		this.plugin = plugin;
+	}
+
+	private runtimeLabel(runtimeId: string): string {
+		const option = getConfiguredRuntimeOptions(this.plugin).find((r) => r.id === runtimeId);
+		return option?.displayName || "Claude Code";
+	}
+
+	private uniqueCustomRuntimeId(raw: string, currentId?: string): string {
+		const candidate = normalizeCustomRuntimeId(raw);
+		const ids = new Set((this.plugin.settings.customAgentRuntimes || []).map((r) => r.id));
+		if (currentId) ids.delete(currentId);
+		if (!ids.has(candidate)) return candidate;
+		let i = 2;
+		while (ids.has(`${candidate}-${i}`)) i++;
+		return `${candidate}-${i}`;
+	}
+
+	private createDefaultCustomRuntime(index: number): CustomAgentRuntime {
+		const id = this.uniqueCustomRuntimeId(`runtime-${index}`);
+		return {
+			id,
+			displayName: `Custom ${index}`,
+			cliPath: "hermes",
+			extraArgs: "",
+			timeoutMs: 120_000,
+			healthCheckArgs: "--version",
+			enabled: true,
+		};
+	}
+
+	/**
+	 * Shows or clears an inline message under a settings control.
+	 *
+	 * Rows used to accept a value, quietly substitute a different one, and say nothing --
+	 * the field kept showing what was typed while the stored setting was something else.
+	 */
+	/**
+	 * A folder row that refuses what the rest of the code would refuse later.
+	 *
+	 * These accepted absolute paths, ".." and backslashes, and (for the agent-writable
+	 * folders) anything outside OSINTCopilot/custom -- the constraint the description
+	 * already claimed. The rejection then surfaced far away: a Notice from an unrelated
+	 * button, or a console warning on the next launch.
+	 */
+	private applyFolderSetting(
+		input: HTMLInputElement,
+		fallback: string,
+		mustBeUnderCustomRoot: boolean,
+		apply: (folder: string) => void | Promise<void>,
+	): () => Promise<void> {
+		return async () => {
+			const raw = input.value.trim();
+			if (!raw) {
+				input.value = fallback;
+				this.setRowError(input, "");
+				await apply(fallback);
+				return;
+			}
+			const check = mustBeUnderCustomRoot ? validateCustomRootFolder(raw) : validateVaultFolder(raw);
+			if (!check.ok) {
+				this.setRowError(input, check.message);
+				return;
+			}
+			this.setRowError(input, "");
+			await apply(raw);
+		};
+	}
+
+	private setRowError(input: HTMLElement, message: string): void {
+		const row = input.closest(".setting-item") as HTMLElement | null;
+		if (!row) return;
+		let note = row.querySelector(".osint-setting-error") as HTMLElement | null;
+		if (!message) {
+			note?.remove();
+			input.removeAttribute("aria-invalid");
+			return;
+		}
+		if (!note) {
+			note = row.createDiv({ cls: "osint-setting-error" });
+		}
+		note.setText(message);
+		input.setAttribute("aria-invalid", "true");
+	}
+
+	display(): void {
+		if (this._settingsDisplayDepth > 0) {
+			this._settingsDisplayQueued = true;
+			return;
+		}
+		this._settingsDisplayDepth++;
+		const { containerEl } = this;
+		containerEl.empty();
+
+		// Updates are handled by the desktop app's own updater, not by overwriting
+		// plugin files in place: there is no plugin folder to overwrite any more.
+		new Setting(containerEl).setName("About").setHeading();
+		new Setting(containerEl)
+			.setName("OSINT layer " + this.plugin.manifest.version)
+			.setDesc(
+				"The app's own version is on the About page. When automatic update checks are enabled, " +
+				"updates are downloaded and installed on restart.",
+			);
+
+		new Setting(containerEl).setName("Views").setHeading();
+		new Setting(containerEl)
+			.setName("Opening a view")
+			.setDesc(
+				"What the Chat / Entities / Timeline / Locations / Tools buttons do. Switching shows one thing at a time \u2014 a note or a view, never both; opening alongside adds a pane per click, the way a note opens to the right.",
+			)
+			.addDropdown((dd) =>
+				dd
+					.addOption("switch", "Switch to it (one at a time)")
+					.addOption("alongside", "Open beside the current pane")
+					.setValue(this.plugin.settings.viewOpenMode === "alongside" ? "alongside" : "switch")
+					.onChange(async (value) => {
+						this.plugin.settings.viewOpenMode = value === "alongside" ? "alongside" : "switch";
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl).setName("Graph note lock").setHeading();
+		// The count lives in the description, which is re-read on every render, rather than
+		// baked into the row name where it went stale as soon as a note was locked elsewhere.
+		new Setting(containerEl)
+			.setName("Locked notes")
+			.setDesc(
+				`${this.plugin.vaultLockService.getLockedCount()} locked. ` +
+				"Notes locked from the entity graph are read-only until you unlock them (editor toolbar or here). Task agents and orchestration skip writes to locked paths.",
+			)
+			.addButton((btn) =>
+				btn.setButtonText("Unlock all").onClick(() => {
+					// ConfirmModal, not the browser's confirm(): a native dialog in a frameless
+					// Electron window ignores the theme and blocks the renderer, and every other
+					// confirmation in this app is already a ConfirmModal.
+					new ConfirmModal(
+						this.plugin.app,
+						"Unlock all notes?",
+						"Every note locked from the entity graph becomes writable again.",
+						() => {
+							this.plugin.vaultLockService.unlockAll();
+							new Notice("All graph locks cleared.");
+							this.display();
+						},
+						undefined,
+						true,
+						"Unlock all",
+					).open();
+				}),
+			);
+
+		new Setting(containerEl).setName("Chat context").setHeading();
+
+		// Max Notes
+		new Setting(containerEl)
+			.setName("Max notes")
+			.setDesc("Maximum number of notes to include in context")
+			.addText((text) => {
+				text.setPlaceholder("15").setValue(String(this.plugin.settings.maxNotes));
+				text.inputEl.addEventListener("blur", async () => {
+					// On blur, not per keystroke: clamped, written back into the field, and
+					// explained. Silently keeping the old value while the box showed something
+					// else meant "100" could mean a stored 15 -- and there was no ceiling on a
+					// number that decides how many whole notes go into a prompt.
+					const r = coerceInteger(text.inputEl.value, { min: 1, max: 200, fallback: this.plugin.settings.maxNotes });
+					text.setValue(String(r.value));
+					this.setRowError(text.inputEl, r.accepted ? "" : r.message);
+					if (this.plugin.settings.maxNotes === r.value) return;
+					this.plugin.settings.maxNotes = r.value;
+					await this.plugin.saveSettings();
+				});
+			});
+
+		// System Prompt
+		new Setting(containerEl)
+			.setName("System prompt")
+			.setDesc("Default system prompt for q&a")
+			.addTextArea((text) => {
+				text
+					.setPlaceholder("You are a vault assistant...")
+					.setValue(this.plugin.settings.systemPrompt)
+					.onChange(async (value) => {
+						this.plugin.settings.systemPrompt = value;
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.rows = 4;
+				text.inputEl.setCssProps({ width: "100%" });
+			});
+
+		new Setting(containerEl).setName("Vault prompts").setHeading();
+		new Setting(containerEl)
+			.setName("Prompts folder")
+			.setDesc("Editable rules, agents, and graph-extraction skill (Markdown). Default copies on first run if files are missing.")
+			.addText((text) =>
+				text
+					.setPlaceholder(DEFAULT_PROMPTS_FOLDER)
+					.setValue(this.plugin.settings.promptsFolder)
+					.then((t) => t.inputEl.addEventListener("blur", this.applyFolderSetting(
+						t.inputEl, DEFAULT_PROMPTS_FOLDER, false, async (folder) => {
+							this.plugin.settings.promptsFolder = folder;
+							await this.plugin.saveSettings();
+						})))
+			);
+		new Setting(containerEl)
+			.setName("Active agent id")
+			.setDesc("Matches agents/<id>.md under the prompts folder (see frontmatter id).")
+			.addText((text) =>
+				text
+					.setPlaceholder("default")
+					.setValue(this.plugin.settings.activeAgentId)
+					.onChange(async (value) => {
+						this.plugin.settings.activeAgentId = value.trim() || "default";
+						await this.plugin.saveSettings();
+					}),
+			);
+		new Setting(containerEl)
+			.setName("Install missing default prompt files")
+			.setDesc("Creates any default files that are not present. Does not overwrite your edits.")
+			.addButton((btn) =>
+				btn.setButtonText("Install missing").onClick(async () => {
+					try {
+						await new VaultPromptBootstrapService(this.plugin.app, () => this.plugin.settings.promptsFolder).ensureDefaultsInstalled();
+						await new TaskAgentBootstrapService(this.plugin.app, () => this.plugin.settings.taskAgentsFolder).ensureDefaultsInstalled();
+						await new SkillBootstrapService(this.plugin.app, () => this.plugin.settings.skillsFolder).ensureDefaultsInstalled();
+						const enricherRoot = this.plugin.settings.enrichersFolder.trim() || DEFAULT_ENRICHERS_FOLDER;
+						await ensureFolderExists(this.plugin.app, enricherRoot);
+						await ensureCredentialsFolder(this.plugin);
+						await ensureScriptsDefaultsInstalled(this.plugin);
+						this.plugin.vaultPromptLoader?.invalidateAll();
+						this.plugin.taskAgentRegistry?.invalidate();
+						this.plugin.skillRegistry?.invalidate();
+						this.plugin.enricherRegistry?.invalidate();
+						this.plugin.attachVaultSkillFromVault();
+						new Notice("Done. Open the prompts, skills, and task-agents folders in the vault to edit.");
+					} catch (e) {
+						new Notice(`Failed: ${e instanceof Error ? e.message : String(e)}`, 5000);
+					}
+				}),
+			);
+
+		new Setting(containerEl).setName("Skills (vault)").setHeading();
+		new Setting(containerEl)
+			.setName("Skills folder")
+			.setDesc(
+				"Markdown skills, sent to the chat agent with every request; it follows a skill when the request matches its description. The agent can propose creating or updating them via custom_vault_operations (the same flow can propose enricher *.json under the enrichers folder).",
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder(DEFAULT_SKILLS_FOLDER)
+					.setValue(this.plugin.settings.skillsFolder)
+					.then((t) => t.inputEl.addEventListener("blur", this.applyFolderSetting(
+						t.inputEl, DEFAULT_SKILLS_FOLDER, false, async (folder) => {
+							this.plugin.settings.skillsFolder = folder;
+							this.plugin.skillRegistry?.invalidate();
+							await this.plugin.saveSettings();
+						})))
+			);
+		new Setting(containerEl)
+			.setName("Enrichers folder")
+			.setDesc("JSON enricher specs (HTTP tools) that can be proposed by the agent after explicit approval.")
+			.addText((text) =>
+				text
+					.setPlaceholder(DEFAULT_ENRICHERS_FOLDER)
+					.setValue(this.plugin.settings.enrichersFolder)
+					.then((t) => t.inputEl.addEventListener("blur", this.applyFolderSetting(
+						t.inputEl, DEFAULT_ENRICHERS_FOLDER, false, async (folder) => {
+							this.plugin.settings.enrichersFolder = folder;
+							this.plugin.enricherRegistry?.invalidate();
+							await this.plugin.saveSettings();
+						})))
+			);
+		new Setting(containerEl)
+			.setName("Credentials folder")
+			.setDesc(
+				"Plain-text secrets the unified agent may propose storing (e.g. API keys). Paths must stay under OSINTCopilot/custom/. Use bearer_vault / header_vault / query_vault in enricher JSON to read a file here.",
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder(DEFAULT_CREDENTIALS_FOLDER)
+					.setValue(this.plugin.settings.credentialsFolder)
+					.then((t) => t.inputEl.addEventListener("blur", this.applyFolderSetting(
+						t.inputEl, DEFAULT_CREDENTIALS_FOLDER, true, async (folder) => {
+							this.plugin.settings.credentialsFolder = folder;
+							await this.plugin.saveSettings();
+						})))
+			);
+		new Setting(containerEl)
+			.setName("Scripts folder")
+			.setDesc(
+				"Text scripts (e.g. .py, .sh, .ts) the unified agent may propose via upsert_script / delete_script. Review the side-by-side diff in chat; OSINT Copilot does not execute scripts.",
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder(DEFAULT_SCRIPTS_FOLDER)
+					.setValue(this.plugin.settings.scriptsFolder)
+					.then((t) => t.inputEl.addEventListener("blur", this.applyFolderSetting(
+						t.inputEl, DEFAULT_SCRIPTS_FOLDER, true, async (folder) => {
+							this.plugin.settings.scriptsFolder = folder;
+							await this.plugin.saveSettings();
+						})))
+			);
+
+		new Setting(containerEl).setName("Task agents (vault)").setHeading();
+		new Setting(containerEl)
+			.setName("Enable task agents")
+			.setDesc(
+				"In General mode, pick a task agent to run local AI CLI workflows that create vault files (JSON contract), or None for full orchestration.",
+			)
+			.addToggle((t) =>
+				t.setValue(this.plugin.settings.taskAgentsEnabled).onChange(async (v) => {
+					this.plugin.settings.taskAgentsEnabled = v;
+					await this.plugin.saveSettings();
+				}),
+			);
+		new Setting(containerEl)
+			.setName("Task agents folder")
+			.setDesc("Markdown manifests with agent_kind: task (separate from prompts/agents orchestration agents).")
+			.addText((text) =>
+				text
+					.setPlaceholder(DEFAULT_TASK_AGENTS_FOLDER)
+					.setValue(this.plugin.settings.taskAgentsFolder)
+					.then((t) => t.inputEl.addEventListener("blur", this.applyFolderSetting(
+						t.inputEl, DEFAULT_TASK_AGENTS_FOLDER, false, async (folder) => {
+							this.plugin.settings.taskAgentsFolder = folder;
+							this.plugin.taskAgentRegistry?.invalidate();
+							await this.plugin.saveSettings();
+						})))
+			);
+		new Setting(containerEl)
+			.setName("Global output allowlist")
+			.setDesc("Newlines or commas. Task agents may only write under these paths AND each agent's output_roots.")
+			.addTextArea((text) => {
+				text
+					.setPlaceholder(DEFAULT_TASK_AGENT_OUTPUT_ALLOWLIST)
+					.setValue(this.plugin.settings.taskAgentGlobalOutputAllowlist)
+					.onChange(async (value) => {
+						this.plugin.settings.taskAgentGlobalOutputAllowlist = value;
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.rows = 3;
+				text.inputEl.setCssProps({ width: "100%" });
+			});
+		new Setting(containerEl)
+			.setName("Install missing default task-agent files")
+			.setDesc("Creates the README and sample agents when missing, and updates the ones you have not edited to the current defaults. Does not overwrite edits.")
+			.addButton((btn) =>
+				btn.setButtonText("Install missing").onClick(async () => {
+					try {
+						await new TaskAgentBootstrapService(this.plugin.app, () => this.plugin.settings.taskAgentsFolder).ensureDefaultsInstalled();
+						this.plugin.taskAgentRegistry?.invalidate();
+						new Notice("Task-agent defaults installed where missing, and unedited ones updated.");
+						this.display();
+					} catch (e) {
+						new Notice(`Failed: ${e instanceof Error ? e.message : String(e)}`, 5000);
+					}
+				}),
+			);
+		const taskAgentToggleHost = containerEl.createDiv("osint-copilot-task-agent-toggles");
+		void this.populateTaskAgentToggleSettings(taskAgentToggleHost);
+
+		new Setting(containerEl)
+			.setName("Conversation history folder")
+			.setDesc("Directory where chat conversations will be saved")
+			.addText((text) =>
+				text
+					.setPlaceholder(DEFAULT_CONVERSATION_FOLDER)
+					.setValue(this.plugin.settings.conversationFolder)
+					.onChange(async (value) => {
+						const folder = value.trim() || DEFAULT_CONVERSATION_FOLDER;
+						this.plugin.settings.conversationFolder = folder;
+						this.plugin.conversationService.setBasePath(folder);
+						await this.plugin.saveSettings();
+						await this.plugin.conversationService.initialize();
+					}),
+			);
+
+		new Setting(containerEl).setName("Unified chat agent").setHeading();
+		containerEl.createEl("p", {
+			text: "Chat uses one local agent turn (JSON contract). Choose Claude Code, Codex CLI, Hermes, or a custom runtime here or in the chat header.",
+			cls: "setting-item-description",
+		});
+		const selectedRuntimeId = this.plugin.settings.agentRuntimeProvider;
+		const selectedCustomRuntime = (this.plugin.settings.customAgentRuntimes || []).find((rt) => rt.id === selectedRuntimeId);
+		const visibility = runtimeSettingsVisibility(selectedRuntimeId);
+
+		new Setting(containerEl)
+			.setName("Agent runtime")
+			.setDesc("Default runtime for unified chat turns.")
+			.addDropdown((dd) => {
+				const options = getConfiguredRuntimeOptions(this.plugin);
+				for (const option of options) dd.addOption(option.id, option.displayName);
+				const selected = options.some((o) => o.id === this.plugin.settings.agentRuntimeProvider)
+					? this.plugin.settings.agentRuntimeProvider
+					: CLAUDE_RUNTIME_ID;
+				dd.setValue(selected);
+				dd.onChange(async (v) => {
+					this.plugin.settings.agentRuntimeProvider = v;
+					if (v === CLAUDE_RUNTIME_ID || v === CODEX_RUNTIME_ID) {
+						this.plugin.settings.apiProvider = v;
+					}
+					await this.plugin.saveSettings();
+					this.display();
+				});
+			});
+
+		if (visibility.showHermesSettings) {
+			new Setting(containerEl)
+				.setName("Hermes CLI path")
+				.setDesc("Executable for Hermes Agent (built-in runtime).")
+				.addText((text) =>
+					text
+						.setPlaceholder("hermes")
+						.setValue(this.plugin.settings.hermesAgentCliPath)
+						.onChange(async (value) => {
+							this.plugin.settings.hermesAgentCliPath = value.trim() || "hermes";
+							await this.plugin.saveSettings();
+						}),
+				);
+
+			new Setting(containerEl)
+				.setName("Hermes extra CLI args")
+				.setDesc("Whitespace-separated argv after the executable (e.g. a subcommand your CLI requires). Prompt is sent on stdin.")
+				.addText((text) =>
+					text
+						.setPlaceholder("")
+						.setValue(this.plugin.settings.hermesAgentExtraArgs)
+						.onChange(async (value) => {
+							this.plugin.settings.hermesAgentExtraArgs = value;
+							await this.plugin.saveSettings();
+						}),
+				);
+
+			new Setting(containerEl)
+				.setName("Hermes request timeout (ms)")
+				.addText((text) =>
+					text
+						.setPlaceholder(String(DEFAULT_SETTINGS.hermesAgentTimeoutMs))
+						.setValue(String(this.plugin.settings.hermesAgentTimeoutMs))
+						.inputEl.addEventListener("blur", async () => {
+							const r = coerceInteger(text.inputEl.value, { min: 5000, max: 3_600_000, fallback: this.plugin.settings.hermesAgentTimeoutMs });
+							text.setValue(String(r.value));
+							this.setRowError(text.inputEl, r.accepted ? "" : r.message);
+							if (this.plugin.settings.hermesAgentTimeoutMs === r.value) return;
+							this.plugin.settings.hermesAgentTimeoutMs = r.value;
+							await this.plugin.saveSettings();
+						}),
+				);
+
+			new Setting(containerEl)
+				.setName("Hermes health-check args")
+				.setDesc("Whitespace-separated argv used only by “Test agent runtime” (e.g. --version).")
+				.addText((text) =>
+					text
+						.setPlaceholder("--version")
+						.setValue(this.plugin.settings.hermesAgentHealthCheckArgs)
+						.onChange(async (value) => {
+							this.plugin.settings.hermesAgentHealthCheckArgs = value.trim() || "--version";
+							await this.plugin.saveSettings();
+						}),
+				);
+		}
+
+		if (visibility.showClaudeRuntimeHint) {
+			containerEl.createEl("p", {
+				text: "Claude runtime selected. Its CLI, model, and extraction diagnostics are configured in the “Local AI CLI” section below.",
+				cls: "setting-item-description",
+			});
+			new Setting(containerEl)
+				.setName("Claude runtime quick view")
+				.setDesc(
+					`CLI: ${this.plugin.settings.claudeCodeCliPath || "claude"} | model: ${this.plugin.settings.claudeCodeModel || "sonnet"}`,
+				);
+		}
+
+		if (visibility.showCodexRuntimeHint) {
+			containerEl.createEl("p", {
+				text: "Codex runtime selected. Its CLI, model override, and extraction diagnostics are configured in the “Local AI CLI” section below.",
+				cls: "setting-item-description",
+			});
+			new Setting(containerEl)
+				.setName("Codex runtime quick view")
+				.setDesc(
+					`CLI: ${this.plugin.settings.codexCliPath || "codex"} | model: ${this.plugin.settings.codexCliModel || "Codex config default"}`,
+				);
+		}
+
+		new Setting(containerEl)
+			.setName("Test agent runtime")
+			.setDesc("Checks reachability for the currently selected runtime.")
+			.addButton((btn) =>
+				btn.setButtonText("Test connection").onClick(async () => {
+					btn.setButtonText("Testing...");
+					btn.setDisabled(true);
+					try {
+						const provider = createAgentProvider(this.plugin);
+						const ok = await provider.healthCheck();
+						const providerLabel = provider instanceof HermesAgentProvider
+							? provider.cfg.displayName
+							: this.runtimeLabel(provider.id);
+						new Notice(
+							ok
+								? `${providerLabel} is reachable.`
+								: "Runtime is not ready. Check its executable path and, where applicable, login, provider, or health-check configuration.",
+						);
+					} catch (e: unknown) {
+						new Notice("Error: " + (e instanceof Error ? e.message : String(e)));
+					}
+					btn.setButtonText("Test connection");
+					btn.setDisabled(false);
+				}),
+			);
+
+		new Setting(containerEl).setName("Custom runtimes").setHeading();
+		containerEl.createEl("p", {
+			text: "Manage Hermes-compatible local CLIs. Edit fields appear only when a custom runtime is selected as Agent runtime.",
+			cls: "setting-item-description",
+		});
+		new Setting(containerEl)
+			.setName("Configured custom runtimes")
+			.setDesc(
+				this.plugin.settings.customAgentRuntimes.length > 0
+					? this.plugin.settings.customAgentRuntimes.map((rt) => `${rt.displayName} (${rt.id})`).join(", ")
+					: "No custom runtime configured yet.",
+			);
+		new Setting(containerEl)
+			.setName("Add custom runtime")
+			.setDesc("Creates a new runtime profile (Hermes-compatible stdin/stdout contract).")
+			.addButton((btn) =>
+				btn.setButtonText("Add runtime").onClick(async () => {
+					const next = this.createDefaultCustomRuntime(this.plugin.settings.customAgentRuntimes.length + 1);
+					this.plugin.settings.customAgentRuntimes.push(next);
+					await this.plugin.saveSettings();
+					this.display();
+				}),
+			);
+		if (visibility.showSelectedCustomSettings && selectedCustomRuntime) {
+			const i = this.plugin.settings.customAgentRuntimes.findIndex((rt) => rt.id === selectedCustomRuntime.id);
+			const rt = selectedCustomRuntime;
+			new Setting(containerEl)
+				.setName(`Selected custom runtime: ${rt.displayName}`)
+				.setDesc(rt.id)
+				.addButton((btn) =>
+					btn.setButtonText("Remove selected").setWarning().onClick(async () => {
+						if (i < 0) return;
+						const removedId = rt.id;
+						this.plugin.settings.customAgentRuntimes.splice(i, 1);
+						if (this.plugin.settings.agentRuntimeProvider === removedId) {
+							this.plugin.settings.agentRuntimeProvider = CLAUDE_RUNTIME_ID;
+						}
+						await this.plugin.saveSettings();
+						this.display();
+					}),
+				);
+			new Setting(containerEl)
+				.setName("Display name")
+				.addText((text) =>
+					text.setValue(rt.displayName).onChange(async (value) => {
+						rt.displayName = value.trim() || `Custom ${i + 1}`;
+						await this.plugin.saveSettings();
+					}),
+				);
+			new Setting(containerEl)
+				.setName("Runtime id")
+				.setDesc("Stored as custom:<id>. Lowercase letters, numbers, _ and -.")
+				.addText((text) =>
+					// On blur, and without re-rendering. onChange fires per keystroke, and
+					// this.display() empties the container -- so the first character removed the
+					// input being typed into and rewrote the id letter by letter.
+					text.setValue(rt.id.replace(/^custom:/, "")).inputEl.addEventListener("blur", async () => {
+						const nextId = this.uniqueCustomRuntimeId(text.inputEl.value, rt.id);
+						const prevId = rt.id;
+						if (nextId === prevId) return;
+						rt.id = nextId;
+						if (this.plugin.settings.agentRuntimeProvider === prevId) {
+							this.plugin.settings.agentRuntimeProvider = nextId;
+						}
+						text.setValue(nextId.replace(/^custom:/, ""));
+						await this.plugin.saveSettings();
+					}),
+				);
+			new Setting(containerEl)
+				.setName("Enabled")
+				.addToggle((toggle) =>
+					toggle.setValue(rt.enabled).onChange(async (value) => {
+						rt.enabled = value;
+						if (!value && this.plugin.settings.agentRuntimeProvider === rt.id) {
+							this.plugin.settings.agentRuntimeProvider = CLAUDE_RUNTIME_ID;
+						}
+						await this.plugin.saveSettings();
+						this.display();
+					}),
+				);
+			new Setting(containerEl)
+				.setName("CLI path")
+				.addText((text) =>
+					text.setValue(rt.cliPath).onChange(async (value) => {
+						rt.cliPath = value.trim() || "hermes";
+						await this.plugin.saveSettings();
+					}),
+				);
+			new Setting(containerEl)
+				.setName("Extra CLI args")
+				.addText((text) =>
+					text.setValue(rt.extraArgs).onChange(async (value) => {
+						rt.extraArgs = value;
+						await this.plugin.saveSettings();
+					}),
+				);
+			new Setting(containerEl)
+				.setName("Request timeout (ms)")
+				.addText((text) =>
+					text.setValue(String(rt.timeoutMs)).inputEl.addEventListener("blur", async () => {
+						const r = coerceInteger(text.inputEl.value, { min: 5000, max: 3_600_000, fallback: rt.timeoutMs });
+						text.setValue(String(r.value));
+						this.setRowError(text.inputEl, r.accepted ? "" : r.message);
+						if (rt.timeoutMs === r.value) return;
+						rt.timeoutMs = r.value;
+						await this.plugin.saveSettings();
+					}),
+				);
+			new Setting(containerEl)
+				.setName("Health-check args")
+				.addText((text) =>
+					text.setValue(rt.healthCheckArgs).onChange(async (value) => {
+						rt.healthCheckArgs = value.trim() || "--version";
+						await this.plugin.saveSettings();
+					}),
+				);
+		}
+
+		new Setting(containerEl).setName("Local AI CLI").setHeading();
+
+		containerEl.createEl("p", {
+			text: "Select the CLI used for bulk entity extraction, image analysis, and task agents. Choosing Claude or Codex as the chat runtime also selects it here; Hermes/custom chat leaves this choice unchanged.",
+			cls: "setting-item-description",
+		});
+
+		new Setting(containerEl)
+			.setName("Extraction and task-agent CLI")
+			.setDesc("Both integrations run locally as child processes and reuse their CLI's existing sign-in.")
+			.addDropdown((dd) =>
+				dd
+					.addOption(CLAUDE_RUNTIME_ID, "Claude Code")
+					.addOption(CODEX_RUNTIME_ID, "Codex CLI")
+					.setValue(this.plugin.settings.apiProvider)
+					.onChange(async (value) => {
+						this.plugin.settings.apiProvider = value === CODEX_RUNTIME_ID ? CODEX_RUNTIME_ID : CLAUDE_RUNTIME_ID;
+						await this.plugin.saveSettings();
+						this.display();
+					}),
+			);
+
+		if (this.plugin.settings.apiProvider === CLAUDE_RUNTIME_ID) {
+			new Setting(containerEl)
+				.setName("Claude CLI path")
+				.setDesc("Path to the claude executable. Use 'claude' if it's on your PATH.")
+				.addText((text) =>
+					text
+						.setPlaceholder("claude")
+						.setValue(this.plugin.settings.claudeCodeCliPath)
+						.onChange(async (value) => {
+							this.plugin.settings.claudeCodeCliPath = value.trim() || "claude";
+							await this.plugin.saveSettings();
+						}),
+				);
+
+			new Setting(containerEl)
+				.setName("Claude model")
+				.setDesc("Model to use (for example sonnet, opus, or haiku).")
+				.addText((text) =>
+					text
+						.setPlaceholder("sonnet")
+						.setValue(this.plugin.settings.claudeCodeModel)
+						.onChange(async (value) => {
+							this.plugin.settings.claudeCodeModel = value.trim() || "sonnet";
+							await this.plugin.saveSettings();
+						}),
+				);
+
+			new Setting(containerEl)
+				.setName("Claude Code extra CLI args")
+				.setDesc(
+					"Whitespace-separated flags appended after --max-turns. Prefer vault enricher JSON for HTTP APIs instead of unattended shell access.",
+				)
+				.addText((text) =>
+					text.setValue(this.plugin.settings.claudeCodeExtraArgs).onChange(async (value) => {
+						this.plugin.settings.claudeCodeExtraArgs = value;
+						await this.plugin.saveSettings();
+					}),
+				);
+
+			new Setting(containerEl)
+				.setName("Claude Code timeout (ms)")
+				.addText((text) =>
+					text.setValue(String(this.plugin.settings.claudeCodeTimeoutMs)).inputEl.addEventListener("blur", async () => {
+						// On blur, clamped, written back and explained: substituting the default
+						// silently while the box still showed what was typed meant a field reading
+						// "100" could be a stored 300000.
+						const r = coerceInteger(text.inputEl.value, { min: 5000, max: 3_600_000, fallback: this.plugin.settings.claudeCodeTimeoutMs });
+						text.setValue(String(r.value));
+						this.setRowError(text.inputEl, r.accepted ? "" : r.message);
+						if (this.plugin.settings.claudeCodeTimeoutMs === r.value) return;
+						this.plugin.settings.claudeCodeTimeoutMs = r.value;
+						await this.plugin.saveSettings();
+					}),
+				);
+		} else {
+			new Setting(containerEl)
+				.setName("Codex CLI path")
+				.setDesc("Path to the codex executable. Desktop launches may require an absolute path, such as /home/you/.local/bin/codex.")
+				.addText((text) =>
+					text
+						.setPlaceholder("codex")
+						.setValue(this.plugin.settings.codexCliPath)
+						.onChange(async (value) => {
+							this.plugin.settings.codexCliPath = value.trim() || "codex";
+							await this.plugin.saveSettings();
+						}),
+				);
+
+			new Setting(containerEl)
+				.setName("Codex sign-in")
+				.setDesc(
+					`Run “${this.plugin.settings.codexCliPath || "codex"} login” in a terminal. OSINT Copilot reuses that saved login and never stores it in the vault.`,
+				)
+				.addButton((btn) =>
+					btn.setButtonText("Check login").onClick(async () => {
+						btn.setDisabled(true);
+						btn.setButtonText("Checking...");
+						const adapter = this.plugin.app.vault.adapter as { getBasePath?: () => string };
+						const vaultRoot = typeof adapter.getBasePath === "function" ? String(adapter.getBasePath() || "") : "";
+						const status = await new CodexCliService({
+							cliPath: this.plugin.settings.codexCliPath || "codex",
+							cliWorkingDirectory: vaultRoot || undefined,
+						}).getLoginStatus();
+						const detail = status.message.length > 1000 ? status.message.slice(0, 1000) + "…" : status.message;
+						new Notice(status.authenticated ? detail : `Codex is not logged in: ${detail}`, 8000);
+						btn.setButtonText("Check login");
+						btn.setDisabled(false);
+					}),
+				);
+
+			new Setting(containerEl)
+				.setName("Codex model override")
+				.setDesc("Leave blank to use the model configured by your local Codex CLI.")
+				.addText((text) =>
+					text
+						.setPlaceholder("Use Codex config default")
+						.setValue(this.plugin.settings.codexCliModel)
+						.onChange(async (value) => {
+							this.plugin.settings.codexCliModel = value.trim();
+							await this.plugin.saveSettings();
+						}),
+				);
+
+			new Setting(containerEl)
+				.setName("Codex exec extra args")
+				.setDesc(
+					"Optional whitespace-separated codex exec flags (for example, --oss). Safety, output, model, image, working-directory, and session flags are managed by OSINT Copilot and rejected here.",
+				)
+				.addText((text) =>
+					text.setValue(this.plugin.settings.codexCliExtraArgs).onChange(async (value) => {
+						this.plugin.settings.codexCliExtraArgs = value;
+						await this.plugin.saveSettings();
+					}),
+				);
+
+			new Setting(containerEl)
+				.setName("Codex timeout (ms)")
+				.addText((text) =>
+					text.setValue(String(this.plugin.settings.codexCliTimeoutMs)).inputEl.addEventListener("blur", async () => {
+						// On blur, clamped, written back and explained: substituting the default
+						// silently while the box still showed what was typed meant a field reading
+						// "100" could be a stored 300000.
+						const r = coerceInteger(text.inputEl.value, { min: 5000, max: 3_600_000, fallback: this.plugin.settings.codexCliTimeoutMs });
+						text.setValue(String(r.value));
+						this.setRowError(text.inputEl, r.accepted ? "" : r.message);
+						if (this.plugin.settings.codexCliTimeoutMs === r.value) return;
+						this.plugin.settings.codexCliTimeoutMs = r.value;
+						await this.plugin.saveSettings();
+					}),
+				);
+		}
+
+		new Setting(containerEl)
+			.setName("Extraction log verbosity")
+			.setDesc("How much local CLI extraction detail is shown in chat while processing attachments.")
+			.addDropdown((dd) =>
+				dd
+					.addOption("minimal", "Minimal (milestones)")
+					.addOption("detailed", "Detailed (stages + snippets)")
+					.setValue(this.plugin.settings.extractionLogVerbosity)
+					.onChange(async (value) => {
+						this.plugin.settings.extractionLogVerbosity = value === "minimal" ? "minimal" : "detailed";
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Extraction debug: raw CLI output")
+			.setDesc("Include raw stdout/stderr in extraction logs. Warning: may expose sensitive content.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.extractionDebugRawCli)
+					.onChange(async (value) => {
+						this.plugin.settings.extractionDebugRawCli = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Test selected local AI CLI")
+			.setDesc("Checks the executable, then runs a minimal request using the same invocation path as chat and extraction.")
+			.addButton((btn) =>
+				btn.setButtonText("Test CLI").onClick(async () => {
+					btn.setButtonText("Testing...");
+					btn.setDisabled(true);
+					try {
+						const adapter = this.plugin.app.vault.adapter as { getBasePath?: () => string };
+						const vaultRoot = typeof adapter.getBasePath === "function" ? String(adapter.getBasePath() || "") : "";
+						const svc = this.plugin.settings.apiProvider === CODEX_RUNTIME_ID
+							? new CodexCliService({
+								cliPath: this.plugin.settings.codexCliPath || "codex",
+								model: this.plugin.settings.codexCliModel || "",
+								timeoutMs: 45_000,
+								cliWorkingDirectory: vaultRoot || undefined,
+								extraCliArgs: this.plugin.settings.codexCliExtraArgs ?? "",
+							})
+							: new ClaudeCodeService({
+								cliPath: this.plugin.settings.claudeCodeCliPath || "claude",
+								model: this.plugin.settings.claudeCodeModel || "sonnet",
+								timeoutMs: 45_000,
+								cliWorkingDirectory: vaultRoot || undefined,
+								extraCliArgs: this.plugin.settings.claudeCodeExtraArgs ?? "",
+							});
+						const ok = await svc.isAvailable();
+						if (!ok) {
+							new Notice(
+								`${svc.displayName} is not ready. Check its executable path and, for Codex, its login or explicit provider configuration.`,
+								8000,
+							);
+							btn.setButtonText("Test CLI");
+							btn.setDisabled(false);
+							return;
+						}
+						await svc.chat("", "Reply with exactly the single word: OK", undefined, undefined, 1);
+						new Notice(`${svc.displayName} is available and responded to a test request.`, 6000);
+					} catch (e: unknown) {
+						const msg = e instanceof Error ? e.message : String(e);
+						new Notice(msg.length > 2000 ? msg.slice(0, 2000) + "…" : msg, 12000);
+					}
+					btn.setButtonText("Test CLI");
+					btn.setDisabled(false);
+				}),
+			);
+
+		new Setting(containerEl).setName("Miro import").setHeading();
+		containerEl.createEl("p", {
+			text: "Import a single Miro board's items and connectors into the vault as a Markdown note so the AI agent can read it. This is a one-time, on-demand import, not a live sync — re-importing the same board overwrites its note.",
+			cls: "setting-item-description",
+		});
+
+		new Setting(containerEl)
+			.setName("Miro access token")
+			.setDesc("Personal access token / app token from your Miro account. Stored in plain text in OSINT Copilot's own settings.")
+			.addText((text) => {
+				text.inputEl.type = "password";
+				text
+					.setPlaceholder("Miro access token")
+					.setValue(this.plugin.settings.miroAccessToken)
+					.onChange(async (value) => {
+						this.plugin.settings.miroAccessToken = value.trim();
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName("Board ID or URL")
+			.setDesc("Paste a Miro board URL (e.g. https://miro.com/app/board/uXjVI.../) or a raw board ID.")
+			.addText((text) =>
+				text
+					.setPlaceholder("https://miro.com/app/board/...")
+					.setValue(this.plugin.settings.miroLastBoardInput)
+					.onChange(async (value) => {
+						this.plugin.settings.miroLastBoardInput = value.trim();
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Import board now")
+			.setDesc(`Fetches the board's items and connectors and writes/overwrites a note under ${DEFAULT_MIRO_BOARDS_FOLDER}.`)
+			.addButton((btn) =>
+				btn.setButtonText("Import board now").onClick(async () => {
+					const token = this.plugin.settings.miroAccessToken.trim();
+					const boardInput = this.plugin.settings.miroLastBoardInput.trim();
+					if (!token) {
+						new Notice("Set a Miro access token above first.");
+						return;
+					}
+					if (!boardInput) {
+						new Notice("Enter a Miro board ID or URL first.");
+						return;
+					}
+
+					btn.setDisabled(true);
+					btn.setButtonText("Importing...");
+					try {
+						// The same path the chat view's "Import from Miro" takes.
+						const { snapshot, path, overwritten } = await importMiroBoard(
+							this.plugin.app, boardInput, token, DEFAULT_MIRO_BOARDS_FOLDER,
+						);
+						new Notice(
+							`Imported "${snapshot.board.name || snapshot.board.id}" (${snapshot.items.length} items, ${snapshot.connectors.length} connectors) to ${path}${overwritten ? " (overwritten)" : ""}.`,
+							8000,
+						);
+					} catch (e) {
+						const msg = e instanceof MiroImportError ? e.message : e instanceof Error ? e.message : String(e);
+						new Notice(`Miro import failed: ${msg}`, 10000);
+					} finally {
+						btn.setDisabled(false);
+						btn.setButtonText("Import board now");
+					}
+				}),
+			);
+
+		new Setting(containerEl).setName("Map").setHeading();
+
+		new Setting(containerEl)
+			.setName("Geocoding service")
+			.setDesc(
+				"Optional root URL of a Nominatim-compatible service. Address and coordinate queries are sent to that operator. " +
+				"Empty disables geocoding; the public OpenStreetMap Nominatim endpoint is not configured automatically.",
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("https://nominatim.example.org")
+					.setValue(this.plugin.settings.geocodingBaseUrl)
+					.then((t) => t.inputEl.addEventListener("blur", async () => {
+						const normalized = normalizeGeocodingBaseUrl(t.inputEl.value);
+						if (normalized === null) {
+							this.setRowError(t.inputEl, "Use HTTPS, or HTTP only for localhost. Do not include credentials in the URL.");
+							return;
+						}
+						this.setRowError(t.inputEl, "");
+						t.inputEl.value = normalized;
+						if (this.plugin.settings.geocodingBaseUrl === normalized) return;
+						this.plugin.settings.geocodingBaseUrl = normalized;
+						await this.plugin.saveSettings();
+					})),
+			);
+
+		new Setting(containerEl)
+			.setName("Offline basemap")
+			.setDesc(
+				"A PMTiles archive read from disk — one file, no tile server, works with no network. " +
+				"This is the primary basemap: it is the only one that reveals nothing about what you are looking at. " +
+				"Get an extract for your area of interest from build.protomaps.com, or convert an existing " +
+				"MBTiles file with `pmtiles convert`.",
+			)
+			.addButton((btn) =>
+				btn
+					.setButtonText(
+						this.plugin.settings.mapOfflineBasemapPath
+							? "Change file…"
+							: "Choose a .pmtiles file…",
+					)
+					.onClick(async () => {
+						// The dialog is opened by the main process, which then remembers the
+						// path itself. The renderer never names a file: a byte-range read of
+						// a caller-supplied path would be an arbitrary-file-read primitive.
+						const result = await osintHost.basemap.pick();
+						if (!result) return;
+						// Named arms rather than `if (result.ok)`: the app builds with
+						// strict:false, which does not narrow on a boolean discriminant.
+						const failure = result as Extract<BasemapOpenResult, { ok: false }>;
+						const success = result as Extract<BasemapOpenResult, { ok: true }>;
+						if (!result.ok) {
+							new Notice(basemapProblemMessage(failure.problem, failure.path), 8000);
+							return;
+						}
+						this.plugin.settings.mapOfflineBasemapPath = success.archive.path;
+						await this.plugin.saveSettings();
+						new Notice("Offline basemap set. Reopen the map to use it.");
+						this.display();
+					}),
+			);
+
+		if (this.plugin.settings.mapOfflineBasemapPath) {
+			new Setting(containerEl)
+				.setName("Current archive")
+				.setDesc(this.plugin.settings.mapOfflineBasemapPath)
+				.addButton((btn) =>
+					btn
+						.setButtonText("Forget")
+						.setWarning()
+						.onClick(async () => {
+							await osintHost.basemap.forget();
+							this.plugin.settings.mapOfflineBasemapPath = "";
+							await this.plugin.saveSettings();
+							this.display();
+						}),
+				);
+		}
+
+		new Setting(containerEl)
+			.setName("Online basemap")
+			.setDesc(
+				"On by default, using OpenFreeMap. Tiles are fetched directly from the renderer, " +
+				"outside this app's network guard, so every tile request tells the provider the exact " +
+				"area you are viewing. Set this to None to stop that; an offline basemap gives you " +
+				"imagery with no requests at all.",
+			)
+			.addDropdown((dd) => {
+				dd.addOption("none", "None — offline basemap or coordinate grid");
+				dd.addOption("openfreemap", "OpenFreeMap (open source, no API key)");
+				dd.addOption("custom", "Custom tile server");
+				dd.setValue(this.plugin.settings.mapOnlineTileProvider);
+				dd.onChange(async (value) => {
+					this.plugin.settings.mapOnlineTileProvider = value as VaultAISettings["mapOnlineTileProvider"];
+					await this.plugin.saveSettings();
+					this.display();
+				});
+			});
+
+		// Not inside the OpenFreeMap branch: both vector basemaps -- online and offline --
+		// are drawn by our own rule set, so the palette applies to either.
+		new Setting(containerEl)
+			.setName("Basemap colours")
+			.setDesc(
+				"Applies to the OpenFreeMap basemap and to offline vector archives. " +
+				"Reopen the map to see a change.",
+			)
+			.addDropdown((dd) => {
+				dd.addOption("auto", "Follow the app theme");
+				dd.addOption("light", "Light");
+				dd.addOption("dark", "Dark");
+				dd.setValue(this.plugin.settings.mapBasemapTheme);
+				dd.onChange(async (value) => {
+					this.plugin.settings.mapBasemapTheme = value as VaultAISettings["mapBasemapTheme"];
+					await this.plugin.saveSettings();
+				});
+			});
+
+		if (this.plugin.settings.mapOnlineTileProvider === "custom") {
+			new Setting(containerEl)
+				.setName("Tile URL template")
+				.setDesc("Must contain {z}, {x} and {y}. Use a provider whose terms you have checked, under your own account.")
+				.addText((text) =>
+					text
+						.setPlaceholder("https://example.com/tiles/{z}/{x}/{y}.png")
+						.setValue(this.plugin.settings.mapCustomTileUrl)
+						.then((t) => t.inputEl.addEventListener("blur", async () => {
+							// The description already said {z}, {x} and {y} were required; nothing
+							// checked. An unusable URL just produced the generic "no basemap"
+							// strip, with nothing pointing at this field.
+							const value = t.inputEl.value.trim();
+							if (value && !isUsableTileUrl(value)) {
+								this.setRowError(t.inputEl, "Must contain {z}, {x} and {y}.");
+								return;
+							}
+							this.setRowError(t.inputEl, "");
+							if (this.plugin.settings.mapCustomTileUrl === value) return;
+							this.plugin.settings.mapCustomTileUrl = value;
+							await this.plugin.saveSettings();
+						})),
+				);
+
+			new Setting(containerEl)
+				.setName("Attribution")
+				.setDesc("Shown on the map. Most providers require this.")
+				.addText((text) =>
+					text
+						.setValue(this.plugin.settings.mapCustomTileAttribution)
+						.onChange(async (value) => {
+							this.plugin.settings.mapCustomTileAttribution = value;
+							await this.plugin.saveSettings();
+						}),
+				);
+		}
+
+		new Setting(containerEl).setName("Graph view").setHeading();
+
+		new Setting(containerEl)
+			.setName("Enable graph features")
+			.setDesc("Turn on the graph view and its supporting entity/relationship features.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableGraphFeatures)
+					.onChange(async (value) => {
+						this.plugin.settings.enableGraphFeatures = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Schema families in type pickers")
+			.setDesc(
+				"Filter which definitions appear when creating entities and connections: FTM (bundled), STIX 2 and MITRE vault YAML under your entity folder, and optional user YAML in schemas/user/.",
+			);
+
+		const fam = this.plugin.settings.enabledSchemaFamilies;
+		const addFamToggle = (key: keyof EnabledSchemaFamilies, name: string) => {
+			new Setting(containerEl)
+				.setName(name)
+				.addToggle((toggle) =>
+					toggle.setValue(fam[key]).onChange(async (value) => {
+						fam[key] = value;
+						await this.plugin.saveSettings();
+					}),
+				);
+		};
+		addFamToggle("ftm", "FTM (FollowTheMoney)");
+		addFamToggle("stix2", "STIX 2 (vault YAML)");
+		addFamToggle("mitre", "MITRE ATT&CK (vault YAML)");
+		addFamToggle("user", "User YAML (schemas/user)");
+
+		new Setting(containerEl)
+			.setName("OIDSF bundled schema layers (type pickers)")
+			.setDesc(
+				"Filter the bundled ontology (OIDSF) in FTM pickers: World (default entities), Links (relationship/interval types), Cyber (STIX-aligned), Analysis (claims/ACH/etc.). Graph still resolves any type already in the vault.",
+			);
+		const layers = this.plugin.settings.oidsfModalLayers;
+		const addLayerToggle = (key: keyof typeof layers, caption: string) => {
+			new Setting(containerEl)
+				.setName(caption)
+				.addToggle((toggle) =>
+					toggle.setValue(layers[key]).onChange(async (value) => {
+						layers[key] = value;
+						await this.plugin.saveSettings();
+					}),
+				);
+		};
+		addLayerToggle("world", "World (people, orgs, documents, …)");
+		addLayerToggle("links", "Links (relationship / interval types)");
+		addLayerToggle("cyber", "Cyber (STIX / CTI-aligned entities)");
+		addLayerToggle("analysis", "Analysis (claims, ACH, evidence chains, …)");
+
+		new Setting(containerEl)
+			.setName("Auto-refresh graph view")
+			.setDesc("Automatically refresh the graph view when new entities are created through AI generation")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.autoRefreshGraph)
+					.onChange(async (value) => {
+						this.plugin.settings.autoRefreshGraph = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Auto-open graph view")
+			.setDesc("Automatically open the graph view when entities are created (if not already open)")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.autoOpenGraphOnEntityCreation)
+					.onChange(async (value) => {
+						this.plugin.settings.autoOpenGraphOnEntityCreation = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		this._settingsDisplayDepth--;
+		if (this._settingsDisplayQueued) {
+			this._settingsDisplayQueued = false;
+			queueMicrotask(() => this.display());
+		}
+	}
+
+	private async populateTaskAgentToggleSettings(host: HTMLElement): Promise<void> {
+		host.empty();
+		try {
+			const list = await this.plugin.taskAgentRegistry.listAgents();
+			if (list.length === 0) {
+				host.createEl("p", {
+					text: "No task agents found. Add .md files with agent_kind: task to the task agents folder.",
+					cls: "setting-item-description",
+				});
+				return;
+			}
+			for (const a of list) {
+				const runnable = isTaskAgentRunnable(a, this.plugin.settings);
+				new Setting(host)
+					.setName(a.name)
+					.setDesc(`${a.description || a.id} — output: ${a.outputRoots.join(", ")}`)
+					.addToggle((t) => {
+						t.setValue(runnable);
+						t.onChange(async (v) => {
+							if (v) {
+								if (a.enabledDefault) {
+									delete this.plugin.settings.taskAgentOverrides[a.id];
+								} else {
+									this.plugin.settings.taskAgentOverrides[a.id] = true;
+								}
+							} else {
+								this.plugin.settings.taskAgentOverrides[a.id] = false;
+							}
+							await this.plugin.saveSettings();
+						});
+					});
+			}
+		} catch (e) {
+			host.createEl("p", {
+				text: `Could not list task agents: ${e instanceof Error ? e.message : String(e)}`,
+				cls: "setting-item-description",
+			});
+		}
+	}
+}

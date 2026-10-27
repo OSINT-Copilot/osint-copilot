@@ -1,0 +1,28 @@
+{
+	// OSINT Copilot's code is written to strict null checks. Tangent builds with
+	// strict:false, which is looser and is what webpack/ts-loader uses; this config is the
+	// stricter guard for our subtree only. Run it with `npm run typecheck:osint`.
+	//
+	// A real comment, not a "//" key. tsconfig.json is JSONC, so tsc reads both -- but the
+	// key form is an unknown root property, and editors validate this file against a schema
+	// that rejects those. Nothing else parses this file, so comments are safe here.
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"rootDir": "..",
+		"strictNullChecks": true,
+		"strictFunctionTypes": true,
+		"strictBindCallApply": true,
+		"noImplicitThis": true,
+		"types": ["node", "svelte"]
+	},
+	"include": [
+		"../osint/**/*.ts",
+		"../main/osint/**/*.ts"
+	],
+	"exclude": [
+		// Checked by tests/tsconfig.json and tests/tsconfig.tangent.json.
+		"../osint/tests",
+		"../main/osint/index.ts"
+	]
+}

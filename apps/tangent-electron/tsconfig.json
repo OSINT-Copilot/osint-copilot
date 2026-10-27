@@ -1,0 +1,22 @@
+{
+	"extends": "@tsconfig/svelte/tsconfig.json",
+	"compilerOptions": {
+		"outDir": "__build",
+		"sourceMap": true,
+		"baseUrl": "src",
+		"paths": {
+			"svelte/*": ["../node_modules/svelte/src/runtime/*"],
+			"obsidian": ["osint/obsidian-shim/index.ts"],
+			"host-impl": ["osint/host/impl.tangent.ts"]
+		},
+		"target": "ES2022",
+		"lib": ["ESNext", "DOM"],
+		"types": ["svelte"],
+		"moduleResolution": "bundler",
+		"allowJs": true,
+		"esModuleInterop": true,
+		"strict": false,
+		"verbatimModuleSyntax": true
+	},
+	"exclude": [ "__build", "node_modules", "out", "src/osint/tests" ]
+}

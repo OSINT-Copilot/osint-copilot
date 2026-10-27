@@ -1,0 +1,31 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000016
+type: Location
+label: Parcel drop point, Tallinn
+properties:
+  name: Parcel drop point, Tallinn
+  address: Parcel lockers, Kesklinn
+  city: Tallinn
+  country: Estonia
+  latitude: 59.437
+  longitude: 24.7536
+  location_type: drop point
+  City: Tallinn
+  Country: Estonia
+  Name: Parcel drop point, Tallinn
+  Address: Parcel lockers, Kesklinn
+  Latitude: 59.437
+  Longitude: 24.7536
+ftmSchema: Address
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Address/Parcel drop point, Tallinn.md
+osint_sources:
+  - id: src_91f113b6fb91f715
+    source_url: http://harbourmarket.example/thread/4471
+    archive_status: skipped
+    inferred: false
+    rationale: Buyers mention collecting from a Tallinn locker
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

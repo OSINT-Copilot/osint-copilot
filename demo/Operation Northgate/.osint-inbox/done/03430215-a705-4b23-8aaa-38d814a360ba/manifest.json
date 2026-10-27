@@ -1,0 +1,24 @@
+{
+  "v": 1,
+  "bundleId": "03430215-a705-4b23-8aaa-38d814a360ba",
+  "workspaceId": "VClqFaLRd7XJWp-Z0ilaTr",
+  "page": {
+    "url": "http://harbourmarket.example/thread/4471",
+    "title": "[WTS] Oncology generics, EU shipping · Harbour Market"
+  },
+  "clientTime": "2026-10-21T15:18:32.816Z",
+  "kind": "entity",
+  "entity": {
+    "kind": "username",
+    "value": "@harbor_pharma",
+    "platform": "harbourmarket.example",
+    "context": "Vendor account of the thread"
+  },
+  "server": {
+    "receivedAt": "2026-10-21T15:18:32.831Z",
+    "clientId": "DjZ3RfbCgAcRblvrn0K8BA",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0"
+  },
+  "mac": "yaa8TRPKNLMUZ2cWrOd62DvCTzYQny9DTzih5pjxdLE"
+}

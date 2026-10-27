@@ -1,0 +1,46 @@
+From: <Saved by Blink>
+Snapshot-Content-Location: https://news.example/2026/09/cafe-owner?ref=home
+Subject: =?utf-8?Q?Caf=C3=A9=20owner=20profile=20=E2=80=94=20Example=20News?=
+Date: Fri, 18 Sep 2026 10:00:00 -0000
+MIME-Version: 1.0
+Content-Type: multipart/related;
+	type="text/html";
+	boundary="----MultipartBoundary--Qm7XjS2dP4kL9vR1tYw8zN3cB6hF0aE5gU----"
+
+
+------MultipartBoundary--Qm7XjS2dP4kL9vR1tYw8zN3cB6hF0aE5gU----
+Content-Type: text/html
+Content-ID: <frame-3C0E8F4B2D1A6F7E9B8C5D4A3F2E1D0C@mhtml.blink>
+Content-Transfer-Encoding: quoted-printable
+Content-Location: https://news.example/2026/09/cafe-owner?ref=home
+
+<!DOCTYPE html><html lang=3D"en"><head><meta http-equiv=3D"Content-Type" co=
+ntent=3D"text/html; charset=3DUTF-8"><link rel=3D"stylesheet" type=3D"text/=
+css" href=3D"cid:css-5a1f0c2e-9b7d-4e3a-8f6b-1c2d3e4f5a6b@mhtml.blink" /><t=
+itle>Caf=C3=A9 owner profile =E2=80=94 Example News</title><meta name=3D"vi=
+ewport" content=3D"width=3Ddevice-width"></head><body><header><nav><a href=
+=3D"https://news.example/">Home</a></nav></header>
+<article><h1>Caf=C3=A9 owner profile</h1><p class=3D"byline">By <a href=3D"=
+https://news.example/authors/jdoe">J. Doe</a></p><p>The owner, reachable at=
+ <a href=3D"mailto:owner@cafe.example">owner@cafe.example</a>, opened the c=
+af=C3=A9 in 2019. Prices rose by 5% =3D a lot.</p><img src=3D"https://cdn.n=
+ews.example/img/cafe.jpg" alt=3D"The caf=C3=A9 front"><p>A very long paragr=
+aph that Blink will wrap across several quoted-printable lines because it r=
+uns well past seventy-six columns of text.</p></article>
+</body></html>
+------MultipartBoundary--Qm7XjS2dP4kL9vR1tYw8zN3cB6hF0aE5gU----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-5a1f0c2e-9b7d-4e3a-8f6b-1c2d3e4f5a6b@mhtml.blink
+
+@charset "utf-8";
+body { font-family: serif; }
+
+------MultipartBoundary--Qm7XjS2dP4kL9vR1tYw8zN3cB6hF0aE5gU----
+Content-Type: image/png
+Content-Transfer-Encoding: base64
+Content-Location: https://cdn.news.example/img/cafe.jpg
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAA=
+
+------MultipartBoundary--Qm7XjS2dP4kL9vR1tYw8zN3cB6hF0aE5gU------

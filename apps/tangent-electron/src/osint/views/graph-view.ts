@@ -1,0 +1,4010 @@
+
+/**
+ * Custom Graph View using Cytoscape.js for interactive graph visualization.
+ */
+
+import { ItemView, WorkspaceLeaf, Notice, TAbstractFile, TFile, normalizePath } from 'obsidian';
+import {
+    type Entity,
+    type Connection,
+    EntityType,
+} from '../entities/types';
+import { EntityManager } from '../services/entity-manager';
+import { ensureFolderExists } from '../utils/vault-bootstrap-fs';
+import { FTMEntityTypeSelectorModal, FTMEntityEditModal, FTMIntervalTypeSelectorModal, ConnectionEditModal } from '../modals/entity-modal';
+import { ConfirmModal } from '../modals/confirm-modal';
+import { VaultUnlockModal } from '../modals/vault-unlock-modal';
+import { GraphWorkspaceNameModal } from '../modals/graph-workspace-name-modal';
+import { GraphHistoryManager, type HistoryEntry, HistoryOperationType, type NodePosition } from '../services/graph-history-manager';
+import { GeocodingService, GeocodingError } from '../services/geocoding-service';
+import { GRAPH_NODE_POSITIONS_FILE } from '../constants/vault-layout';
+import type { VaultLockService } from '../services/vault-lock-service';
+import { isEventEntityType, isShownOnTimeline } from './timeline-view';
+import { geocodeFieldsFor, geocodeResultUpdates, isLocationEntityType, isMappableEntity, parseCoordinate } from './map-view';
+import { entityHasMapCoordinates } from '../ui/vault-op-previews';
+import { GRAPH_NODE_SIZE, entityImagePath, graphNodeStyles, isGraphImageExtension } from './graph-node-visual';
+import { ENTITY_IMAGE_KEY } from '../services/entity-image-service';
+import { importedFileName } from '../canvas/canvas-runtime';
+
+/** Passed from main — vault lock + graph workspace (multi-graph positions). */
+export interface OSINTCopilotGraphHost {
+    vaultLockService: VaultLockService;
+    getActiveGraphId(): string;
+    setActiveGraphId(id: string): Promise<void>;
+    listGraphWorkspaces(): { id: string; name: string }[];
+    addGraphWorkspace(name: string): Promise<string | null>;
+    deleteGraphWorkspace(id: string): Promise<void>;
+    /** Resolve node color (and icon) from schema catalog when available. */
+    getGraphEntityVisual(entity: Entity): { color: string; icon: string };
+}
+
+// Cytoscape types (simplified for bundling)
+interface CytoscapeEvent {
+    target: NodeSingular | CytoscapeCore;
+    originalEvent: MouseEvent;
+    renderedPosition: { x: number; y: number };
+}
+
+interface Layout {
+    run(): void;
+}
+
+interface Collection {
+    length: number;
+    remove(): void;
+    id(): string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data(key?: string, value?: any): any;
+    position(pos?: { x: number; y: number }): { x: number; y: number };
+    renderedPosition(): { x: number; y: number };
+    addClass(cls: string): void;
+    removeClass(cls: string): void;
+    select(): void;
+    unselect(): void;
+    layout(options: Record<string, unknown>): Layout;
+    style(name: string, value?: unknown): unknown;
+    forEach(callback: (ele: NodeSingular, i: number, eles: Collection) => void): void;
+    filter(callback: (ele: NodeSingular, i: number, eles: Collection) => boolean): Collection;
+    map<T>(callback: (ele: NodeSingular, i: number, eles: Collection) => T): T[];
+    isNode(): boolean;
+    isEdge(): boolean;
+}
+
+interface NodeSingular extends Collection {
+    // inherits
+}
+
+interface EdgeSingular extends Collection {
+    // inherits
+}
+
+interface CytoscapeCore {
+    container(element: HTMLElement | null): void;
+    style(style: unknown[]): void;
+    layout(options: Record<string, unknown>): Layout;
+    minZoom(zoom: number): void;
+    maxZoom(zoom: number): void;
+    boxSelectionEnabled(enabled: boolean): void;
+    userPanningEnabled(enabled: boolean): void;
+    add(ele: unknown | unknown[]): void;
+    elements(): Collection;
+    nodes(): Collection;
+    edges(): Collection;
+    getElementById(id: string): Collection;
+    fit(): void;
+    /** Re-reads the container size and re-sizes every canvas layer; keeps pan and zoom. */
+    resize(): void;
+    pan(): { x: number; y: number };
+    zoom(): number;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    on(events: string, selector: string, handler: (evt: any) => void): void;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    on(events: string, handler: (evt: any) => void): void;
+    destroy(): void;
+    animate(options: Record<string, unknown>, duration?: { duration: number }): void;
+}
+
+import cytoscapeLib from 'cytoscape';
+const cytoscape = cytoscapeLib as unknown as (options?: Record<string, unknown>) => CytoscapeCore;
+
+type RearrangeLayout = 'decentralized' | 'circle' | 'spectral';
+
+export const GRAPH_VIEW_TYPE = 'graph_copilot-graph-view';
+
+// File path for persisting node positions (visible under OSINTCopilot/)
+const NODE_POSITIONS_FILE = GRAPH_NODE_POSITIONS_FILE;
+
+export class GraphView extends ItemView {
+    private entityManager: EntityManager;
+    private cy: CytoscapeCore | null = null;
+    private container: HTMLElement | null = null;
+    private onEntityClick: ((entityId: string) => void) | null = null;
+    private onShowOnMap: ((entityId: string) => void) | null = null;
+    private _keyHandler: ((e: KeyboardEvent) => void) | null = null;
+    /** See onAttached: cytoscape sizes its canvases once and never re-measures on its own. */
+    private resizeObserver: ResizeObserver | null = null;
+    private resizeTimer: number | null = null;
+    private lastSize = { width: 0, height: 0 };
+
+    // Connection mode state
+    private connectionMode: boolean = false;
+    private sourceNodeId: string | null = null;
+    private connectBtn: HTMLButtonElement | null = null;
+    private statusIndicator: HTMLElement | null = null;
+
+    // Unified selection state (nodes and edges)
+    private selectedNodes: Set<string> = new Set();
+    private selectedEdges: Set<string> = new Set();
+    private selectionCountEl: HTMLElement | null = null;
+    private deleteSelectedBtn: HTMLButtonElement | null = null;
+    private clearSelectionBtn: HTMLButtonElement | null = null;
+    private lockAreaBtn: HTMLButtonElement | null = null;
+    private unlockAreaBtn: HTMLButtonElement | null = null;
+
+    // Box selection mode state
+    private boxSelectMode: boolean = false;
+    private boxSelectBtn: HTMLButtonElement | null = null;
+
+    // Vault watcher (see registerVaultWatcher). Browser `setTimeout` ids are numeric.
+    private vaultRefreshTimer: number | null = null;
+    /** A watcher refresh held back by connection or box-select mode, run when the mode ends. */
+    private vaultRefreshDeferred = false;
+    /** The refreshWithSavedPositions run in progress, which later calls join. */
+    private refreshInFlight: Promise<void> | null = null;
+
+    // History manager for undo/redo
+    private historyManager: GraphHistoryManager;
+    private historyPanel: HTMLElement | null = null;
+    private historyPanelVisible: boolean = false;
+    private undoBtn: HTMLButtonElement | null = null;
+    private redoBtn: HTMLButtonElement | null = null;
+
+    // Node positions cache for tracking position changes
+    private nodePositionsCache: Map<string, NodePosition> = new Map();
+    /**
+     * The workspace nodePositionsCache belongs to. Not the host's active id: the host
+     * moves first (a deleted workspace falls back to default before the view switches),
+     * and keying the cache on its id stored one workspace's layout under another's.
+     */
+    private positionsGraphId = 'default';
+    /** Per-graph id → node id → position (persisted as JSON v2). */
+    private allGraphPositions: Record<string, Record<string, NodePosition>> = {};
+    /**
+     * Explicit per-workspace membership.
+     *
+     * Membership used to be implicit -- an entity was "in" a workspace iff it had a
+     * saved position there -- which meant a node that had never been dragged did not
+     * belong anywhere, and clearing a layout silently emptied the workspace. Positions
+     * and membership are now separate facts. Migrated from position keys on first load.
+     */
+    private allGraphMembers: Record<string, Set<string>> = {};
+    private graphHost: OSINTCopilotGraphHost;
+    private graphSelectEl: HTMLSelectElement | null = null;
+    private rearrangeLayout: RearrangeLayout = 'decentralized';
+    private rearrangeLayoutSelectEl: HTMLSelectElement | null = null;
+
+    // Geocoding service for location entities
+    private geocodingService: GeocodingService;
+
+    // Drag-and-drop overlay for file drops on the graph
+    private dropOverlay: HTMLElement | null = null;
+
+    constructor(
+        leaf: WorkspaceLeaf,
+        entityManager: EntityManager,
+        onEntityClick: ((entityId: string) => void) | undefined,
+        onShowOnMap: ((entityId: string) => void) | undefined,
+        graphHost: OSINTCopilotGraphHost
+    ) {
+        super(leaf);
+        this.entityManager = entityManager;
+        this.graphHost = graphHost;
+        this.onEntityClick = onEntityClick || null;
+        this.onShowOnMap = onShowOnMap || null;
+
+        // Initialize geocoding service
+        this.geocodingService = new GeocodingService();
+
+        // Initialize history manager
+        this.historyManager = new GraphHistoryManager();
+        this.setupHistoryCallbacks();
+    }
+
+    private getNodeVisual(entity: Entity): { color: string; icon: string } {
+        return this.graphHost.getGraphEntityVisual(entity);
+    }
+
+    /**
+     * The only class a node carries: the double border that marks a location entity the
+     * map plots, styled by the `.has-coordinates` rule below.
+     */
+    /** An entity the map plots (see isMappableEntity) -- what the double-border marker means. */
+    private entityHasCoordinates(entity: Entity): boolean {
+        return isMappableEntity(entity);
+    }
+
+    /**
+     * Everything the stylesheet reads about an entity, built in one place.
+     *
+     * Six call sites used to assemble this by hand and they had drifted apart: two never
+     * set thumbUrl at all, so an entity added through them showed no picture until the
+     * next full refresh, and three truncated the label at 15 characters where the other
+     * three used the default 20. A seventh, updateEntityInGraph, refreshed five fields and
+     * not the image -- so an entity that GAINED a picture kept its placeholder.
+     *
+     * One builder means the next field to be added cannot be forgotten at five of them.
+     */
+    private buildNodeData(entity: Entity): Record<string, unknown> {
+        const visual = this.getNodeVisual(entity);
+        const entityLabel = entity.label != null ? String(entity.label) : '';
+        return {
+            id: entity.id,
+            label: this.truncateLabel(entityLabel),
+            fullLabel: entityLabel,
+            type: entity.type,
+            color: visual.color,
+            icon: visual.icon,
+            hasCoordinates: this.entityHasCoordinates(entity),
+            thumbUrl: this.resolveThumbUrl(entity) || undefined,
+        };
+    }
+
+    private entityNodeClasses(hasCoordinates: boolean): string {
+        return hasCoordinates ? 'has-coordinates' : '';
+    }
+
+    /**
+     * Setup callbacks for the history manager to execute undo/redo operations.
+     */
+    private setupHistoryCallbacks(): void {
+        this.historyManager.setCallbacks({
+            onEntityCreate: (entity: Entity) => {
+                // This is called when redoing a create - entity already exists
+                return Promise.resolve();
+            },
+            onEntityDelete: (entityId: string) => {
+                // Delete entity from graph (not from disk - that's handled separately)
+                if (this.cy) {
+                    this.cy.getElementById(entityId).remove();
+                }
+                this.entityManager.deleteEntityInMemory(entityId);
+                return Promise.resolve();
+            },
+            onEntityRestore: async (entity: Entity) => {
+                // Restore entity to disk and graph
+                await this.entityManager.restoreEntity(entity);
+                this.addEntityToGraphPreserveLayout(entity);
+            },
+            onEntityUpdate: async (entity: Entity) => {
+                // Update entity in disk and graph. A refused update changed nothing, so the
+                // graph stays as it is and the history manager keeps the entry and says so.
+                // Inside a batch entry the sub-operations that ran before this one are not
+                // rolled back (GraphHistoryManager has no compensation), so the batch stays
+                // half applied and a retry repeats them; that is still better than a graph
+                // showing an edit the note never received.
+                if (!(await this.entityManager.updateEntityForHistory(entity))) {
+                    throw new Error(`Could not update entity ${entity.id}`);
+                }
+                this.updateEntityInGraph(entity);
+            },
+            onConnectionCreate: (connection: Connection) => {
+                // This is called when redoing a create
+                return Promise.resolve();
+            },
+            onConnectionDelete: (connectionId: string) => {
+                // Delete connection from graph
+                if (this.cy) {
+                    this.cy.getElementById(connectionId).remove();
+                }
+                this.entityManager.deleteConnection(connectionId);
+                return Promise.resolve();
+            },
+            onConnectionRestore: async (connection: Connection) => {
+                // Restore connection
+                await this.entityManager.restoreConnection(connection);
+                this.addConnectionToGraph(connection);
+            },
+            onConnectionUpdate: async (connection: Connection) => {
+                // Update connection in disk and graph (see onEntityUpdate on a refusal).
+                if (!(await this.entityManager.updateConnectionForHistory(connection))) {
+                    throw new Error(`Could not update connection ${connection.id}`);
+                }
+                this.updateConnectionInGraph(connection);
+            },
+            onNodePositionChange: (positions: Map<string, NodePosition>) => {
+                // Update node positions in graph
+                const cy = this.cy;
+                if (cy) {
+                    positions.forEach((pos, nodeId) => {
+                        const node = cy.getElementById(nodeId);
+                        if (node.length > 0) {
+                            node.position(pos);
+                        }
+                    });
+                }
+            }
+        });
+
+        // Listen for history changes to update UI
+        this.historyManager.addListener(() => this.updateHistoryUI());
+    }
+
+    getViewType(): string {
+        return GRAPH_VIEW_TYPE;
+    }
+
+    async onOpen(): Promise<void> {
+        const container = this.containerEl.children[1];
+        container.empty();
+        container.addClass('graph_copilot-graph-container');
+
+        // Create graph container
+        this.container = container.createDiv({ cls: 'graph_copilot-graph-canvas' });
+        this.container.setCssProps({
+            width: '100%',
+            height: '100%',
+            position: 'absolute',
+            top: '0',
+            left: '0'
+        });
+
+        // Create drag-and-drop overlay
+        this.dropOverlay = container.createDiv({ cls: 'graph-drop-overlay' });
+        this.dropOverlay.createDiv({ text: 'Drop images or documents here', cls: 'graph-drop-overlay-text' });
+        this.setupGraphDropHandlers(container);
+
+        // Create toolbar
+        const toolbar = container.createDiv({ cls: 'graph_copilot-graph-toolbar' });
+        this.createToolbar(toolbar);
+
+        try {
+            // Load Cytoscape and initialize
+            console.debug('[GraphView] Loading Cytoscape.js...');
+            await this.loadCytoscape();
+            console.debug('[GraphView] Cytoscape.js loaded successfully');
+
+            if (typeof cytoscape === 'undefined') {
+                throw new Error('Cytoscape failed to load - typeof cytoscape is undefined');
+            }
+
+
+            this.initializeGraph();
+            console.debug('[GraphView] Graph initialized');
+            this.registerVaultWatcher();
+
+            // Load saved node positions from persistent storage
+            await this.loadSavedPositions();
+
+            // Load entities from disk and refresh the graph
+            // This ensures persistence across Obsidian restarts
+            await this.refreshWithSavedPositions();
+            console.debug('[GraphView] Graph refreshed with entities');
+        } catch (error) {
+            console.error('[GraphView] Failed to initialize graph:', error);
+
+            // Show error message to user
+            const errorDiv = container.createDiv({ cls: 'graph_copilot-error' });
+            errorDiv.setCssProps({
+                padding: '20px',
+                'text-align': 'center',
+                color: 'var(--text-error)'
+            });
+
+            const errorTitle = errorDiv.createEl('h3', { text: 'Failed to load graph' });
+            errorTitle.setCssProps({ color: 'var(--text-error)', 'margin-bottom': '10px' });
+
+            const errorMsg = errorDiv.createEl('p', {
+                text: error instanceof Error ? error.message : String(error)
+            });
+            errorMsg.setCssProps({ 'margin-bottom': '15px' });
+
+            // The CDN-diagnostics panel that stood here is gone: Cytoscape is bundled
+            // now, so "unpkg blocked by your firewall" is no longer a way this can fail.
+            const hint = errorDiv.createEl('p', {
+                text: 'Check the developer console for details, and verify that graph features are enabled in settings.',
+            });
+            hint.setCssProps({ 'margin-top': '10px', color: 'var(--text-muted)' });
+
+            new Notice('Graph failed to load. Check console for details.', 10000);
+        }
+    }
+
+    private static readonly IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico']);
+    private static readonly DOCUMENT_EXTENSIONS = new Set(['pdf', 'docx', 'doc', 'txt', 'md', 'csv', 'json', 'html', 'xml', 'rtf']);
+
+    private setupGraphDropHandlers(container: Element): void {
+        let dragCounter = 0;
+
+        const targets = [container, this.container];
+        for (const target of targets) {
+            if (!target) continue;
+
+            target.addEventListener('dragenter', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dragCounter++;
+                if (dragCounter === 1) {
+                    this.dropOverlay?.addClass('active');
+                }
+            });
+
+            target.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dragCounter--;
+                if (dragCounter <= 0) {
+                    dragCounter = 0;
+                    this.dropOverlay?.removeClass('active');
+                }
+            });
+
+            target.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if ((e as DragEvent).dataTransfer) {
+                    (e as DragEvent).dataTransfer!.dropEffect = 'copy';
+                }
+            });
+
+            target.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dragCounter = 0;
+                this.dropOverlay?.removeClass('active');
+
+                const evt = e as DragEvent;
+                if (!evt.dataTransfer) return;
+
+                const position = this.screenToModelPosition(evt.clientX, evt.clientY);
+
+                // Dropped ON an entity? Then this is "give that thing a picture", not
+                // "add a new file to the graph". Checked before every create path below.
+                const onEntity = this.entityIdAt(position);
+                if (onEntity && await this.attachDroppedImage(onEntity, evt)) return;
+
+                // Method 1: Internal vault file via text/plain path
+                const internalPath = evt.dataTransfer.getData('text/plain');
+                if (internalPath) {
+                    const tfile = this.app.vault.getAbstractFileByPath(internalPath);
+                    if (tfile instanceof TFile) {
+                        await this.handleGraphFileDrop([tfile], position);
+                        return;
+                    }
+                }
+
+                // Method 2: External OS file drops
+                if (evt.dataTransfer.files && evt.dataTransfer.files.length > 0) {
+                    await this.handleExternalFileDrop(evt.dataTransfer.files, position);
+                }
+            });
+        }
+    }
+
+    /**
+     * The entity under a point in model space, if any.
+     *
+     * A half-extent test rather than cytoscape's boundingBox(): every node is now the same
+     * fixed square, so the box is known without asking the renderer -- and the local
+     * Collection interface does not declare boundingBox. A diamond is inscribed in the
+     * same square, which makes its corners forgiving rather than wrong.
+     */
+    private entityIdAt(position: { x: number; y: number }): string | null {
+        if (!this.cy) return null;
+        const half = GRAPH_NODE_SIZE / 2;
+        let hit: string | null = null;
+        this.cy.nodes().forEach((node: NodeSingular) => {
+            if (hit) return;
+            const at = node.position();
+            if (Math.abs(at.x - position.x) <= half && Math.abs(at.y - position.y) <= half) {
+                hit = String(node.id());
+            }
+        });
+        return hit;
+    }
+
+    /**
+     * Sets a dropped image as an entity's picture. Returns false if the drop was not one.
+     *
+     * Both drop flavours are accepted -- a file already in the vault (dragged from the
+     * tree) and one from the desktop, which is imported first. A non-image drop returns
+     * false so the caller falls through to the ordinary "add a file to the graph" paths.
+     */
+    private async attachDroppedImage(entityId: string, evt: DragEvent): Promise<boolean> {
+        const entity = this.entityManager.getEntity(entityId);
+        if (!entity) return false;
+        if (this.graphHost.vaultLockService.isPathLocked(entity.filePath)) {
+            new Notice(`"${entity.label}" is locked.`, 6000, 'warning');
+            return true;
+        }
+
+        try {
+            const vaultPath = evt.dataTransfer?.getData('text/plain');
+            const dragged = vaultPath ? this.app.vault.getAbstractFileByPath(vaultPath) : null;
+            if (dragged instanceof TFile && isGraphImageExtension(dragged.path)) {
+                return await this.setEntityImage(entity, dragged.path);
+            }
+
+            const file = evt.dataTransfer?.files?.[0];
+            if (!file || !isGraphImageExtension(file.name)) return false;
+
+            const imported = await this.importImageToEvidence(file);
+            return imported ? await this.setEntityImage(entity, imported) : false;
+        } catch (error) {
+            console.error('[GraphView] could not attach the dropped image', error);
+            new Notice('Could not attach that image.', 6000, 'error');
+            return true;
+        }
+    }
+
+    /**
+     * Copies a desktop file into the Evidence tree and returns its vault path.
+     *
+     * Named by importedFileName, which appends a hash of the content -- unlike
+     * handleExternalFileDrop below, which reuses any existing file of the same name and so
+     * silently attaches the wrong picture when two different photos are both "photo.jpg".
+     */
+    private async importImageToEvidence(file: File): Promise<string | null> {
+        const bytes = await file.arrayBuffer();
+        const folder = normalizePath(`${this.entityManager.getBasePath()}/Evidence`);
+        await ensureFolderExists(this.app, folder);
+
+        const path = normalizePath(`${folder}/${importedFileName(file.name, bytes)}`);
+        const existing = this.app.vault.getAbstractFileByPath(path);
+        // Same name means same bytes here, so an existing file is the same picture.
+        if (existing instanceof TFile) return existing.path;
+
+        const created = await this.app.vault.createBinary(path, bytes);
+        return created?.path ?? null;
+    }
+
+    /**
+     * Writes the entity's new picture and repaints its node without a full refresh. True
+     * even when the note was not written: the drop was a picture, and must not fall
+     * through to adding the file to the graph.
+     */
+    private async setEntityImage(entity: Entity, path: string): Promise<boolean> {
+        const updated = await this.entityManager.updateEntity(entity.id, { [ENTITY_IMAGE_KEY]: path });
+        if (!updated) {
+            new Notice('Could not set that picture.', 6000, 'error');
+            return true;
+        }
+        this.updateEntityInGraph(updated);
+        new Notice(`Picture set for ${entity.label}.`, 4000);
+        return true;
+    }
+
+    private screenToModelPosition(clientX: number, clientY: number): { x: number; y: number } {
+        if (!this.cy || !this.container) {
+            return { x: 200, y: 200 };
+        }
+        const rect = this.container.getBoundingClientRect();
+        const pan = this.cy.pan();
+        const zoom = this.cy.zoom();
+        return {
+            x: (clientX - rect.left - pan.x) / zoom,
+            y: (clientY - rect.top - pan.y) / zoom
+        };
+    }
+
+    private async handleExternalFileDrop(fileList: FileList, position: { x: number; y: number }): Promise<void> {
+        const evidencePath = normalizePath(`${this.entityManager.getBasePath()}/Evidence`);
+        await ensureFolderExists(this.app, evidencePath);
+
+        const tFiles: TFile[] = [];
+        for (let i = 0; i < fileList.length; i++) {
+            const file = fileList[i];
+            const safeName = file.name.replace(/[\\/:*?"<>|]/g, '_');
+            const destPath = normalizePath(`${evidencePath}/${safeName}`);
+
+            try {
+                const buffer = await file.arrayBuffer();
+                const existing = this.app.vault.getAbstractFileByPath(destPath);
+                if (existing instanceof TFile) {
+                    tFiles.push(existing);
+                } else {
+                    const created = await this.app.vault.createBinary(destPath, buffer);
+                    tFiles.push(created);
+                }
+            } catch (err) {
+                console.error(`[GraphView] Failed to import file ${file.name}:`, err);
+                new Notice(`Failed to import ${file.name}`);
+            }
+        }
+
+        if (tFiles.length > 0) {
+            await this.handleGraphFileDrop(tFiles, position);
+        }
+    }
+
+    private async handleGraphFileDrop(files: TFile[], basePosition: { x: number; y: number }): Promise<void> {
+        let offset = 0;
+        for (const file of files) {
+            const ext = (file.extension || '').toLowerCase();
+            const isImage = GraphView.IMAGE_EXTENSIONS.has(ext);
+            const isDocument = GraphView.DOCUMENT_EXTENSIONS.has(ext);
+
+            if (!isImage && !isDocument) {
+                new Notice(`Unsupported file type: .${ext}`);
+                continue;
+            }
+
+            const dropPos = { x: basePosition.x + offset * 120, y: basePosition.y };
+
+            try {
+                let entity: Entity;
+                if (isImage) {
+                    entity = await this.entityManager.createEntity(EntityType.Image, {
+                        title: file.basename,
+                        filePath: file.path,
+                        description: `Image: ${file.name}`
+                    }, { skipAutoGeocode: true });
+                } else {
+                    entity = await this.entityManager.createEntity(EntityType.Evidence, {
+                        name: file.basename,
+                        filePath: file.path,
+                        description: `Document: ${file.name}`
+                    }, { skipAutoGeocode: true });
+                }
+
+                this.historyManager.recordEntityCreate(entity);
+                this.addEntityToGraphAtPosition(entity, dropPos);
+                new Notice(`Added ${isImage ? 'image' : 'document'}: ${file.basename}`);
+                offset++;
+            } catch (err) {
+                console.error(`[GraphView] Failed to create entity for ${file.name}:`, err);
+                new Notice(`Failed to add ${file.name} to graph`);
+            }
+        }
+    }
+
+    private addEntityToGraphAtPosition(entity: Entity, position: { x: number; y: number }): void {
+        if (!this.cy) return;
+
+        const existingNode = this.cy.getElementById(entity.id);
+        if (existingNode.length > 0) return;
+
+        this.cy.add({
+            data: this.buildNodeData(entity),
+            classes: this.entityNodeClasses(this.entityHasCoordinates(entity)),
+            position: position,
+        });
+
+        this.joinWorkspace(entity.id, position);
+    }
+
+    /**
+     * An entity added to the graph by hand joins the workspace it was added to. A named
+     * workspace shows only its members, and the vault watcher's refresh, 400 ms after the
+     * new note's 'create' event, dropped a node whose membership waited for the 1 s
+     * position save (a file drop) or for no save at all (+ add entity, undoing a delete).
+     * Saved at once as well, so the file has it if the app closes first.
+     */
+    private joinWorkspace(entityId: string, position: NodePosition): void {
+        this.nodePositionsCache.set(entityId, position);
+        if (this.positionsGraphId !== 'default') {
+            const members = this.allGraphMembers[this.positionsGraphId] ?? new Set<string>();
+            members.add(entityId);
+            this.allGraphMembers[this.positionsGraphId] = members;
+        }
+        void this.savePositions();
+    }
+
+    /**
+     * The URL for this entity's picture, or undefined for a placeholder tile.
+     *
+     * Which property holds the path is entityImagePath's business. What happens here is
+     * the vault lookup: an entity can name an image that has not been indexed yet, or one
+     * that was deleted, and a placeholder tile is the right answer for both.
+     */
+    private resolveThumbUrl(entity: Entity): string | undefined {
+        const path = entityImagePath(entity);
+        if (!path) return undefined;
+
+        const file = this.app.vault.getAbstractFileByPath(path);
+        if (file instanceof TFile) {
+            return this.app.vault.getResourcePath(file);
+        }
+        return undefined;
+    }
+
+    // ---------------------------------------------------------------- attachment
+
+    /**
+     * Cytoscape sizes its three canvases when it is created and does not watch the
+     * container, so every pane resize left them at the old pixel size: measured over a
+     * sidebar toggle, 17% of frames showed the container's bare background as an L-shaped
+     * gap along the bottom and right edges, up to 300px wide, until something else
+     * happened to trigger a redraw. That flicker is what a user sees as "the margins are
+     * blinking". This is the same treatment map-view gives Leaflet's invalidateSize.
+     */
+    protected onAttached(): void {
+        this.observeCanvas();
+        // One-shot: an observer that has only ever seen 0x0 has nothing to report a
+        // change from, and under jsdom it is a stub that never fires at all.
+        requestAnimationFrame(() => this.resizeNow());
+    }
+
+    protected onDetached(): void {
+        this.unobserveCanvas();
+    }
+
+    private observeCanvas(): void {
+        if (this.resizeObserver || !this.container) return;
+        if (typeof ResizeObserver === 'undefined') return;
+        this.resizeObserver = new ResizeObserver((entries) => {
+            const box = entries[entries.length - 1]?.contentRect;
+            if (!box) return;
+            // 0x0 means detached, hidden or mid-collapse; lastSize is deliberately not
+            // updated, so detaching and reattaching at the same size stays a no-op.
+            if (box.width < 1 || box.height < 1) return;
+            if (Math.abs(box.width - this.lastSize.width) < 1
+                && Math.abs(box.height - this.lastSize.height) < 1) return;
+            this.lastSize = { width: box.width, height: box.height };
+            // Synchronously, not on the next frame. A ResizeObserver callback runs after
+            // layout and before paint, so resizing here lands in the SAME frame; going
+            // through requestAnimationFrame left the canvas one frame stale for every
+            // frame of a pane transition. The trailing timer below is only a safety net
+            // for a final size the observer and the frame boundary disagree about.
+            this.resizeNow();
+            this.scheduleResize();
+        });
+        this.resizeObserver.observe(this.container);
+    }
+
+    private unobserveCanvas(): void {
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = null;
+        if (this.resizeTimer !== null) {
+            window.clearTimeout(this.resizeTimer);
+            this.resizeTimer = null;
+        }
+    }
+
+    /** Settles the final size, in case the last observer record and the last paint disagree. */
+    private scheduleResize(): void {
+        if (this.resizeTimer !== null) window.clearTimeout(this.resizeTimer);
+        this.resizeTimer = window.setTimeout(() => {
+            this.resizeTimer = null;
+            this.resizeNow();
+        }, 120);
+    }
+
+    private resizeNow(): void {
+        const canvas = this.container;
+        if (!this.cy || !canvas?.isConnected) return;
+        if (canvas.clientWidth < 1 || canvas.clientHeight < 1) return;
+        this.lastSize = { width: canvas.clientWidth, height: canvas.clientHeight };
+        // resize() re-reads the container and re-sizes every layer; the viewport (pan and
+        // zoom) is preserved, so this must not be a fit() -- that would throw away
+        // wherever the analyst had navigated to every time the pane changed width.
+        this.cy.resize();
+    }
+
+    async onClose(): Promise<void> {
+        // Clean up keyboard handler
+        if (this._keyHandler) {
+            document.removeEventListener('keydown', this._keyHandler);
+        }
+        this.unobserveCanvas();
+        if (this.vaultRefreshTimer !== null) {
+            window.clearTimeout(this.vaultRefreshTimer);
+            this.vaultRefreshTimer = null;
+        }
+        // Dialogs and context menus are appended to document.body, so they outlive the
+        // pane unless they are removed here -- a delete confirmation left on screen over
+        // another view still had a live, wired-up Delete button.
+        document.querySelectorAll(
+            '.graph_copilot-delete-modal, .graph_copilot-context-menu, .graph_copilot-rearrange-modal',
+        ).forEach((orphan) => orphan.remove());
+
+        if (this.cy) {
+            this.cy.destroy();
+            this.cy = null;
+        }
+    }
+
+    /**
+     * Cytoscape is bundled, not fetched.
+     *
+     * It used to be injected as a <script src="https://unpkg.com/..."> at runtime,
+     * which meant the graph was dead on an air-gapped or firewalled machine -- a real
+     * defect for an OSINT tool, and one the app apologised for in a 40-line
+     * diagnostics panel. It is also incompatible with a CSP worth having: our
+     * script-src is 'self'. Kept async so callers need no change.
+     */
+    private async loadCytoscape(): Promise<void> {
+        return Promise.resolve();
+    }
+
+    /**
+     * Create the toolbar with controls.
+     */
+    private createToolbar(toolbar: HTMLElement): void {
+        toolbar.setCssProps({
+            position: 'absolute',
+            top: '10px',
+            right: '10px',
+            'z-index': '100',
+            display: 'flex',
+            gap: '5px',
+            background: 'var(--background-secondary)',
+            padding: '5px',
+            'border-radius': '5px',
+            'flex-wrap': 'wrap',
+            'align-items': 'center'
+        });
+
+        // Add Entity button
+        const addBtn = toolbar.createEl('button', { text: '+ add entity' });
+        addBtn.title = 'Create a new entity and place it on the graph';
+        addBtn.addClass('graph_copilot-add-entity-btn');
+        addBtn.onclick = () => this.openEntityCreator();
+
+        // Connect button (node selection mode)
+        this.connectBtn = toolbar.createEl('button', { text: '🔗 connect' });
+        this.connectBtn.addClass('graph_copilot-connect-btn');
+        this.connectBtn.onclick = () => this.toggleConnectionMode();
+
+        // Separator
+        toolbar.createDiv({ cls: 'graph_copilot-toolbar-separator' });
+
+        // Graph workspace (multi-graph positions)
+        const graphRow = toolbar.createDiv({ cls: 'graph_copilot-graph-workspace-row' });
+        graphRow.setCssProps({ display: 'flex', gap: '6px', 'align-items': 'center' });
+        graphRow.createSpan({ text: 'Graph:', cls: 'graph_copilot-graph-label' });
+        this.graphSelectEl = graphRow.createEl('select', { cls: 'dropdown graph_copilot-graph-select' });
+        this.populateGraphSelect();
+        this.graphSelectEl.onchange = async () => {
+            const v = this.graphSelectEl?.value;
+            if (!v) return;
+            await this.switchGraphWorkspace(v);
+        };
+        const newGraphBtn = graphRow.createEl('button', { text: '+ new' });
+        newGraphBtn.title = 'Create a new graph workspace (separate saved layout)';
+        newGraphBtn.onclick = () => {
+            new GraphWorkspaceNameModal(this.app, async (name) => {
+                const id = await this.graphHost.addGraphWorkspace(name);
+                if (id) {
+                    this.populateGraphSelect();
+                    if (this.graphSelectEl) this.graphSelectEl.value = id;
+                    await this.switchGraphWorkspace(id);
+                }
+            }).open();
+        };
+        const delGraphBtn = graphRow.createEl('button', { text: '✕' });
+        delGraphBtn.title = 'Delete current graph workspace (not default)';
+        delGraphBtn.onclick = () => {
+            const id = this.graphHost.getActiveGraphId();
+            if (id === 'default') {
+                new Notice('Cannot delete the default graph workspace.');
+                return;
+            }
+            const label =
+                this.graphHost.listGraphWorkspaces().find((g) => g.id === id)?.name ?? id;
+            new ConfirmModal(
+                this.app,
+                'Delete graph workspace?',
+                `Delete "${label}"? The saved layout for this workspace will be removed from graph-positions.json.`,
+                () => void this.removeGraphWorkspace(id),
+                undefined,
+                true,
+            ).open();
+        };
+
+        // Separator
+        toolbar.createDiv({ cls: 'graph_copilot-toolbar-separator' });
+
+        // Box Select button
+        this.boxSelectBtn = toolbar.createEl('button', { text: '⬚ box select' });
+        this.boxSelectBtn.title = 'Enter box selection mode to select multiple items by dragging';
+        this.boxSelectBtn.onclick = () => this.toggleBoxSelectMode();
+
+        // Selection controls (shown when items are selected)
+        // Clear Selection button (hidden by default)
+        this.clearSelectionBtn = toolbar.createEl('button', { text: '✕ clear selection' });
+        this.clearSelectionBtn.addClass('graph_copilot-clear-selection-btn');
+        this.clearSelectionBtn.setCssProps({ display: 'none' });
+        this.clearSelectionBtn.onclick = () => this.clearSelection();
+
+        // Delete Selected button (hidden by default)
+        this.deleteSelectedBtn = toolbar.createEl('button', { text: '🗑 delete selected' });
+        this.deleteSelectedBtn.addClass('graph_copilot-delete-selected-btn');
+        this.deleteSelectedBtn.setCssProps({ display: 'none' });
+        this.deleteSelectedBtn.onclick = () => this.showDeleteConfirmation();
+
+        this.lockAreaBtn = toolbar.createEl('button', { text: '🔒 lock area' });
+        this.lockAreaBtn.title = 'Lock selected entities and relationships (notes become read-only until unlock)';
+        this.lockAreaBtn.addClass('graph_copilot-lock-area-btn');
+        this.lockAreaBtn.setCssProps({ display: 'none' });
+        this.lockAreaBtn.onclick = () => void this.lockSelectedArea();
+
+        this.unlockAreaBtn = toolbar.createEl('button', { text: '🔓 unlock area' });
+        this.unlockAreaBtn.title =
+            'Unlock selected entities and relationships (remove vault lock so notes can be edited again)';
+        this.unlockAreaBtn.addClass('graph_copilot-unlock-area-btn');
+        this.unlockAreaBtn.setCssProps({ display: 'none' });
+        this.unlockAreaBtn.onclick = () => void this.unlockSelectedArea();
+
+        // Selection count indicator
+        this.selectionCountEl = toolbar.createDiv({ cls: 'graph_copilot-selection-count' });
+        this.selectionCountEl.setCssProps({
+            padding: '4px 8px',
+            'font-size': '12px',
+            color: 'var(--text-muted)',
+            display: 'none'
+        });
+
+        // Separator
+        toolbar.createDiv({ cls: 'graph_copilot-toolbar-separator' });
+
+        // Undo/Redo buttons
+        this.undoBtn = toolbar.createEl('button', { text: '↶ undo' });
+        this.undoBtn.addClass('graph_copilot-undo-btn');
+        this.undoBtn.disabled = true;
+        this.undoBtn.onclick = () => this.performUndo();
+
+        this.redoBtn = toolbar.createEl('button', { text: '↷ redo' });
+        this.redoBtn.addClass('graph_copilot-redo-btn');
+        this.redoBtn.disabled = true;
+        this.redoBtn.onclick = () => this.performRedo();
+
+        // History panel toggle button
+        const historyBtn = toolbar.createEl('button', { text: '📜 history' });
+        historyBtn.addClass('graph_copilot-history-btn');
+        historyBtn.onclick = () => this.toggleHistoryPanel();
+
+        // Separator
+        toolbar.createDiv({ cls: 'graph_copilot-toolbar-separator' });
+
+        // Layout selector + rearrange button - both reset all node positions.
+        const layoutRow = toolbar.createDiv({ cls: 'graph_copilot-layout-row' });
+        layoutRow.setCssProps({ display: 'flex', gap: '5px', 'align-items': 'center' });
+        layoutRow.createSpan({ text: 'Layout:', cls: 'graph_copilot-graph-label' });
+        this.rearrangeLayoutSelectEl = layoutRow.createEl('select', {
+            cls: 'dropdown graph_copilot-layout-select',
+        });
+        const layoutOptions: Array<{ value: RearrangeLayout; label: string }> = [
+            { value: 'decentralized', label: 'Decentralized' },
+            { value: 'circle', label: 'Circular' },
+            { value: 'spectral', label: 'Spectral (eigenvector)' },
+        ];
+        for (const option of layoutOptions) {
+            this.rearrangeLayoutSelectEl.createEl('option', {
+                text: option.label,
+                value: option.value,
+            });
+        }
+        this.rearrangeLayoutSelectEl.value = this.rearrangeLayout;
+        this.rearrangeLayoutSelectEl.title = 'Choose the layout used by rearrange';
+        this.rearrangeLayoutSelectEl.onchange = () => {
+            const value = this.rearrangeLayoutSelectEl?.value as RearrangeLayout | undefined;
+            if (value && layoutOptions.some((option) => option.value === value)) {
+                this.rearrangeLayout = value;
+            }
+        };
+
+        const rearrangeBtn = toolbar.createEl('button', { text: '🔄 rearrange' });
+        rearrangeBtn.title = 'Rearrange all entities using the selected layout (resets current positions)';
+        rearrangeBtn.onclick = () => {
+            (async () => {
+                // Show confirmation dialog
+                const confirmed = await this.showRearrangeConfirmation();
+                if (!confirmed) return;
+
+                rearrangeBtn.disabled = true;
+                rearrangeBtn.textContent = '🔄 rearranging...';
+                await this.rearrangeGraph(this.rearrangeLayout);
+                rearrangeBtn.disabled = false;
+                rearrangeBtn.textContent = '🔄 rearrange';
+            })();
+        };
+
+
+        // Refresh button - reload entities while preserving positions
+        const refreshBtn = toolbar.createEl('button', { text: '↻ refresh' });
+        refreshBtn.title = 'Refresh graph (reload entities while preserving zoom and positions)';
+        refreshBtn.addClass('graph_copilot-refresh-btn');
+        refreshBtn.onclick = () => {
+            (async () => {
+                refreshBtn.disabled = true;
+                const originalText = refreshBtn.textContent;
+                refreshBtn.textContent = '↻ refreshing...';
+
+                try {
+                    // No fit, as the tooltip says: zoom and positions stay as they are.
+                    await this.refreshWithSavedPositions({ fit: false });
+                    new Notice('Graph refreshed successfully');
+
+                    // Brief visual feedback - flash the button
+                    refreshBtn.setCssProps({ 'background-color': 'var(--interactive-success)' });
+                    setTimeout(() => {
+                        refreshBtn.setCssProps({ 'background-color': '' });
+                    }, 300);
+                } catch (error) {
+                    console.error('[GraphView] Manual refresh failed:', error);
+                    new Notice('Failed to refresh graph. Check console for details.');
+
+                    // Flash error color
+                    refreshBtn.setCssProps({ 'background-color': 'var(--interactive-error)' });
+                    setTimeout(() => {
+                        refreshBtn.setCssProps({ 'background-color': '' });
+                    }, 300);
+                } finally {
+                    refreshBtn.disabled = false;
+                    refreshBtn.textContent = originalText;
+                }
+            })();
+        };
+        // Fit button
+        const fitBtn = toolbar.createEl('button', { text: '⊡ fit' });
+        fitBtn.title = 'Fit all entities in view';
+        fitBtn.onclick = () => this.cy?.fit();
+
+        // Export button
+        const exportBtn = toolbar.createEl('button', { text: '📤 export' });
+        exportBtn.title = 'Export investigation to JSON file';
+        exportBtn.onclick = () => this.triggerExport();
+
+        // Status indicator for connection mode
+        this.statusIndicator = toolbar.createDiv({ cls: 'graph_copilot-connection-status' });
+        this.statusIndicator.setCssProps({ display: 'none' });
+    }
+
+    /**
+     * Trigger the export of the investigation to a JSON file.
+     */
+    private triggerExport(): void {
+        try {
+            const json = this.entityManager.exportToJSON();
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+            a.href = url;
+            a.download = `osint-investigation-${timestamp}.json`;
+            // In the document and revoked on a later tick: Chromium starts the download
+            // asynchronously, so revoking in the same tick as click() raced it and
+            // produced an empty file often enough to notice -- while still claiming
+            // success.
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 0);
+            new Notice('Investigation exported successfully');
+        } catch (error) {
+            console.error('[GraphView] Export failed:', error);
+            new Notice('Failed to export investigation');
+        }
+    }
+
+    /**
+     * Toggle connection mode for node selection.
+     */
+    private toggleConnectionMode(): void {
+        if (this.connectionMode) {
+            this.exitConnectionMode();
+        } else {
+            this.enterConnectionMode();
+        }
+    }
+
+    /**
+     * Enter connection mode - user can click nodes to create connections.
+     */
+    private enterConnectionMode(): void {
+        this.connectionMode = true;
+        this.sourceNodeId = null;
+
+        if (this.connectBtn) {
+            this.connectBtn.addClass('graph_copilot-connect-btn-active');
+            this.connectBtn.textContent = '✕ cancel'; // 'cancel' lowercase intentional? Probably should be 'Cancel'
+        }
+
+        if (this.statusIndicator) {
+            this.statusIndicator.setCssProps({ display: 'block' });
+            this.statusIndicator.textContent = 'Click source node...';
+            this.statusIndicator.addClass('graph_copilot-connection-status-active');
+        }
+
+        if (this.container) {
+            this.container.addClass('graph_copilot-connection-mode');
+        }
+
+        new Notice('Connection mode: click the source node');
+    }
+
+    /**
+     * Exit connection mode.
+     */
+    private exitConnectionMode(): void {
+        this.connectionMode = false;
+        this.sourceNodeId = null;
+
+        if (this.connectBtn) {
+            this.connectBtn.removeClass('graph_copilot-connect-btn-active');
+            this.connectBtn.textContent = '🔗 connect';
+        }
+
+        if (this.statusIndicator) {
+            this.statusIndicator.setCssProps({ display: 'none' });
+            this.statusIndicator.removeClass('graph_copilot-connection-status-active');
+        }
+
+        if (this.container) {
+            this.container.removeClass('graph_copilot-connection-mode');
+        }
+
+        // Clear any node highlighting
+        if (this.cy) {
+            this.cy.nodes().removeClass('connection-source');
+        }
+
+        if (this.vaultRefreshDeferred) this.runVaultRefresh();
+    }
+
+    /**
+     * Toggle box selection mode.
+     */
+    private toggleBoxSelectMode(): void {
+        if (this.boxSelectMode) {
+            this.exitBoxSelectMode();
+        } else {
+            this.enterBoxSelectMode();
+        }
+    }
+
+    /**
+     * Enter box selection mode - user can drag to select multiple items.
+     */
+    private enterBoxSelectMode(): void {
+        // On before connection mode is left: leaving it runs a held vault refresh unless
+        // another mode is on, and this one must hold it too.
+        this.boxSelectMode = true;
+
+        // Exit connection mode if active
+        if (this.connectionMode) {
+            this.exitConnectionMode();
+        }
+
+        if (this.boxSelectBtn) {
+            this.boxSelectBtn.addClass('graph_copilot-box-select-active');
+            this.boxSelectBtn.textContent = '⬚ exit box select';
+        }
+
+        if (this.cy) {
+            // Enable box selection in Cytoscape
+            this.cy.boxSelectionEnabled(true);
+            this.cy.userPanningEnabled(false); // Disable panning while box selecting
+        }
+
+        if (this.container) {
+            this.container.addClass('graph_copilot-box-select-mode');
+        }
+
+        this.updateSelectionUI();
+        new Notice('Box select mode: drag to select multiple items');
+    }
+
+    /**
+     * Exit box selection mode.
+     */
+    private exitBoxSelectMode(): void {
+        this.boxSelectMode = false;
+
+        if (this.boxSelectBtn) {
+            this.boxSelectBtn.removeClass('graph_copilot-box-select-active');
+            this.boxSelectBtn.textContent = '⬚ box select';
+        }
+
+        if (this.cy) {
+            // Disable box selection and re-enable panning
+            this.cy.boxSelectionEnabled(false);
+            this.cy.userPanningEnabled(true);
+        }
+
+        if (this.container) {
+            this.container.removeClass('graph_copilot-box-select-mode');
+        }
+
+        this.updateSelectionUI();
+
+        if (this.vaultRefreshDeferred) this.runVaultRefresh();
+    }
+
+    private populateGraphSelect(): void {
+        if (!this.graphSelectEl) return;
+        const sel = this.graphSelectEl;
+        const current = this.graphHost.getActiveGraphId();
+        sel.empty();
+        for (const g of this.graphHost.listGraphWorkspaces()) {
+            const opt = sel.createEl('option', { text: g.name, value: g.id });
+            if (g.id === current) opt.selected = true;
+        }
+    }
+
+    /**
+     * Delete a workspace, its layout and its membership, and go back to the one the host
+     * falls back to. The file is written at once, so it loses the layout the confirmation
+     * said it would.
+     */
+    private async removeGraphWorkspace(id: string): Promise<void> {
+        await this.graphHost.deleteGraphWorkspace(id);
+        delete this.allGraphPositions[id];
+        delete this.allGraphMembers[id];
+        this.populateGraphSelect();
+        await this.switchGraphWorkspace(this.graphHost.getActiveGraphId());
+        await this.savePositions();
+    }
+
+    /**
+     * Persist current cache into allGraphPositions, switch active graph id, reload layout from file-backed map.
+     */
+    private async switchGraphWorkspace(newId: string): Promise<void> {
+        // The cache is stored under the workspace it was loaded for, and not at all when
+        // that workspace has just been deleted.
+        const prev = this.positionsGraphId;
+        if (this.graphHost.listGraphWorkspaces().some((g) => g.id === prev)) {
+            this.allGraphPositions[prev] = Object.fromEntries(this.nodePositionsCache);
+        }
+        await this.graphHost.setActiveGraphId(newId);
+        this.populateGraphSelect();
+        // Whatever the host settled on: it ignores an id it does not know.
+        const activeId = this.graphHost.getActiveGraphId();
+        const slice = this.allGraphPositions[activeId] || {};
+        this.nodePositionsCache = new Map(Object.entries(slice));
+        this.positionsGraphId = activeId;
+        await this.refreshWithSavedPositions();
+        new Notice(`Switched to graph: ${this.graphHost.listGraphWorkspaces().find((g) => g.id === activeId)?.name ?? activeId}`);
+    }
+
+    /** File paths for notes backing the current selection (entities + connections). */
+    private getSelectedNotePaths(): string[] {
+        const paths: string[] = [];
+        for (const id of this.selectedNodes) {
+            const e = this.entityManager.getEntity(id);
+            if (e?.filePath) paths.push(e.filePath);
+        }
+        for (const cid of this.selectedEdges) {
+            const c = this.entityManager.getConnection(cid);
+            if (c?.filePath) paths.push(c.filePath);
+        }
+        return paths;
+    }
+
+    private async lockSelectedArea(): Promise<void> {
+        const n = this.graphHost.vaultLockService.lockPaths(this.getSelectedNotePaths());
+        new Notice(n > 0 ? `Locked ${n} note(s)` : 'Selected items were already locked');
+    }
+
+    private unlockSelectedArea(): void {
+        const lock = this.graphHost.vaultLockService;
+        const lockedPaths = this.getSelectedNotePaths().filter((p) => lock.isPathLocked(p));
+        if (lockedPaths.length === 0) {
+            new Notice('No locked notes in the selection');
+            return;
+        }
+        new ConfirmModal(
+            this.app,
+            'Unlock selected notes?',
+            `Remove the vault lock from ${lockedPaths.length} note(s) so they can be edited again.`,
+            () => {
+                for (const p of lockedPaths) {
+                    lock.unlockPath(p);
+                }
+                new Notice(`Unlocked ${lockedPaths.length} note(s)`);
+            },
+            undefined,
+            false,
+        ).open();
+    }
+
+    /**
+     * Handle double-click on an edge to open its note.
+     */
+    private async handleEdgeDoubleClick(connectionId: string): Promise<void> {
+        const connection = this.entityManager.getConnection(connectionId);
+
+        if (!connection) return;
+
+        if (connection.filePath) {
+            const file = this.app.vault.getAbstractFileByPath(connection.filePath);
+            if (file instanceof TFile) {
+                await this.app.workspace.getLeaf().openFile(file);
+                return;
+            }
+        }
+
+        new Notice('No note file found for this relationship');
+    }
+
+    /**
+     * Handle node click in connection mode.
+     */
+    private handleConnectionModeClick(nodeId: string, nodeLabel: string): void {
+        if (!this.sourceNodeId) {
+            // First click - select source node
+            this.sourceNodeId = nodeId;
+
+            // Highlight the source node
+            if (this.cy) {
+                this.cy.getElementById(nodeId).addClass('connection-source');
+            }
+
+            if (this.statusIndicator) {
+                this.statusIndicator.textContent = `Source: ${nodeLabel} → Click target...`;
+            }
+
+            new Notice(`Source selected: ${nodeLabel}. Now click the target node.`);
+        } else {
+            // Second click - select target node
+            if (nodeId === this.sourceNodeId) {
+                new Notice('Cannot connect a node to itself. Click a different node.');
+                return;
+            }
+
+            // Open quick modal to enter relationship
+            // Open FTM interval type selector modal
+            const modal = new FTMIntervalTypeSelectorModal(
+                this.app,
+                this.entityManager,
+                (connectionId?: string) => {
+                    // Record connection creation in history and add edge incrementally
+                    if (connectionId) {
+                        const connection = this.entityManager.getConnection(connectionId);
+                        if (connection) {
+                            this.historyManager.recordRelationshipCreate(connection);
+                            // Add connection to graph incrementally without full refresh
+                            this.addConnectionToGraph(connection);
+                        }
+                    }
+                },
+                this.sourceNodeId,
+                nodeId
+            );
+            modal.open();
+
+            // Exit connection mode
+            this.exitConnectionMode();
+        }
+    }
+
+    /**
+     * Open the FTM entity type selector modal.
+     * Uses FTM schema format with required properties shown by default
+     * and optional properties in a collapsible section.
+     */
+    private openEntityCreator(): void {
+        const modal = new FTMEntityTypeSelectorModal(
+            this.app,
+            this.entityManager,
+            (entityId) => {
+                // Record entity creation in history
+                const entity = this.entityManager.getEntity(entityId);
+                if (entity) {
+                    this.historyManager.recordEntityCreate(entity);
+                    // Add entity to graph incrementally without full refresh
+                    this.addEntityToGraphPreserveLayout(entity);
+                }
+            }
+        );
+        modal.open();
+    }
+
+    /**
+     * Initialize the Cytoscape graph.
+     */
+    private initializeGraph(): void {
+        if (!this.container) {
+            console.error('[GraphView] Cannot initialize: container is null');
+            return;
+        }
+
+        if (typeof cytoscape === 'undefined') {
+            console.error('[GraphView] Cannot initialize: cytoscape is undefined');
+            throw new Error('Cytoscape is not available. Graph cannot be initialized.');
+        }
+
+        this.cy = cytoscape({
+            container: this.container,
+            style: this.getGraphStyle(),
+            layout: { name: 'preset' },
+            minZoom: 0.1,
+            maxZoom: 3,
+            // Use default wheel sensitivity to avoid Cytoscape warning
+            // wheelSensitivity: 0.3, // Removed to use default (1.0)
+            // Enable box selection
+            boxSelectionEnabled: true,
+            selectionType: 'additive'
+        });
+
+        // Event handlers - Single click selects, double-click opens
+        this.cy.on('tap', 'node', (evt: CytoscapeEvent) => {
+            const node = evt.target as NodeSingular;
+            const entityId = node.id();
+            const nodeLabel = node.data('fullLabel') || node.data('label');
+            const originalEvent = evt.originalEvent;
+
+            // Check if we're in connection mode
+            if (this.connectionMode) {
+                this.handleConnectionModeClick(entityId, nodeLabel);
+                return;
+            }
+
+            // Check for Ctrl/Cmd+click for multi-select (add to selection)
+            if (originalEvent && (originalEvent.ctrlKey || originalEvent.metaKey)) {
+                this.toggleNodeSelection(entityId);
+                return;
+            }
+
+            // Normal click - clear other selections and select this node
+            this.clearSelection();
+            this.selectedNodes.add(entityId);
+            node.addClass('multi-selected');
+            this.updateSelectionUI();
+        });
+
+        // Double-click on node opens the entity note
+        this.cy.on('dbltap', 'node', (evt: CytoscapeEvent) => {
+            const node = evt.target as NodeSingular;
+            const entityId = node.id();
+
+            // Don't open if in connection mode
+            if (this.connectionMode) return;
+
+            if (this.onEntityClick) {
+                this.onEntityClick(entityId);
+            } else {
+                void this.entityManager.openEntityNote(entityId);
+            }
+        });
+
+        // Click on edge for selection
+        this.cy.on('tap', 'edge', (evt: CytoscapeEvent) => {
+            const edge = evt.target as NodeSingular;
+            const connectionId = edge.id();
+            const originalEvent = evt.originalEvent;
+
+            // Check for Ctrl/Cmd+click for multi-select (add to selection)
+            if (originalEvent && (originalEvent.ctrlKey || originalEvent.metaKey)) {
+                this.toggleEdgeSelection(connectionId);
+                return;
+            }
+
+            // Normal click - clear other selections and select this edge
+            this.clearSelection();
+            this.selectedEdges.add(connectionId);
+            edge.addClass('multi-selected');
+            this.updateSelectionUI();
+        });
+
+        // Double-click on edge opens the connection note
+        this.cy.on('dbltap', 'edge', (evt: CytoscapeEvent) => {
+            const edge = evt.target as EdgeSingular;
+            const connectionId = edge.id();
+            void this.handleEdgeDoubleClick(connectionId);
+        });
+
+        // Right-click context menu for nodes
+        this.cy.on('cxttap', 'node', (evt: CytoscapeEvent) => {
+            const node = evt.target as NodeSingular;
+            const entityId = node.id();
+            const entityType = node.data('type');
+            const nodeLabel = node.data('fullLabel') || node.data('label');
+
+            // Create context menu
+            this.showNodeContextMenu(evt.originalEvent, entityId, entityType, nodeLabel);
+        });
+
+        // Right-click context menu for edges (relationships)
+        this.cy.on('cxttap', 'edge', (evt: CytoscapeEvent) => {
+            const edge = evt.target as NodeSingular;
+            const connectionId = edge.id();
+            const relationship = edge.data('label');
+            const sourceId = edge.data('source');
+            const targetId = edge.data('target');
+
+            // Create context menu for edge
+            this.showEdgeContextMenu(evt.originalEvent, connectionId, relationship, sourceId, targetId);
+        });
+
+        // Hover tooltips for nodes and edges
+        this.cy.on('mouseover', 'node, edge', (evt: CytoscapeEvent) => {
+            const ele = evt.target as NodeSingular; // Safe as we filter by 'node, edge'
+            const isNode = ele.isNode();
+            // Use event position for edges (mouse cursor), node/render position for nodes?
+            // Actually event position is good for both on hover.
+            this.showGraphTooltip(ele, isNode, evt.renderedPosition);
+        });
+
+        this.cy.on('mouseout', 'node, edge', () => {
+            this.hideGraphTooltip();
+        });
+
+        // Track node position changes for undo/redo and persist to storage
+        this.cy.on('dragfree', 'node', (evt: CytoscapeEvent) => {
+            const node = evt.target as NodeSingular;
+            const nodeId = node.id();
+            const newPos = node.position();
+            const oldPos = this.nodePositionsCache.get(nodeId);
+
+            if (oldPos && (oldPos.x !== newPos.x || oldPos.y !== newPos.y)) {
+                const previousPositions = new Map<string, NodePosition>();
+                previousPositions.set(nodeId, { ...oldPos });
+
+                const newPositions = new Map<string, NodePosition>();
+                newPositions.set(nodeId, { x: newPos.x, y: newPos.y });
+
+                this.historyManager.recordNodePositionChange(previousPositions, newPositions);
+            }
+
+            // Update cache and persist to storage
+            this.nodePositionsCache.set(nodeId, { x: newPos.x, y: newPos.y });
+            void this.savePositionsDebounced();
+        });
+
+        this.cy.on('mouseover', 'node', (evt: CytoscapeEvent) => {
+            const node = evt.target as NodeSingular;
+            // A class, not .style(): an inline style is a bypass that outranks the
+            // stylesheet permanently, so the old pair of handlers pinned every node's
+            // border to 2px for the rest of the session after a single hover.
+            node.addClass('hovered');
+
+            // A map hint for every entity the map plots, by the map's own rule.
+            this.showLocationTooltip(node);
+        });
+
+        this.cy.on('mouseout', 'node', (evt: CytoscapeEvent) => {
+            const node = evt.target as NodeSingular;
+            node.removeClass('hovered');
+            this.hideLocationTooltip();
+        });
+
+        // Click on background to cancel connection mode or clear selection
+        this.cy.on('tap', (evt: CytoscapeEvent) => {
+            if (evt.target === this.cy) {
+                if (this.connectionMode) {
+                    // Clicked on background, cancel connection mode
+                    this.exitConnectionMode();
+                    new Notice('Connection mode cancelled');
+                } else if (!this.boxSelectMode && (this.selectedNodes.size > 0 || this.selectedEdges.size > 0)) {
+                    // Clear selection when clicking on background (not in box select mode)
+                    this.clearSelection();
+                }
+            }
+        });
+
+        // Box selection event - fires when elements are selected via box selection
+        // The 'boxselect' event fires on each element that gets selected
+        this.cy.on('boxselect', 'node', (evt: CytoscapeEvent) => {
+            if (!this.boxSelectMode) return;
+
+            const node = evt.target as NodeSingular;
+            const nodeId = node.id();
+
+            if (!this.selectedNodes.has(nodeId)) {
+                this.selectedNodes.add(nodeId);
+                node.addClass('multi-selected');
+            }
+        });
+
+        this.cy.on('boxselect', 'edge', (evt: CytoscapeEvent) => {
+            if (!this.boxSelectMode) return;
+
+            const edge = evt.target as NodeSingular;
+            const edgeId = edge.id();
+
+            if (!this.selectedEdges.has(edgeId)) {
+                this.selectedEdges.add(edgeId);
+                edge.addClass('multi-selected');
+            }
+        });
+
+        this.cy.on('boxend', () => {
+            if (!this.boxSelectMode) return;
+
+            // Clear Cytoscape's native selection (we use our own visual styling)
+            this.cy?.elements().unselect();
+
+            // Update the UI to show the Delete Selected button
+            // Use setTimeout to ensure all 'boxselect' events have been processed first
+            // This fixes the issue where the button wouldn't appear on the first box-select
+            setTimeout(() => {
+                this.updateSelectionUI();
+            }, 0);
+        });
+
+        // Add keyboard event listener for Delete and Escape keys
+        this.registerKeyboardShortcuts();
+    }
+
+    /**
+     * Register keyboard shortcuts for the graph view.
+     */
+    private registerKeyboardShortcuts(): void {
+        const keyHandler = (e: KeyboardEvent) => {
+            // Only handle if this view is active
+            if (!this.container?.isConnected) return;
+            // ...and only when the keyboard is actually in this pane. Mounted was not
+            // enough: with the graph open beside a note, Delete pressed while the file
+            // tree had focus reached showDeleteConfirmation.
+            const root = this.containerEl;
+            if (!root.contains(document.activeElement) && document.activeElement !== document.body) return;
+
+            // Don't intercept keyboard events when user is typing in an input field or modal
+            const activeElement = document.activeElement;
+            const isInputActive = activeElement instanceof HTMLInputElement ||
+                activeElement instanceof HTMLTextAreaElement ||
+                activeElement?.hasAttribute('contenteditable');
+
+            // Check if a modal is open
+            const modalOpen = document.querySelector('.modal-container') !== null;
+
+            // If user is typing in an input or a modal is open, don't intercept most keys
+            if (isInputActive || modalOpen) {
+                // Escape leaves the mode -- and must be marked handled, exactly as the
+                // branch below does. Tangent's window-level Escape treats an unhandled
+                // one as "toggle Thread/Map focus", which unmounts every pane: leaving a
+                // connection mode with the caret in any input threw the analyst out of
+                // the graph entirely.
+                if (e.key === 'Escape' && !modalOpen && (this.boxSelectMode || this.connectionMode)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (this.boxSelectMode) {
+                        this.exitBoxSelectMode();
+                    } else {
+                        this.exitConnectionMode();
+                    }
+                }
+                return;
+            }
+
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (this.selectedNodes.size > 0 || this.selectedEdges.size > 0) {
+                    e.preventDefault();
+                    this.showDeleteConfirmation();
+                }
+            } else if (e.key === 'Escape') {
+                // Priority: box select mode > connection mode > selection
+                if (this.boxSelectMode) {
+                    e.preventDefault();
+                    this.exitBoxSelectMode();
+                } else if (this.connectionMode) {
+                    e.preventDefault();
+                    this.exitConnectionMode();
+                } else if (this.selectedNodes.size > 0 || this.selectedEdges.size > 0) {
+                    e.preventDefault();
+                    this.clearSelection();
+                }
+            } else if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+                // Ctrl/Cmd+A to select all nodes and edges
+                e.preventDefault();
+                this.selectAll();
+            } else if (e.key === 'z' && (e.ctrlKey || e.metaKey)) {
+                // Ctrl/Cmd+Z for undo, Ctrl/Cmd+Shift+Z for redo
+                e.preventDefault();
+                if (e.shiftKey) {
+                    this.performRedo();
+                } else {
+                    this.performUndo();
+                }
+            } else if (e.key === 'y' && (e.ctrlKey || e.metaKey)) {
+                // Ctrl/Cmd+Y for redo (alternative)
+                e.preventDefault();
+                this.performRedo();
+            }
+        };
+
+        document.addEventListener('keydown', keyHandler);
+
+        // Store reference for cleanup
+        this._keyHandler = keyHandler;
+    }
+
+    /**
+     * Toggle selection state of a node.
+     */
+    private toggleNodeSelection(entityId: string): void {
+        if (!this.cy) return;
+
+        const node = this.cy.getElementById(entityId);
+        if (node.length === 0) return;
+
+        if (this.selectedNodes.has(entityId)) {
+            this.selectedNodes.delete(entityId);
+            node.removeClass('multi-selected');
+        } else {
+            this.selectedNodes.add(entityId);
+            node.addClass('multi-selected');
+        }
+
+        this.updateSelectionUI();
+    }
+
+    /**
+     * Toggle selection state of an edge.
+     */
+    private toggleEdgeSelection(connectionId: string): void {
+        if (!this.cy) return;
+
+        const edge = this.cy.getElementById(connectionId);
+        if (edge.length === 0) return;
+
+        if (this.selectedEdges.has(connectionId)) {
+            this.selectedEdges.delete(connectionId);
+            edge.removeClass('multi-selected');
+        } else {
+            this.selectedEdges.add(connectionId);
+            edge.addClass('multi-selected');
+        }
+
+        this.updateSelectionUI();
+    }
+
+    /**
+     * Select all nodes and edges in the graph.
+     */
+    private selectAll(): void {
+        if (!this.cy) return;
+
+
+        this.cy.nodes().forEach((node: NodeSingular) => {
+            const entityId = node.id();
+            this.selectedNodes.add(entityId);
+            node.addClass('multi-selected');
+        });
+
+        this.cy.edges().forEach((edge: NodeSingular) => {
+            const connectionId = edge.id();
+            this.selectedEdges.add(connectionId);
+            edge.addClass('multi-selected');
+        });
+
+        this.updateSelectionUI();
+        const totalCount = this.selectedNodes.size + this.selectedEdges.size;
+        new Notice(`Selected ${this.selectedNodes.size} entities and ${this.selectedEdges.size} relationships`);
+    }
+
+    /**
+     * Clear all selections (nodes and edges).
+     */
+    private clearSelection(): void {
+        this.cy?.nodes().removeClass('multi-selected');
+        this.cy?.edges().removeClass('multi-selected');
+        this.selectedNodes.clear();
+        this.selectedEdges.clear();
+        this.updateSelectionUI();
+    }
+
+    /**
+     * Update the selection UI elements.
+     */
+    private updateSelectionUI(): void {
+        const nodeCount = this.selectedNodes.size;
+        const edgeCount = this.selectedEdges.size;
+        const totalCount = nodeCount + edgeCount;
+
+        if (this.selectionCountEl) {
+            if (totalCount > 0) {
+                const parts: string[] = [];
+                if (nodeCount > 0) parts.push(`${nodeCount} ${nodeCount === 1 ? 'entity' : 'entities'}`);
+                if (edgeCount > 0) parts.push(`${edgeCount} ${edgeCount === 1 ? 'relationship' : 'relationships'}`);
+                this.selectionCountEl.textContent = parts.join(', ');
+                this.selectionCountEl.setCssProps({ display: 'block' });
+            } else {
+                this.selectionCountEl.setCssProps({ display: 'none' });
+            }
+        }
+
+        if (this.deleteSelectedBtn) {
+            if (totalCount > 0) {
+                this.deleteSelectedBtn.textContent = `🗑 Delete Selected (${totalCount})`;
+                this.deleteSelectedBtn.setCssProps({ display: 'block' });
+                this.deleteSelectedBtn.ariaLabel = `Delete ${totalCount} selected items`;
+            } else {
+                this.deleteSelectedBtn.textContent = '🗑 delete selected';
+                this.deleteSelectedBtn.setCssProps({ display: 'none' });
+            }
+        }
+
+        if (this.clearSelectionBtn) {
+            this.clearSelectionBtn.setCssProps({ display: totalCount > 0 ? 'block' : 'none' });
+        }
+
+        if (this.lockAreaBtn) {
+            const showLock = this.boxSelectMode && totalCount > 0;
+            this.lockAreaBtn.setCssProps({ display: showLock ? 'block' : 'none' });
+        }
+        if (this.unlockAreaBtn) {
+            const showUnlock = this.boxSelectMode && totalCount > 0;
+            this.unlockAreaBtn.setCssProps({ display: showUnlock ? 'block' : 'none' });
+        }
+    }
+
+    /**
+     * Show delete confirmation dialog for selected items (nodes and/or edges).
+     */
+    private showDeleteConfirmation(): void {
+        const nodeCount = this.selectedNodes.size;
+        const edgeCount = this.selectedEdges.size;
+
+        if (nodeCount === 0 && edgeCount === 0) return;
+
+        // Get entity names for the confirmation dialog
+        const entityNames: string[] = [];
+        this.selectedNodes.forEach(entityId => {
+            const entity = this.entityManager.getEntity(entityId);
+            if (entity) {
+                const label = entity.label != null ? String(entity.label) : entityId;
+                entityNames.push(`📦 ${label}`);
+            }
+        });
+
+        // Get relationship names for the confirmation dialog
+        const relationshipNames: string[] = [];
+        this.selectedEdges.forEach(connectionId => {
+            const connection = this.entityManager.getConnection(connectionId);
+            if (connection) {
+                const sourceEntity = this.entityManager.getEntity(connection.fromEntityId);
+                const targetEntity = this.entityManager.getEntity(connection.toEntityId);
+                const sourceLabel = sourceEntity?.label != null ? String(sourceEntity.label) : connection.fromEntityId;
+                const targetLabel = targetEntity?.label != null ? String(targetEntity.label) : connection.toEntityId;
+                relationshipNames.push(`🔗 ${sourceLabel} → ${connection.relationship} → ${targetLabel}`);
+            }
+        });
+
+        // Create confirmation modal
+        const modal = document.createElement('div');
+        // 'modal-container' too: the keyboard handler probes for that class to decide a
+        // dialog is open, so without it Delete opened a second confirmation on top of the
+        // first, and a third on top of that.
+        modal.className = 'modal-container graph_copilot-delete-modal';
+        modal.setCssProps({
+            position: 'fixed',
+            top: '0',
+            left: '0',
+            right: '0',
+            bottom: '0',
+            background: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            'align-items': 'center',
+            'justify-content': 'center',
+            'z-index': '10000'
+        });
+
+        const dialog = document.createElement('div');
+        dialog.setCssProps({
+            background: 'var(--background-primary)',
+            border: '1px solid var(--background-modifier-border)',
+            'border-radius': '8px',
+            padding: '20px',
+            'max-width': '500px',
+            'max-height': '80vh',
+            'overflow-y': 'auto',
+            'box-shadow': '0 4px 20px rgba(0, 0, 0, 0.3)'
+        });
+
+        // Build title
+        const titleParts: string[] = [];
+        if (nodeCount > 0) titleParts.push(`${nodeCount} ${nodeCount === 1 ? 'Entity' : 'Entities'}`);
+        if (edgeCount > 0) titleParts.push(`${edgeCount} ${edgeCount === 1 ? 'Relationship' : 'Relationships'}`);
+
+        const title = document.createElement('h3');
+        title.textContent = `Delete ${titleParts.join(' and ')}?`;
+        title.setCssProps({ margin: '0 0 15px 0', color: 'var(--text-normal)' });
+        dialog.appendChild(title);
+
+        const warning = document.createElement('p');
+        if (nodeCount > 0) {
+            warning.textContent = '⚠️ entity deletions cannot be undone. Entity Markdown files will be permanently deleted.';
+        } else {
+            warning.textContent = '⚠️ the following items will be deleted:';
+        }
+        warning.setCssProps({ margin: '0 0 15px 0', color: 'var(--text-warning)' });
+        dialog.appendChild(warning);
+
+        const itemList = document.createElement('ul');
+        itemList.setCssProps({
+            margin: '0 0 20px 0',
+            'padding-left': '20px',
+            'max-height': '200px',
+            'overflow-y': 'auto',
+            color: 'var(--text-muted)'
+        });
+
+        // Add entities first
+        entityNames.forEach(name => {
+            const li = document.createElement('li');
+            li.textContent = name;
+            itemList.appendChild(li);
+        });
+
+        // Add relationships
+        relationshipNames.forEach(name => {
+            const li = document.createElement('li');
+            li.textContent = name;
+            li.setCssProps({ 'font-size': '0.9em' });
+            itemList.appendChild(li);
+        });
+
+        dialog.appendChild(itemList);
+
+        const buttonContainer = document.createElement('div');
+        buttonContainer.setCssProps({ display: 'flex', gap: '10px', 'justify-content': 'flex-end' });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.setCssProps({ padding: '8px 16px' });
+        cancelBtn.onclick = () => modal.remove();
+        buttonContainer.appendChild(cancelBtn);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = `Delete ${titleParts.join(' and ')}`;
+        deleteBtn.setCssProps({
+            padding: '8px 16px',
+            background: 'var(--text-error)',
+            color: 'white',
+            border: 'none',
+            'border-radius': '4px',
+            cursor: 'pointer'
+        });
+        deleteBtn.onclick = async () => {
+            modal.remove();
+            await this.deleteSelectedItems();
+        };
+        buttonContainer.appendChild(deleteBtn);
+
+        dialog.appendChild(buttonContainer);
+        modal.appendChild(dialog);
+
+        // Close on background click
+        modal.onclick = (e) => {
+            if (e.target === modal) modal.remove();
+        };
+
+        document.body.appendChild(modal);
+    }
+
+    /**
+     * Delete all selected items (entities and relationships).
+     */
+    private async deleteSelectedItems(): Promise<void> {
+        const lock = this.graphHost.vaultLockService;
+        for (const entityId of this.selectedNodes) {
+            const e = this.entityManager.getEntity(entityId);
+            if (e?.filePath && lock.isPathLocked(e.filePath)) {
+                new Notice('Cannot delete: a selected entity note is locked. Unlock it first.');
+                return;
+            }
+        }
+        for (const connectionId of this.selectedEdges) {
+            const c = this.entityManager.getConnection(connectionId);
+            if (c?.filePath && lock.isPathLocked(c.filePath)) {
+                new Notice('Cannot delete: a selected relationship note is locked. Unlock it first.');
+                return;
+            }
+        }
+
+        let deletedEntities = 0;
+        let deletedRelationships = 0;
+        let failedEntities = 0;
+        let failedRelationships = 0;
+
+        // Delete relationships first (so we can record them before entities are deleted)
+        const edgesToDelete = Array.from(this.selectedEdges);
+        for (const connectionId of edgesToDelete) {
+            const connection = this.entityManager.getConnection(connectionId);
+            if (connection) {
+                try {
+                    await this.entityManager.deleteConnectionWithNote(connectionId);
+                    this.historyManager.recordRelationshipDelete(connection);
+                    if (this.cy) {
+                        this.cy.getElementById(connectionId).remove();
+                    }
+                    deletedRelationships++;
+                } catch (error) {
+                    console.error(`Failed to delete relationship ${connectionId}:`, error);
+                    failedRelationships++;
+                }
+            }
+        }
+
+        // Delete entities
+        const entitiesToDelete = Array.from(this.selectedNodes);
+        const entitiesForHistory: Entity[] = [];
+        for (const entityId of entitiesToDelete) {
+            const entity = this.entityManager.getEntity(entityId);
+            if (entity) {
+                entitiesForHistory.push({ ...entity });
+            }
+        }
+
+        const result = await this.entityManager.deleteEntities(entitiesToDelete);
+
+        // Record in history for successfully deleted entities
+        for (const entity of entitiesForHistory) {
+            if (!result.failed.includes(entity.id)) {
+                this.historyManager.recordEntityDelete(entity);
+                deletedEntities++;
+            } else {
+                failedEntities++;
+            }
+        }
+
+        // Remove deleted entities from graph
+        if (this.cy) {
+            for (const entityId of entitiesToDelete) {
+                if (!result.failed.includes(entityId)) {
+                    this.cy.getElementById(entityId).remove();
+                }
+            }
+        }
+
+        // Clear selection
+        this.selectedNodes.clear();
+        this.selectedEdges.clear();
+        this.updateSelectionUI();
+
+        // Show result
+        const successParts: string[] = [];
+        const failParts: string[] = [];
+
+        if (deletedEntities > 0) successParts.push(`${deletedEntities} ${deletedEntities === 1 ? 'entity' : 'entities'}`);
+        if (deletedRelationships > 0) successParts.push(`${deletedRelationships} ${deletedRelationships === 1 ? 'relationship' : 'relationships'}`);
+        if (failedEntities > 0) failParts.push(`${failedEntities} ${failedEntities === 1 ? 'entity' : 'entities'}`);
+        if (failedRelationships > 0) failParts.push(`${failedRelationships} ${failedRelationships === 1 ? 'relationship' : 'relationships'}`);
+
+        if (failParts.length === 0) {
+            new Notice(`Successfully deleted ${successParts.join(' and ')}`);
+        } else {
+            new Notice(`Deleted ${successParts.join(' and ')}. Failed: ${failParts.join(' and ')}`);
+        }
+    }
+
+    /**
+     * Show delete confirmation dialog for a single entity.
+     */
+    private showSingleDeleteConfirmation(entityId: string, label: string): void {
+        // Create confirmation modal
+        const modal = document.createElement('div');
+        // 'modal-container' too: the keyboard handler probes for that class to decide a
+        // dialog is open, so without it Delete opened a second confirmation on top of the
+        // first, and a third on top of that.
+        modal.className = 'modal-container graph_copilot-delete-modal';
+        modal.setCssProps({
+            position: 'fixed',
+            top: '0',
+            left: '0',
+            right: '0',
+            bottom: '0',
+            background: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            'align-items': 'center',
+            'justify-content': 'center',
+            'z-index': '10000'
+        });
+
+        const dialog = document.createElement('div');
+        dialog.setCssProps({
+            background: 'var(--background-primary)',
+            border: '1px solid var(--background-modifier-border)',
+            'border-radius': '8px',
+            padding: '20px',
+            'max-width': '400px',
+            'box-shadow': '0 4px 20px rgba(0, 0, 0, 0.3)'
+        });
+
+        const title = document.createElement('h3');
+        title.textContent = 'Delete entity?';
+        title.setCssProps({ margin: '0 0 15px 0', color: 'var(--text-normal)' });
+        dialog.appendChild(title);
+
+        const warning = document.createElement('p');
+        warning.createSpan({ text: '⚠️ This action cannot be undone. The entity ' });
+        warning.createEl('strong', { text: `"${label}"` });
+        warning.createSpan({ text: ' and its markdown file will be permanently deleted.' });
+        warning.setCssProps({ margin: '0 0 20px 0', color: 'var(--text-warning)' });
+        dialog.appendChild(warning);
+
+        const buttonContainer = document.createElement('div');
+        buttonContainer.setCssProps({ display: 'flex', gap: '10px', 'justify-content': 'flex-end' });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.setCssProps({ padding: '8px 16px' });
+        cancelBtn.onclick = () => modal.remove();
+        buttonContainer.appendChild(cancelBtn);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.setCssProps({
+            padding: '8px 16px',
+            background: 'var(--text-error)',
+            color: 'white',
+            border: 'none',
+            'border-radius': '4px',
+            cursor: 'pointer'
+        });
+        deleteBtn.onclick = async () => {
+            modal.remove();
+            try {
+                // Get entity before deleting for history
+                const entity = this.entityManager.getEntity(entityId);
+
+                const success = await this.entityManager.deleteEntity(entityId);
+                if (success) {
+                    // Record in history
+                    if (entity) {
+                        this.historyManager.recordEntityDelete(entity);
+                    }
+                    // Remove from graph
+                    if (this.cy) {
+                        this.cy.getElementById(entityId).remove();
+                    }
+                    // Remove from selection if selected
+                    this.selectedNodes.delete(entityId);
+                    this.updateSelectionUI();
+                    new Notice(`Deleted entity: ${label}`);
+                } else {
+                    new Notice(`Failed to delete entity: ${label}`);
+                }
+            } catch (error) {
+                console.error(`Failed to delete entity ${entityId}:`, error);
+                new Notice(`Error deleting entity: ${label}`);
+            }
+        };
+        buttonContainer.appendChild(deleteBtn);
+
+        dialog.appendChild(buttonContainer);
+        modal.appendChild(dialog);
+
+        // Close on background click
+        modal.onclick = (e) => {
+            if (e.target === modal) modal.remove();
+        };
+
+        document.body.appendChild(modal);
+    }
+
+    /**
+     * Show context menu for a node.
+     */
+    private showNodeContextMenu(event: MouseEvent, entityId: string, entityType: string, label: string): void {
+        // Remove any existing context menu
+        const existingMenu = document.querySelector('.graph_copilot-context-menu');
+        if (existingMenu) existingMenu.remove();
+
+        const menu = document.createElement('div');
+        menu.className = 'graph_copilot-context-menu';
+        menu.setCssProps({
+            position: 'fixed',
+            left: `${event.clientX}px`,
+            top: `${event.clientY}px`,
+            background: 'var(--background-primary)',
+            border: '1px solid var(--background-modifier-border)',
+            'border-radius': '6px',
+            padding: '4px 0',
+            'min-width': '150px',
+            'box-shadow': '0 2px 10px rgba(0,0,0,0.2)',
+            'z-index': '1000'
+        });
+
+        // Open Note option
+        const openNoteItem = this.createMenuItem('📄 Open Note', () => {
+            this.entityManager.openEntityNote(entityId);
+            menu.remove();
+        });
+        menu.appendChild(openNoteItem);
+
+        const entityForLock = this.entityManager.getEntity(entityId);
+        const lock = this.graphHost.vaultLockService;
+        if (entityForLock?.filePath && lock.isPathLocked(entityForLock.filePath)) {
+            const unlockNoteItem = this.createMenuItem('🔓 Unlock note', () => {
+                menu.remove();
+                const fp = entityForLock.filePath as string;
+                new VaultUnlockModal(this.app, () => {
+                    lock.unlockPath(fp);
+                    new Notice('Note unlocked');
+                }, 'Unlock entity note').open();
+            });
+            menu.appendChild(unlockNoteItem);
+        }
+
+        // Pictures. Dropping an image on a node does the same thing and is quicker, but
+        // that gesture is invisible until someone tries it -- this is where it is findable.
+        const pictured = this.entityManager.getEntity(entityId);
+        const hasPicture = pictured ? entityImagePath(pictured) !== undefined : false;
+        const pictureItem = this.createMenuItem(
+            hasPicture ? '🖼 Replace picture…' : '🖼 Set picture…',
+            () => {
+                menu.remove();
+                this.pickEntityPicture(entityId);
+            });
+        menu.appendChild(pictureItem);
+
+        if (hasPicture) {
+            const removePictureItem = this.createMenuItem('🖼 Remove picture', () => {
+                menu.remove();
+                void this.clearEntityPicture(entityId);
+            });
+            menu.appendChild(removePictureItem);
+        }
+
+        // Edit Entity option (for all entity types) - uses FTM format
+        const editItem = this.createMenuItem('✏️ Edit Entity', () => {
+            const entity = this.entityManager.getEntity(entityId);
+            if (entity) {
+                // Capture previous state for history
+                const previousEntity = { ...entity, properties: { ...entity.properties } };
+
+                const editModal = new FTMEntityEditModal(
+                    this.app,
+                    this.entityManager,
+                    entity,
+                    () => {
+                        // Record edit in history
+                        const updatedEntity = this.entityManager.getEntity(entityId);
+                        if (updatedEntity) {
+                            this.historyManager.recordEntityEdit(previousEntity, updatedEntity);
+                            // Update entity in graph incrementally without full refresh
+                            this.updateEntityInGraph(updatedEntity);
+                        }
+                    }
+                );
+                editModal.open();
+            } else {
+                new Notice('Entity not found');
+            }
+            menu.remove();
+        });
+        menu.appendChild(editItem);
+
+        // Show on Map option: only for an entity the map actually plots, by the map's own
+        // rule -- any location type, any casing, and coordinates it can parse (0 included).
+        const mapEntity = this.entityManager.getEntity(entityId);
+        if (mapEntity && isMappableEntity(mapEntity)) {
+            const mapItem = this.createMenuItem('🗺️ Show on Map', () => {
+                if (this.onShowOnMap) {
+                    this.onShowOnMap(entityId);
+                } else {
+                    new Notice('Map view not available');
+                }
+                menu.remove();
+            });
+            menu.appendChild(mapItem);
+        }
+
+        // Geolocate option: a location type with no coordinates, the same test as the
+        // map's own geolocate dialog.
+        if (mapEntity && isLocationEntityType(mapEntity.type) && !entityHasMapCoordinates(mapEntity)) {
+            const geolocateItem = this.createMenuItem('📍 Geolocate Address', () => {
+                menu.remove();
+                this.geolocateEntity(entityId);
+            });
+            menu.appendChild(geolocateItem);
+        }
+
+        // Toggle Timeline option (all Event entities; undated ones show under "Undated" too)
+        if (isEventEntityType(entityType as string)) {
+            const entity = this.entityManager.getEntity(entityId);
+            if (entity) {
+                // The timeline's rule: an Event is on it unless add_to_timeline says no.
+                const isOnTimeline = isShownOnTimeline(entity.properties.add_to_timeline);
+                const timelineLabel = isOnTimeline ? '📅 Remove from Timeline' : '📅 Add to Timeline';
+                const timelineItem = this.createMenuItem(timelineLabel, () => {
+                    void (async () => {
+                        try {
+                            const updatedEntity = await this.entityManager.updateEntity(entityId, {
+                                add_to_timeline: !isOnTimeline
+                            });
+                            if (updatedEntity) {
+                                new Notice(isOnTimeline ? 'Removed from Timeline' : 'Added to Timeline');
+                                // Update the node in the graph
+                                this.updateEntityInGraph(updatedEntity);
+                            } else {
+                                // Nothing was written: the note is locked or the entity is gone.
+                                new Notice('Failed to update timeline status');
+                            }
+                        } catch (error) {
+                            console.error('[GraphView] Failed to toggle timeline status:', error);
+                            new Notice('Failed to update timeline status');
+                        }
+                        menu.remove();
+                    })();
+                });
+                menu.appendChild(timelineItem);
+            }
+        }
+
+        // Separator
+        const separator = document.createElement('div');
+        separator.setCssProps({ height: '1px', background: 'var(--background-modifier-border)', margin: '4px 0' });
+        menu.appendChild(separator);
+
+        // Connect to... option
+        const connectItem = this.createMenuItem('🔗 Connect to...', () => {
+            this.enterConnectionMode();
+            this.handleConnectionModeClick(entityId, label);
+            menu.remove();
+        });
+        menu.appendChild(connectItem);
+
+        // Separator before delete options
+        const separator2 = document.createElement('div');
+        separator2.setCssProps({ height: '1px', background: 'var(--background-modifier-border)', margin: '4px 0' });
+        menu.appendChild(separator2);
+
+        // Delete selected (if there are multiple selections including this entity)
+        const totalSelected = this.selectedNodes.size + this.selectedEdges.size;
+        if (totalSelected > 1 && this.selectedNodes.has(entityId)) {
+            const deleteSelectedItem = this.createMenuItem(`🗑 Delete Selected (${totalSelected})`, () => {
+                menu.remove();
+                this.showDeleteConfirmation();
+            });
+            deleteSelectedItem.setCssProps({ color: 'var(--text-error)' });
+            menu.appendChild(deleteSelectedItem);
+        }
+
+        // Delete this entity
+        const deleteItem = this.createMenuItem('🗑 Delete Entity', () => {
+            menu.remove();
+            this.showSingleDeleteConfirmation(entityId, label);
+        });
+        deleteItem.setCssProps({ color: 'var(--text-error)' });
+        menu.appendChild(deleteItem);
+
+        document.body.appendChild(menu);
+
+        // Close menu when clicking outside
+        const closeMenu = (e: MouseEvent) => {
+            if (!menu.contains(e.target as Node)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeMenu), 0);
+    }
+
+    /**
+     * Create a menu item element.
+     */
+    /**
+     * Asks for an image file and makes it this entity's picture.
+     *
+     * A detached <input type="file"> rather than a vault picker: the common case is a
+     * photograph that is not in the vault yet, and importImageToEvidence copies it in.
+     * accept is the set the graph can actually paint.
+     */
+    private pickEntityPicture(entityId: string): void {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/png,image/jpeg,image/gif,image/webp,image/bmp,image/svg+xml';
+        input.onchange = async () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            const entity = this.entityManager.getEntity(entityId);
+            if (!entity) return;
+            if (this.graphHost.vaultLockService.isPathLocked(entity.filePath)) {
+                new Notice(`"${entity.label}" is locked.`, 6000, 'warning');
+                return;
+            }
+            try {
+                const path = await this.importImageToEvidence(file);
+                if (path) await this.setEntityImage(entity, path);
+            } catch (error) {
+                console.error('[GraphView] could not set the picture', error);
+                new Notice('Could not set that picture.', 6000, 'error');
+            }
+        };
+        input.click();
+    }
+
+    /** Drops the picture, returning the node to its type-coloured placeholder. */
+    private async clearEntityPicture(entityId: string): Promise<void> {
+        const entity = this.entityManager.getEntity(entityId);
+        if (!entity) return;
+        if (this.graphHost.vaultLockService.isPathLocked(entity.filePath)) {
+            new Notice(`"${entity.label}" is locked.`, 6000, 'warning');
+            return;
+        }
+        try {
+            // The file itself is left in Evidence: it may be case material, and removing a
+            // node's picture is not a decision to delete a collected image.
+            await this.entityManager.updateEntity(entity.id, { [ENTITY_IMAGE_KEY]: '' });
+            const updated = this.entityManager.getEntity(entity.id);
+            if (updated) this.updateEntityInGraph(updated);
+        } catch (error) {
+            console.error('[GraphView] could not remove the picture', error);
+        }
+    }
+
+    private createMenuItem(text: string, onClick: () => void): HTMLElement {
+        const item = document.createElement('div');
+        item.textContent = text;
+        item.setCssProps({
+            padding: '6px 12px',
+            cursor: 'pointer',
+            'font-size': '13px'
+        });
+        item.onmouseenter = () => item.setCssProps({ background: 'var(--background-modifier-hover)' });
+        item.onmouseleave = () => item.setCssProps({ background: 'transparent' });
+        item.onclick = onClick;
+        return item;
+    }
+
+    /**
+     * Show context menu for edges (relationships).
+     */
+    private showEdgeContextMenu(event: MouseEvent, connectionId: string, relationship: string, sourceId: string, targetId: string): void {
+        // Remove any existing context menu
+        const existingMenu = document.querySelector('.graph_copilot-context-menu');
+        if (existingMenu) existingMenu.remove();
+
+        const sourceEntity = this.entityManager.getEntity(sourceId);
+        const targetEntity = this.entityManager.getEntity(targetId);
+        const sourceLabel = sourceEntity?.label || sourceId;
+        const targetLabel = targetEntity?.label || targetId;
+
+        const menu = document.createElement('div');
+        menu.className = 'graph_copilot-context-menu';
+        menu.setCssProps({
+            position: 'fixed',
+            left: `${event.clientX}px`,
+            top: `${event.clientY}px`,
+            background: 'var(--background-primary)',
+            border: '1px solid var(--background-modifier-border)',
+            'border-radius': '6px',
+            padding: '4px 0',
+            'min-width': '180px',
+            'box-shadow': '0 2px 10px rgba(0,0,0,0.2)',
+            'z-index': '1000'
+        });
+
+        // Header showing relationship info
+        const header = document.createElement('div');
+        header.setCssProps({
+            padding: '6px 12px',
+            'font-size': '11px',
+            color: 'var(--text-muted)',
+            'border-bottom': '1px solid var(--background-modifier-border)',
+            'margin-bottom': '4px'
+        });
+        header.createEl('strong', { text: sourceLabel });
+        header.createSpan({ text: ' → ' });
+        header.createEl('strong', { text: targetLabel });
+        header.createEl('br');
+        header.createEl('em', { text: relationship });
+        menu.appendChild(header);
+
+        // Edit Connection option
+        const editItem = this.createMenuItem('✏️ Edit Connection', () => {
+            const connection = this.entityManager.getConnection(connectionId);
+            if (connection) {
+                // Capture previous state for history
+                const previousConnection = {
+                    ...connection,
+                    properties: { ...connection.properties }
+                };
+
+                const editModal = new ConnectionEditModal(
+                    this.app,
+                    this.entityManager,
+                    connection,
+                    () => {
+                        // Record edit in history
+                        const updatedConnection = this.entityManager.getConnection(connectionId);
+                        if (updatedConnection) {
+                            this.historyManager.recordRelationshipEdit(previousConnection, updatedConnection);
+                            // Update connection in graph incrementally without full refresh
+                            this.updateConnectionInGraph(updatedConnection);
+                        }
+                    }
+                );
+                editModal.open();
+            } else {
+                new Notice('Connection not found');
+            }
+            menu.remove();
+        });
+        menu.appendChild(editItem);
+
+        const connectionForLock = this.entityManager.getConnection(connectionId);
+        const edgeLock = this.graphHost.vaultLockService;
+        if (connectionForLock?.filePath && edgeLock.isPathLocked(connectionForLock.filePath)) {
+            const unlockConnItem = this.createMenuItem('🔓 Unlock note', () => {
+                menu.remove();
+                const fp = connectionForLock.filePath as string;
+                new VaultUnlockModal(this.app, () => {
+                    edgeLock.unlockPath(fp);
+                    new Notice('Note unlocked');
+                }, 'Unlock relationship note').open();
+            });
+            menu.appendChild(unlockConnItem);
+        }
+
+        // Delete selected (if there are multiple selections including this edge)
+        const totalSelected = this.selectedNodes.size + this.selectedEdges.size;
+        if (totalSelected > 1 && this.selectedEdges.has(connectionId)) {
+            const deleteSelectedItem = this.createMenuItem(`🗑 Delete Selected (${totalSelected})`, () => {
+                menu.remove();
+                this.showDeleteConfirmation();
+            });
+            deleteSelectedItem.setCssProps({ color: 'var(--text-error)' });
+            menu.appendChild(deleteSelectedItem);
+        }
+
+        // Delete Relationship option
+        const deleteItem = this.createMenuItem('🗑 Delete Relationship', () => {
+            menu.remove();
+            void this.deleteRelationship(connectionId, relationship, sourceLabel, targetLabel);
+        });
+        deleteItem.setCssProps({ color: 'var(--text-error)' });
+        menu.appendChild(deleteItem);
+
+        document.body.appendChild(menu);
+
+        // Close menu when clicking outside
+        const closeMenu = (e: MouseEvent) => {
+            if (!menu.contains(e.target as Node)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeMenu), 0);
+    }
+
+    /**
+     * Delete a relationship with confirmation.
+     */
+    private async deleteRelationship(connectionId: string, relationship: string, sourceLabel: string, targetLabel: string): Promise<void> {
+        // Get the connection before deleting for history
+        const connection = this.entityManager.getConnection(connectionId);
+
+        if (!connection) {
+            new Notice('Relationship not found');
+            return;
+        }
+
+        new ConfirmModal(
+            this.app,
+            'Delete Relationship',
+            `Are you sure you want to delete the relationship "${relationship}" between "${sourceLabel}" and "${targetLabel}"?`,
+            () => {
+                void (async () => {
+                    // Record in history before deleting
+                    this.historyManager.recordRelationshipDelete(connection);
+
+                    // Delete from entity manager (with note update)
+                    await this.entityManager.deleteConnectionWithNote(connectionId);
+
+                    // Remove from graph
+                    if (this.cy) {
+                        this.cy.getElementById(connectionId).remove();
+                    }
+
+                    new Notice(`Deleted relationship: ${relationship}`);
+                })();
+            },
+            undefined,
+            true
+        ).open();
+
+    }
+
+    /**
+     * Show generic tooltip for nodes and edges.
+     */
+    private showGraphTooltip(ele: NodeSingular | EdgeSingular, isNode: boolean, renderPos: { x: number, y: number }): void {
+        this.hideGraphTooltip(); // Clear any existing
+
+        const tooltip = document.createElement('div');
+        tooltip.id = 'graph_copilot-tooltip';
+        tooltip.style.cssText = `
+            position: fixed; 
+            background: var(--background-primary); 
+            border: 1px solid var(--background-modifier-border); 
+            border-radius: 6px; 
+            padding: 8px 12px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2); 
+            z-index: 2000; 
+            max-width: 250px; 
+            pointer-events: none; 
+            font-size: 12px;
+        `;
+
+        const titleDiv = tooltip.createDiv();
+        titleDiv.setCssProps({
+            'font-weight': 'bold',
+            'margin-bottom': '4px'
+        });
+
+        const typeDiv = tooltip.createDiv();
+        typeDiv.setCssProps({
+            'font-size': '10px',
+            color: 'var(--text-muted)',
+            'text-transform': 'uppercase',
+            'letter-spacing': '0.5px'
+        });
+
+        const hintDiv = tooltip.createDiv();
+        hintDiv.setCssProps({
+            'margin-top': '6px',
+            'font-size': '10px',
+            color: 'var(--text-accent)'
+        });
+        hintDiv.innerText = 'Click to select • double-click to open';
+
+        if (isNode) {
+            const label = ele.data('fullLabel') || ele.data('label');
+            const type = ele.data('type');
+            titleDiv.innerText = label;
+            typeDiv.innerText = type;
+        } else {
+            // Edge
+            const label = ele.data('label');
+            titleDiv.innerText = label;
+            typeDiv.innerText = 'RELATIONSHIP';
+        }
+
+        // Position
+        const containerRect = this.container?.getBoundingClientRect();
+        if (containerRect) {
+            // Add offset to not cover cursor
+            tooltip.style.left = `${containerRect.left + renderPos.x + 15}px`;
+            tooltip.style.top = `${containerRect.top + renderPos.y + 15}px`;
+        }
+
+        document.body.appendChild(tooltip);
+    }
+
+    private hideGraphTooltip(): void {
+        const existing = document.getElementById('graph_copilot-tooltip');
+        if (existing) existing.remove();
+        // Also hide location tooltip if generic used
+        this.hideLocationTooltip();
+    }
+
+    /**
+     * Show tooltip with a map preview hint, for an entity the map plots (isMappableEntity):
+     * any location type, and coordinates as the map reads them, 0 included.
+     */
+    private showLocationTooltip(node: NodeSingular): void {
+        const entityId = node.id();
+        const entity = this.entityManager.getEntity(entityId);
+        if (!entity || !isMappableEntity(entity)) return;
+
+        // Remove existing tooltip
+        this.hideLocationTooltip();
+
+        const tooltip = document.createElement('div');
+        tooltip.id = 'graph_copilot-location-tooltip';
+        tooltip.className = 'graph_copilot-location-tooltip';
+
+        // Not null: isMappableEntity has parsed both.
+        const lat = parseCoordinate(entity.properties.latitude as string | number | undefined, 'lat') as number;
+        const lng = parseCoordinate(entity.properties.longitude as string | number | undefined, 'lng') as number;
+
+        const titleDiv = tooltip.createDiv();
+        titleDiv.setCssProps({ 'font-weight': 'bold', 'margin-bottom': '4px' });
+        titleDiv.setText(`📍 ${entity.label}`);
+
+        const infoDiv = tooltip.createDiv();
+        infoDiv.setCssProps({ 'font-size': '11px', color: 'var(--text-muted)' });
+        // The address as the geocoder reads it: an Address note keeps it in street or full.
+        infoDiv.setText(geocodeFieldsFor(entity).address ?? '');
+        infoDiv.createEl('br');
+        infoDiv.createSpan({ text: `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}` });
+
+        const hintDiv = tooltip.createDiv();
+        hintDiv.setCssProps({ 'font-size': '10px', color: 'var(--text-accent)', 'margin-top': '4px' });
+        hintDiv.setText('Right-click → show on map');
+
+        tooltip.setCssProps({
+            position: 'fixed',
+            background: 'var(--background-primary)',
+            border: '1px solid var(--background-modifier-border)',
+            'border-radius': '6px',
+            padding: '8px 12px',
+            'box-shadow': '0 2px 8px rgba(0,0,0,0.15)',
+            'z-index': '1000',
+            'max-width': '250px',
+            'pointer-events': 'none'
+        });
+
+        // Position tooltip near the node
+        const renderedPos = node.renderedPosition();
+        const containerRect = this.container?.getBoundingClientRect();
+        if (containerRect) {
+            tooltip.setCssProps({
+                left: `${containerRect.left + renderedPos.x + 30}px`,
+                top: `${containerRect.top + renderedPos.y - 20}px`
+            });
+        }
+
+        document.body.appendChild(tooltip);
+    }
+
+    /**
+     * Hide the location tooltip.
+     */
+    private hideLocationTooltip(): void {
+        const tooltip = document.getElementById('graph_copilot-location-tooltip');
+        if (tooltip) tooltip.remove();
+    }
+
+    /**
+     * Get Cytoscape style configuration.
+     */
+    /**
+     * The stylesheet, applied once at construction.
+     *
+     * Node rules live in graph-node-visual.ts so the two that fail silently in the browser
+     * -- the crossorigin opt-out and `:selected` staying last -- can be asserted in a test.
+     * Applying once is still correct: cytoscape re-runs a function mapper whenever the
+     * data it reads changes, because data() setters carry updateStyle.
+     */
+    private getGraphStyle(): unknown[] {
+        return [
+            ...graphNodeStyles(),
+            {
+                selector: 'edge',
+                style: {
+                    'width': 2,
+                    'line-color': '#888888',
+                    'target-arrow-color': '#888888',
+                    'target-arrow-shape': 'triangle',
+                    'curve-style': 'bezier',
+                    'label': 'data(label)',
+                    'font-size': '10px',
+                    'color': '#cccccc',
+                    'text-rotation': 'autorotate',
+                    'text-margin-y': -10
+                }
+            },
+            {
+                selector: 'edge:selected',
+                style: {
+                    'width': 4,
+                    'line-color': '#ffff00'
+                }
+            },
+            {
+                // Multi-selected edges
+                selector: 'edge.multi-selected',
+                style: {
+                    'width': 4,
+                    'line-color': '#ff6b6b',
+                    'target-arrow-color': '#ff6b6b',
+                    'line-style': 'solid'
+                }
+            }
+        ];
+    }
+
+    /**
+     * The default workspace shows every vault entity; a named workspace shows exactly
+     * its members. Membership is explicit and independent of layout, so rearranging or
+     * clearing positions no longer changes which entities belong to a graph.
+     */
+    private getEntitiesForActiveWorkspace(allEntities: Entity[]): Entity[] {
+        const activeId = this.graphHost.getActiveGraphId();
+        if (activeId === 'default') {
+            return allEntities;
+        }
+        const members = this.allGraphMembers[activeId] ?? new Set<string>();
+        return allEntities.filter((e) => members.has(e.id));
+    }
+
+    /**
+     * Refresh the graph with current data.
+     * Reloads entities from disk to ensure persistence across Obsidian restarts.
+     */
+    async refresh(): Promise<void> {
+        if (!this.cy) return;
+
+        // Reload entities from disk to ensure we have the latest data
+        // This is critical for persistence across Obsidian restarts
+        try {
+            await this.entityManager.loadEntitiesFromNotes({ graphYaml: 'changed' });
+        } catch (error) {
+            // Return, do not carry on. loadEntitiesFromNotes used to clear the shared store
+            // before it read, so after a failure getGraphData() was empty -- and the code
+            // below then removed every element and rebuilt from nothing, silently
+            // blanking the whole graph on a transient read error.
+            console.error('[GraphView] Failed to reload entities from notes:', error);
+            new Notice('Could not reload entities; keeping the current graph.', 8000, 'error');
+            return;
+        }
+        // Closed while the notes were read: onClose has destroyed the graph.
+        if (!this.cy) return;
+
+        const { entities: allEntities, connections: allConnections } = this.entityManager.getGraphData();
+        const entities = this.getEntitiesForActiveWorkspace(allEntities);
+        const isDefaultWorkspace = this.graphHost.getActiveGraphId() === 'default';
+
+        // Clear existing elements
+        this.cy.elements().remove();
+
+        // Add nodes
+        const nodes = entities.map((entity, index) => {
+            return {
+                data: this.buildNodeData(entity),
+                position: this.getNodePosition(index, Math.max(entities.length, 1)),
+                classes: this.entityNodeClasses(this.entityHasCoordinates(entity)),
+            };
+        });
+
+        // Build a set of valid entity IDs for edge validation
+        const entityIds = new Set(entities.map(e => e.id));
+
+        const unknownEntityIds = new Set<string>();
+
+        let edges: Array<{ data: { id: string; source: string; target: string; label: string } }>;
+
+        if (isDefaultWorkspace) {
+            edges = allConnections.map(conn => {
+                const hasSource = entityIds.has(conn.fromEntityId);
+                const hasTarget = entityIds.has(conn.toEntityId);
+
+                if (!hasSource) unknownEntityIds.add(conn.fromEntityId);
+                if (!hasTarget) unknownEntityIds.add(conn.toEntityId);
+
+                return {
+                    data: {
+                        id: conn.id,
+                        source: conn.fromEntityId,
+                        target: conn.toEntityId,
+                        label: conn.relationship
+                    }
+                };
+            });
+        } else {
+            edges = allConnections
+                .filter((conn) => entityIds.has(conn.fromEntityId) && entityIds.has(conn.toEntityId))
+                .map((conn) => ({
+                    data: {
+                        id: conn.id,
+                        source: conn.fromEntityId,
+                        target: conn.toEntityId,
+                        label: conn.relationship
+                    }
+                }));
+        }
+
+        // Create "Unknown" nodes for missing entities (default workspace only)
+        const unknownNodes = isDefaultWorkspace
+            ? Array.from(unknownEntityIds).map((id, index) => {
+                return {
+                    data: {
+                        id: id,
+                        label: "Unknown",
+                        fullLabel: "Unknown Entity (" + id.substring(0, 8) + ")",
+                        type: "Unknown",
+                        color: "#9E9E9E",
+                        icon: "❓",
+                        isUnknown: true
+                    },
+                    position: this.getNodePosition(nodes.length + index, nodes.length + unknownEntityIds.size),
+                    classes: 'is-unknown'
+                };
+            })
+            : [];
+
+        this.cy.add([...nodes, ...unknownNodes, ...edges]);
+        if (nodes.length > 0 || unknownNodes.length > 0) {
+            this.runLayout();
+        }
+    }
+
+    /**
+     * Refresh the graph using saved positions (no automatic layout).
+     * Only applies layout to new nodes that don't have saved positions.
+     *
+     * Single-flight, as MapView.refresh is: the vault watcher, the toolbar, a workspace
+     * switch and the plugin's refreshOpenInsightViews all land here, and two overlapping
+     * runs would read every note twice for one result. A call made during a run joins it,
+     * and fits the view afterwards if it asked for that.
+     *
+     * @param options.fit fit the view to the nodes afterwards (the default). The vault
+     *   watcher passes false, so saving a note keeps the analyst's pan and zoom.
+     */
+    async refreshWithSavedPositions(options: { fit?: boolean } = {}): Promise<void> {
+        if (!this.cy) return;
+        const fit = options.fit ?? true;
+        if (this.refreshInFlight) {
+            await this.refreshInFlight;
+            if (fit) this.fitToNodes();
+            return;
+        }
+        this.refreshInFlight = this.doRefreshWithSavedPositions(fit).finally(() => {
+            this.refreshInFlight = null;
+        });
+        return this.refreshInFlight;
+    }
+
+    private async doRefreshWithSavedPositions(fit: boolean): Promise<void> {
+        if (!this.cy) return;
+
+        console.debug(`[GraphView] refreshWithSavedPositions called, cache has ${this.nodePositionsCache.size} positions`);
+
+        // Reload entities from disk to ensure we have the latest data
+        try {
+            await this.entityManager.loadEntitiesFromNotes({ graphYaml: 'changed' });
+        } catch (error) {
+            // Return, do not carry on. loadEntitiesFromNotes used to clear the shared store
+            // before it read, so after a failure getGraphData() was empty -- and the code
+            // below then removed every element and rebuilt from nothing, silently
+            // blanking the whole graph on a transient read error.
+            console.error('[GraphView] Failed to reload entities from notes:', error);
+            new Notice('Could not reload entities; keeping the current graph.', 8000, 'error');
+            return;
+        }
+        // Closed while the notes were read: onClose has destroyed the graph.
+        if (!this.cy) return;
+
+        const { entities: allEntities, connections: allConnections } = this.entityManager.getGraphData();
+        const entities = this.getEntitiesForActiveWorkspace(allEntities);
+        const isDefaultWorkspace = this.graphHost.getActiveGraphId() === 'default';
+        console.debug(`[GraphView] Found ${entities.length} workspace entities (${allEntities.length} in vault) and ${allConnections.length} connections`);
+
+        // Clear existing elements
+        this.cy.elements().remove();
+
+        // Track which nodes need layout (no saved position)
+        const nodesNeedingLayout: string[] = [];
+        const nodesWithSavedPositions: string[] = [];
+
+        // Add nodes with saved positions or mark for layout
+        const nodes = entities.map((entity, index) => {
+            const savedPos = this.nodePositionsCache.get(entity.id);
+            let position: { x: number; y: number };
+
+            if (savedPos) {
+                position = savedPos;
+                nodesWithSavedPositions.push(entity.id);
+            } else {
+                position = this.getNodePosition(index, Math.max(entities.length, 1));
+                nodesNeedingLayout.push(entity.id);
+            }
+
+            return {
+                data: this.buildNodeData(entity),
+                position: position,
+                classes: this.entityNodeClasses(this.entityHasCoordinates(entity)),
+            };
+        });
+
+        console.debug(`[GraphView] Nodes with saved positions: ${nodesWithSavedPositions.length}, nodes needing layout: ${nodesNeedingLayout.length}`);
+        if (nodesNeedingLayout.length > 0 && nodesNeedingLayout.length <= 5) {
+            console.debug(`[GraphView] Nodes needing layout:`, nodesNeedingLayout);
+        }
+        if (nodesWithSavedPositions.length > 0 && nodesWithSavedPositions.length <= 5) {
+            console.debug(`[GraphView] Nodes with saved positions:`, nodesWithSavedPositions);
+        }
+
+        // Build a set of valid entity IDs for edge validation
+        const entityIds = new Set(entities.map(e => e.id));
+
+        // Add edges — both ends must be visible on this workspace
+        const validConnections = allConnections.filter(conn => {
+            const hasSource = entityIds.has(conn.fromEntityId);
+            const hasTarget = entityIds.has(conn.toEntityId);
+            if (isDefaultWorkspace && (!hasSource || !hasTarget)) {
+                console.warn(`[GraphView] Skipping connection ${conn.id}: missing ${!hasSource ? 'source' : 'target'} entity`);
+                return false;
+            }
+            return hasSource && hasTarget;
+        });
+
+        const edges = validConnections.map(conn => ({
+            data: {
+                id: conn.id,
+                source: conn.fromEntityId,
+                target: conn.toEntityId,
+                label: conn.relationship
+            }
+        }));
+
+        this.cy.add([...nodes, ...edges]);
+
+        // Update cache with current positions
+        this.cy.nodes().forEach((node: NodeSingular) => {
+            const pos = node.position();
+            this.nodePositionsCache.set(node.id(), { x: pos.x, y: pos.y });
+        });
+
+        // Only run layout for new nodes if there are any
+        if (nodesNeedingLayout.length > 0 && nodesNeedingLayout.length < entities.length) {
+            // Run layout only on new nodes
+            const newNodes = this.cy.nodes().filter((node: NodeSingular) => nodesNeedingLayout.includes(node.id()));
+            if (newNodes.length > 0) {
+                newNodes.layout({
+                    name: 'cose',
+                    animate: true,
+                    animationDuration: 300,
+                    fit: false,
+                    nodeRepulsion: () => 8000,
+                    idealEdgeLength: () => 100
+                }).run();
+
+                // Save new positions after layout completes
+                setTimeout(() => {
+                    newNodes.forEach((node: NodeSingular) => {
+                        const pos = node.position();
+                        this.nodePositionsCache.set(node.id(), { x: pos.x, y: pos.y });
+                    });
+                    this.savePositionsDebounced();
+                }, 400);
+            }
+        } else if (nodesNeedingLayout.length === entities.length && entities.length > 0) {
+            // All nodes are new - run full layout
+            this.runLayout();
+            // Save positions after layout
+            setTimeout(() => {
+                if (this.cy) {
+                    this.cy.nodes().forEach((node: NodeSingular) => {
+                        const pos = node.position();
+                        this.nodePositionsCache.set(node.id(), { x: pos.x, y: pos.y });
+                    });
+                    this.savePositionsDebounced();
+                }
+            }, 600);
+        }
+
+        this.restoreSelection();
+
+        if (fit) this.fitToNodes();
+    }
+
+    /** Fit the view to the nodes; a no-op on an empty graph (an empty secondary workspace). */
+    private fitToNodes(): void {
+        if (this.cy && this.cy.nodes().length > 0) {
+            this.cy.fit();
+        }
+    }
+
+    /**
+     * After a rebuild: drop selected ids whose element is gone, and give the rest back
+     * the 'multi-selected' class that removing the elements took off. Without this the
+     * selection count and Delete Selected still included items no longer on the graph,
+     * while the ones still there showed no highlight.
+     */
+    private restoreSelection(): void {
+        const cy = this.cy;
+        if (!cy) return;
+        for (const ids of [this.selectedNodes, this.selectedEdges]) {
+            for (const id of [...ids]) {
+                const element = cy.getElementById(id);
+                if (element.length > 0) element.addClass('multi-selected');
+                else ids.delete(id);
+            }
+        }
+        this.updateSelectionUI();
+    }
+
+    /**
+     * Reload when entity notes change on disk: edited, renamed or deleted in the editor,
+     * the file tree, git or another window, or written by the Timeline and Map, which
+     * refresh only themselves. Those two views watched the vault; the graph showed
+     * stale entities until Refresh. Debounced as theirs are, and filtered with
+     * isGraphNotePath so a chat save does not rebuild the graph.
+     */
+    private registerVaultWatcher(): void {
+        const schedule = (path: string): void => {
+            if (!this.entityManager.isGraphNotePath(path)) return;
+            if (this.vaultRefreshTimer !== null) {
+                window.clearTimeout(this.vaultRefreshTimer);
+            }
+            this.vaultRefreshTimer = window.setTimeout(() => {
+                this.vaultRefreshTimer = null;
+                this.runVaultRefresh();
+            }, 400);
+        };
+        const onFile = (f: TAbstractFile): void => {
+            if (f instanceof TFile) schedule(f.path);
+        };
+
+        this.registerEvent(this.app.vault.on('modify', onFile));
+        this.registerEvent(this.app.vault.on('create', onFile));
+        this.registerEvent(this.app.vault.on('delete', onFile));
+        this.registerEvent(
+            this.app.vault.on('rename', (f, oldPath) => {
+                onFile(f);
+                if (typeof oldPath === 'string') schedule(oldPath);
+            }),
+        );
+    }
+
+    /**
+     * The watcher's refresh, without a fit. Held back while connection or box-select mode
+     * is on, since a rebuild mid-gesture replaces the elements the gesture is working on;
+     * leaving the mode runs it.
+     */
+    private runVaultRefresh(): void {
+        if (this.connectionMode || this.boxSelectMode) {
+            this.vaultRefreshDeferred = true;
+            return;
+        }
+        this.vaultRefreshDeferred = false;
+        void this.refreshWithSavedPositions({ fit: false });
+    }
+
+    /** Arrange nodes on a broad ring using Cytoscape's built-in circular layout. */
+    private runCircularLayout(): void {
+        if (!this.cy) return;
+
+        this.cy.layout({
+            name: 'circle',
+            animate: true,
+            animationDuration: 500,
+            fit: false,
+            padding: 120,
+            avoidOverlap: true,
+            nodeDimensionsIncludeLabels: true,
+            spacingFactor: 2,
+        }).run();
+    }
+
+    /**
+     * Arrange nodes from the two non-trivial eigenvectors of the normalized graph
+     * Laplacian. This keeps strongly connected nodes near each other while using the
+     * graph's global structure instead of pulling everything toward a single center.
+     */
+    private runSpectralLayout(): void {
+        if (!this.cy) return;
+
+        const nodes: NodeSingular[] = [];
+        this.cy.nodes().forEach((node) => nodes.push(node));
+        if (nodes.length < 3) {
+            this.runCircularLayout();
+            return;
+        }
+
+        const indexById = new Map<string, number>();
+        nodes.forEach((node, index) => indexById.set(node.id(), index));
+        const adjacency = nodes.map(() => new Map<number, number>());
+        let edgeCount = 0;
+        this.cy.edges().forEach((edge) => {
+            const source = indexById.get(String(edge.data('source')));
+            const target = indexById.get(String(edge.data('target')));
+            if (source === undefined || target === undefined || source === target) return;
+            adjacency[source].set(target, 1);
+            adjacency[target].set(source, 1);
+            edgeCount += 1;
+        });
+        if (edgeCount === 0) {
+            this.runCircularLayout();
+            return;
+        }
+
+        const degrees = adjacency.map((neighbors) => neighbors.size);
+        const degreeRoot = degrees.map((degree) => Math.sqrt(degree));
+        const multiplyLaplacian = (vector: number[]): number[] => vector.map((value, index) => {
+            let neighborSum = 0;
+            for (const [neighbor] of adjacency[index]) {
+                const denominator = degreeRoot[index] * degreeRoot[neighbor];
+                if (denominator > 0) neighborSum += vector[neighbor] / denominator;
+            }
+            return value - neighborSum;
+        });
+
+        const constantVector = this.normalizeVector([...degreeRoot]);
+        const first = this.findSmallestSpectralVector(multiplyLaplacian, nodes.length, [constantVector], 17);
+        const second = this.findSmallestSpectralVector(
+            multiplyLaplacian,
+            nodes.length,
+            [constantVector, first],
+            31,
+        );
+
+        const width = Math.max(900, this.container?.clientWidth || 0);
+        const height = Math.max(700, this.container?.clientHeight || 0);
+        const span = Math.max(900, Math.sqrt(nodes.length) * 190);
+        const xRange = this.vectorRange(first);
+        const yRange = this.vectorRange(second);
+        const positions: Record<string, { x: number; y: number }> = {};
+        nodes.forEach((node, index) => {
+            const x = (first[index] - xRange.min) / xRange.span - 0.5;
+            const y = (second[index] - yRange.min) / yRange.span - 0.5;
+            positions[node.id()] = {
+                x: width / 2 + x * span,
+                y: height / 2 + y * span,
+            };
+        });
+
+        this.cy.layout({
+            name: 'preset',
+            positions,
+            animate: true,
+            animationDuration: 500,
+            fit: false,
+        }).run();
+    }
+
+    private normalizeVector(vector: number[]): number[] {
+        const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+        if (norm < 1e-9) return vector.map(() => 0);
+        return vector.map((value) => value / norm);
+    }
+
+    private orthogonalizeVector(vector: number[], basis: number[][]): number[] {
+        const result = [...vector];
+        for (const b of basis) {
+            const projection = result.reduce((sum, value, index) => sum + value * b[index], 0);
+            for (let index = 0; index < result.length; index++) {
+                result[index] -= projection * b[index];
+            }
+        }
+        return result;
+    }
+
+    private findSmallestSpectralVector(
+        multiplyLaplacian: (vector: number[]) => number[],
+        size: number,
+        basis: number[][],
+        seed: number,
+    ): number[] {
+        let vector = Array.from({ length: size }, (_, index) =>
+            Math.sin((index + 1) * seed) + Math.cos((index + 1) * (seed + 7)),
+        );
+        vector = this.normalizeVector(this.orthogonalizeVector(vector, basis));
+        for (let iteration = 0; iteration < 500; iteration++) {
+            const laplacianVector = multiplyLaplacian(vector);
+            const next = vector.map((value, index) => value - 0.8 * laplacianVector[index]);
+            vector = this.normalizeVector(this.orthogonalizeVector(next, basis));
+        }
+        return vector;
+    }
+
+    private vectorRange(vector: number[]): { min: number; span: number } {
+        const min = Math.min(...vector);
+        const max = Math.max(...vector);
+        return { min, span: Math.max(max - min, 1e-9) };
+    }
+
+    /** Rearrange all nodes using the selected layout (resets positions). */
+    rearrangeGraph(layout: RearrangeLayout = this.rearrangeLayout): Promise<void> {
+        return new Promise((resolve) => {
+            if (!this.cy) {
+                resolve();
+                return;
+            }
+
+            // Clear saved positions
+            this.nodePositionsCache.clear();
+
+            if (layout === 'circle') {
+                this.runCircularLayout();
+            } else if (layout === 'spectral') {
+                this.runSpectralLayout();
+            } else {
+                this.runLayout({ spacious: true });
+            }
+
+            // Save new positions after layout completes
+            setTimeout(() => {
+                if (this.cy) {
+                    this.cy.nodes().forEach((node: NodeSingular) => {
+                        const pos = node.position();
+                        this.nodePositionsCache.set(node.id(), { x: pos.x, y: pos.y });
+                    });
+                    this.savePositions();
+                    new Notice('Graph rearranged');
+                }
+                resolve();
+            }, 600);
+        });
+    }
+
+    /**
+     * Show confirmation dialog before rearranging.
+     */
+    private showRearrangeConfirmation(): Promise<boolean> {
+        return new Promise((resolve) => {
+            const modal = document.createElement('div');
+            modal.className = 'modal-container graph_copilot-rearrange-modal';
+            modal.setCssProps({
+                position: 'fixed',
+                top: '0',
+                left: '0',
+                width: '100%',
+                height: '100%',
+                background: 'rgba(0, 0, 0, 0.5)',
+                display: 'flex',
+                'align-items': 'center',
+                'justify-content': 'center',
+                'z-index': '1000'
+            });
+
+            const dialog = document.createElement('div');
+            dialog.className = 'modal';
+            dialog.setCssProps({
+                background: 'var(--background-primary)',
+                'border-radius': '8px',
+                padding: '20px',
+                'max-width': '400px',
+                'box-shadow': '0 4px 20px rgba(0, 0, 0, 0.3)'
+            });
+
+            const title = document.createElement('h3');
+            title.textContent = 'Rearrange graph?';
+            title.setCssProps({ 'margin-top': '0' });
+            dialog.appendChild(title);
+
+            const message = document.createElement('p');
+            message.textContent = 'Are you sure you want to rearrange all entities? This will reset their current positions.';
+            dialog.appendChild(message);
+
+            const buttonContainer = document.createElement('div');
+            buttonContainer.setCssProps({ display: 'flex', 'justify-content': 'flex-end', gap: '10px', 'margin-top': '20px' });
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.textContent = 'Cancel';
+            cancelBtn.onclick = () => {
+                modal.remove();
+                resolve(false);
+            };
+            buttonContainer.appendChild(cancelBtn);
+
+            const confirmBtn = document.createElement('button');
+            confirmBtn.textContent = 'Rearrange';
+            confirmBtn.className = 'mod-cta';
+            confirmBtn.setCssProps({ background: 'var(--interactive-accent)', color: 'var(--text-on-accent)' });
+            confirmBtn.onclick = () => {
+                modal.remove();
+                resolve(true);
+            };
+            buttonContainer.appendChild(confirmBtn);
+
+            dialog.appendChild(buttonContainer);
+            modal.appendChild(dialog);
+            document.body.appendChild(modal);
+
+            // Close on backdrop click
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                    resolve(false);
+                }
+            });
+        });
+    }
+
+    /**
+     * Truncate label for display.
+     */
+    private truncateLabel(label: unknown, maxLength: number = 20): string {
+        // Ensure label is a string
+        const strLabel = label != null ? String(label) : '';
+        if (strLabel.length <= maxLength) return strLabel;
+        return strLabel.substring(0, maxLength - 3) + '...';
+    }
+
+    /**
+     * Get initial position for a node.
+     */
+    private getNodePosition(index: number, total: number): { x: number; y: number } {
+        const radius = Math.max(200, total * 30);
+        const angle = (2 * Math.PI * index) / total;
+        return {
+            x: radius * Math.cos(angle) + 400,
+            y: radius * Math.sin(angle) + 300
+        };
+    }
+
+    /**
+     * Load saved node positions from persistent storage.
+     */
+    private async loadSavedPositions(): Promise<void> {
+        // The cache is the active workspace's from here on, even when there is no file yet.
+        this.positionsGraphId = this.graphHost.getActiveGraphId();
+        try {
+            console.debug(`[GraphView] Looking for positions file at: ${NODE_POSITIONS_FILE} `);
+            const file = this.app.vault.getAbstractFileByPath(NODE_POSITIONS_FILE);
+            if (file instanceof TFile) {
+                const content = await this.app.vault.read(file);
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const raw = JSON.parse(content) as any;
+                if (raw && (raw.version === 2 || raw.version === 3) && raw.byGraph && typeof raw.byGraph === 'object') {
+                    this.allGraphPositions = raw.byGraph as Record<string, Record<string, NodePosition>>;
+                } else {
+                    // Legacy: flat map of nodeId → position → single default graph
+                    const legacy = raw as Record<string, NodePosition>;
+                    this.allGraphPositions = { default: legacy || {} };
+                }
+
+                // v3 stores membership explicitly. Anything older gets it derived from
+                // position keys, which is exactly what the old implicit rule meant --
+                // so an existing vault keeps the same workspace contents.
+                this.allGraphMembers = {};
+                const storedMembers = raw?.version === 3 ? raw.membersByGraph : null;
+                for (const graphId of Object.keys(this.allGraphPositions)) {
+                    const explicit = storedMembers?.[graphId] as string[] | undefined;
+                    this.allGraphMembers[graphId] = new Set(
+                        explicit ?? Object.keys(this.allGraphPositions[graphId] ?? {}),
+                    );
+                }
+                for (const graphId of Object.keys(storedMembers ?? {})) {
+                    if (!this.allGraphMembers[graphId]) {
+                        this.allGraphMembers[graphId] = new Set(storedMembers[graphId] as string[]);
+                    }
+                }
+                const activeId = this.positionsGraphId;
+                const slice = this.allGraphPositions[activeId] || {};
+                this.nodePositionsCache.clear();
+                for (const [nodeId, pos] of Object.entries(slice)) {
+                    this.nodePositionsCache.set(nodeId, pos);
+                }
+                if (this.graphSelectEl) {
+                    this.populateGraphSelect();
+                    this.graphSelectEl.value = activeId;
+                }
+                console.debug(`[GraphView] Loaded ${this.nodePositionsCache.size} saved node positions for graph "${activeId}"`);
+            } else {
+                console.debug('[GraphView] Positions file not found');
+            }
+        } catch (error) {
+            console.debug('[GraphView] No saved positions found, starting fresh:', error);
+        }
+    }
+
+    /**
+     * Save node positions to persistent storage.
+     */
+    private async savePositions(): Promise<void> {
+        try {
+            // positionsGraphId, not the host's active id: a debounced save that lands after
+            // a switch has begun must not file the old cache under the new workspace.
+            const activeId = this.positionsGraphId;
+            this.allGraphPositions[activeId] = Object.fromEntries(this.nodePositionsCache);
+
+            // Positioning a node on a named graph still implies membership -- that is how
+            // nodes join a workspace today -- but membership now survives losing the position.
+            if (activeId !== 'default') {
+                const members = this.allGraphMembers[activeId] ?? new Set<string>();
+                for (const nodeId of this.nodePositionsCache.keys()) members.add(nodeId);
+                this.allGraphMembers[activeId] = members;
+            }
+
+            const membersByGraph: Record<string, string[]> = {};
+            for (const [graphId, members] of Object.entries(this.allGraphMembers)) {
+                membersByGraph[graphId] = [...members];
+            }
+            const content = JSON.stringify(
+                { version: 3, byGraph: this.allGraphPositions, membersByGraph },
+                null, 2,
+            );
+            console.debug(`[GraphView] Saving graph "${activeId}" (${this.nodePositionsCache.size} nodes) to ${NODE_POSITIONS_FILE}`);
+
+            // Ensure directory exists first
+            const dir = NODE_POSITIONS_FILE.substring(0, NODE_POSITIONS_FILE.lastIndexOf('/'));
+            try {
+                const dirExists = this.app.vault.getAbstractFileByPath(dir);
+                if (!dirExists) {
+                    await this.app.vault.createFolder(dir);
+                }
+            } catch (e) {
+                // Folder may already exist, ignore error
+            }
+
+            // Check if file exists and modify or create accordingly
+            const file = this.app.vault.getAbstractFileByPath(NODE_POSITIONS_FILE);
+
+            if (file instanceof TFile) {
+                await this.app.vault.modify(file, content);
+                console.debug('[GraphView] Positions saved successfully (modified existing file)');
+            } else {
+                // File doesn't exist, try to create it
+                try {
+                    await this.app.vault.create(NODE_POSITIONS_FILE, content);
+                    console.debug('[GraphView] Positions saved successfully (created new file)');
+                } catch (createError: unknown) {
+                    // If file was created between our check and create (race condition),
+                    // try to modify it instead
+                    const errorMessage = (createError as Error).message;
+                    if (errorMessage?.includes('already exists')) {
+                        const existingFile = this.app.vault.getAbstractFileByPath(NODE_POSITIONS_FILE);
+                        if (existingFile instanceof TFile) {
+                            await this.app.vault.modify(existingFile, content);
+                            console.debug('[GraphView] Positions saved successfully (modified after race condition)');
+                        }
+                    } else {
+                        throw createError;
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('[GraphView] Failed to save positions:', error);
+        }
+    }
+
+    /**
+     * Save positions with debouncing to avoid too many writes.
+     */
+    private savePositionsDebounced = this.debounce(() => this.savePositions(), 1000);
+
+    /**
+     * Simple debounce helper.
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T {
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+        return ((...args: Parameters<T>) => {
+            if (timeoutId) clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => fn(...args), delay);
+        }) as T;
+    }
+
+    /**
+     * Run the force-directed layout.
+     */
+    runLayout(options: { spacious?: boolean } = {}): void {
+        if (!this.cy) return;
+
+        const spacious = options.spacious === true;
+
+        this.cy.layout({
+            name: 'cose',
+            animate: true,
+            animationDuration: 500,
+            // Larger values spread nodes farther apart when the user explicitly rearranges.
+            // The low gravity and component spacing keep the result decentralized instead of
+            // pulling every connected cluster toward one dense central mass.
+            nodeRepulsion: () => spacious ? 32000 : 8000,
+            idealEdgeLength: () => spacious ? 280 : 100,
+            edgeElasticity: () => spacious ? 60 : 100,
+            nestingFactor: spacious ? 1.5 : 1.2,
+            gravity: spacious ? 0.04 : 0.25,
+            componentSpacing: spacious ? 240 : 40,
+            nodeOverlap: spacious ? 30 : 10,
+            numIter: spacious ? 1400 : 1000,
+            initialTemp: spacious ? 600 : 200,
+            coolingFactor: 0.95,
+            minTemp: 1.0,
+            // Keep the larger coordinate space instead of immediately scaling it back down
+            // to the viewport. The toolbar's Fit button remains available when needed.
+            fit: !spacious,
+        }).run();
+    }
+
+    /**
+     * Perform undo operation.
+     */
+    private async performUndo(): Promise<void> {
+        if (!this.historyManager.canUndo()) {
+            new Notice('Nothing to undo');
+            return;
+        }
+
+        const description = this.historyManager.getLastUndoDescription();
+        const success = await this.historyManager.undo();
+
+        if (success) {
+            new Notice(`Undo: ${description} `);
+        } else {
+            new Notice('Undo failed');
+        }
+    }
+
+    /**
+     * Perform redo operation.
+     */
+    private async performRedo(): Promise<void> {
+        if (!this.historyManager.canRedo()) {
+            new Notice('Nothing to redo');
+            return;
+        }
+
+        const description = this.historyManager.getLastRedoDescription();
+        const success = await this.historyManager.redo();
+
+        if (success) {
+            new Notice(`Redo: ${description} `);
+        } else {
+            new Notice('Redo failed');
+        }
+    }
+
+    /**
+     * Update the history UI (undo/redo buttons and panel).
+     */
+    private updateHistoryUI(): void {
+        // Update undo button
+        if (this.undoBtn) {
+            this.undoBtn.disabled = !this.historyManager.canUndo();
+            const undoDesc = this.historyManager.getLastUndoDescription();
+            this.undoBtn.title = undoDesc ? `Undo: ${undoDesc} ` : 'Nothing to undo';
+        }
+
+        // Update redo button
+        if (this.redoBtn) {
+            this.redoBtn.disabled = !this.historyManager.canRedo();
+            const redoDesc = this.historyManager.getLastRedoDescription();
+            this.redoBtn.title = redoDesc ? `Redo: ${redoDesc} ` : 'Nothing to redo';
+        }
+
+        // Update history panel if visible
+        if (this.historyPanelVisible && this.historyPanel) {
+            this.renderHistoryPanelContent();
+        }
+    }
+
+    /**
+     * Toggle the history panel visibility.
+     */
+    private toggleHistoryPanel(): void {
+        if (this.historyPanelVisible) {
+            this.hideHistoryPanel();
+        } else {
+            this.showHistoryPanel();
+        }
+    }
+
+    /**
+     * Show the history panel.
+     */
+    private showHistoryPanel(): void {
+        if (this.historyPanel) {
+            this.historyPanel.remove();
+        }
+
+        this.historyPanel = document.createElement('div');
+        this.historyPanel.className = 'graph_copilot-history-panel';
+        this.historyPanel.setCssProps({
+            position: 'absolute',
+            top: '60px',
+            right: '10px',
+            width: '280px',
+            'max-height': '400px',
+            background: 'var(--background-primary)',
+            border: '1px solid var(--background-modifier-border)',
+            'border-radius': '8px',
+            'box-shadow': '0 4px 12px rgba(0,0,0,0.15)',
+            'z-index': '99',
+            overflow: 'hidden',
+            display: 'flex',
+            'flex-direction': 'column'
+        });
+
+        // Header
+        const header = document.createElement('div');
+        header.setCssProps({
+            padding: '10px 12px',
+            'font-weight': 'bold',
+            'border-bottom': '1px solid var(--background-modifier-border)',
+            display: 'flex',
+            'justify-content': 'space-between',
+            'align-items': 'center'
+        });
+        const historyTitle = header.createEl('span', { text: 'Edit history' });
+        historyTitle.setCssProps({ 'font-weight': 'bold' });
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '✕';
+        closeBtn.setCssProps({
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            'font-size': '14px',
+            color: 'var(--text-muted)'
+        });
+        closeBtn.onclick = () => this.hideHistoryPanel();
+        header.appendChild(closeBtn);
+        this.historyPanel.appendChild(header);
+
+        // Content container
+        const content = document.createElement('div');
+        content.className = 'graph_copilot-history-content';
+        content.setCssProps({
+            flex: '1',
+            'overflow-y': 'auto',
+            padding: '8px'
+        });
+        this.historyPanel.appendChild(content);
+
+        this.container?.parentElement?.appendChild(this.historyPanel);
+        this.historyPanelVisible = true;
+        this.renderHistoryPanelContent();
+    }
+
+    /**
+     * Hide the history panel.
+     */
+    private hideHistoryPanel(): void {
+        if (this.historyPanel) {
+            this.historyPanel.remove();
+            this.historyPanel = null;
+        }
+        this.historyPanelVisible = false;
+    }
+
+    /**
+     * Render the history panel content.
+     */
+    private renderHistoryPanelContent(): void {
+        if (!this.historyPanel) return;
+
+        const content = this.historyPanel.querySelector('.graph_copilot-history-content');
+        if (!content) return;
+
+        content.innerHTML = '';
+
+        const undoStack = this.historyManager.getUndoStack();
+        const redoStack = this.historyManager.getRedoStack();
+
+        if (undoStack.length === 0 && redoStack.length === 0) {
+            const emptyMsg = document.createElement('div');
+            emptyMsg.setCssProps({
+                'text-align': 'center',
+                color: 'var(--text-muted)',
+                padding: '20px',
+                'font-size': '13px'
+            });
+            emptyMsg.textContent = 'No history yet';
+            content.appendChild(emptyMsg);
+            return;
+        }
+
+        // Show redo stack (future actions) - reversed order
+        if (redoStack.length > 0) {
+            const redoHeader = document.createElement('div');
+            redoHeader.setCssProps({
+                'font-size': '11px',
+                color: 'var(--text-muted)',
+                padding: '4px 8px',
+                'text-transform': 'uppercase'
+            });
+            redoHeader.textContent = 'Redo stack';
+            content.appendChild(redoHeader);
+
+            [...redoStack].reverse().forEach((entry, index) => {
+                const item = this.createHistoryItem(entry, 'redo', index);
+                content.appendChild(item);
+            });
+        }
+
+        // Current position marker
+        const currentMarker = document.createElement('div');
+        currentMarker.setCssProps({
+            padding: '6px 8px',
+            background: 'var(--interactive-accent)',
+            color: 'var(--text-on-accent)',
+            'border-radius': '4px',
+            'font-size': '12px',
+            'text-align': 'center',
+            margin: '4px 0'
+        });
+        currentMarker.textContent = '▶ current state';
+        content.appendChild(currentMarker);
+
+        // Show undo stack (past actions) - reversed order (most recent first)
+        if (undoStack.length > 0) {
+            const undoHeader = document.createElement('div');
+            undoHeader.setCssProps({
+                'font-size': '11px',
+                color: 'var(--text-muted)',
+                padding: '4px 8px',
+                'text-transform': 'uppercase'
+            });
+            undoHeader.textContent = 'Undo stack';
+            content.appendChild(undoHeader);
+
+            [...undoStack].reverse().forEach((entry, index) => {
+                const item = this.createHistoryItem(entry, 'undo', index);
+                content.appendChild(item);
+            });
+        }
+    }
+
+    /**
+     * Create a history item element.
+     */
+    private createHistoryItem(entry: HistoryEntry, type: 'undo' | 'redo', index: number): HTMLElement {
+        const item = document.createElement('div');
+        item.setCssProps({
+            padding: '8px',
+            margin: '2px 0',
+            background: 'var(--background-secondary)',
+            'border-radius': '4px',
+            cursor: 'pointer',
+            'font-size': '12px',
+            opacity: type === 'redo' ? '0.6' : '1'
+        });
+
+        const icon = this.getHistoryIcon(entry.type);
+        const time = this.formatTime(entry.timestamp);
+
+        const contentDiv = item.createDiv();
+        contentDiv.setCssProps({ display: 'flex', 'justify-content': 'space-between', 'align-items': 'center' });
+
+        const leftSpan = contentDiv.createSpan();
+        leftSpan.setText(`${icon} ${entry.description}`);
+
+        const rightSpan = contentDiv.createSpan();
+        rightSpan.setCssProps({ 'font-size': '10px', color: 'var(--text-muted)' });
+        rightSpan.setText(time);
+
+        item.onmouseenter = () => item.setCssProps({ background: 'var(--background-modifier-hover)' });
+        item.onmouseleave = () => item.setCssProps({ background: 'var(--background-secondary)' });
+
+        item.onclick = async () => {
+            if (type === 'undo') {
+                // Undo to this point
+                await this.historyManager.undoToEntry(entry.id);
+            } else {
+                // Redo to this point
+                await this.historyManager.redoToEntry(entry.id);
+            }
+        };
+
+        return item;
+    }
+
+    /**
+     * Get icon for history operation type.
+     */
+    private getHistoryIcon(type: HistoryOperationType): string {
+        switch (type) {
+            case HistoryOperationType.ENTITY_CREATE: return '➕';
+            case HistoryOperationType.ENTITY_DELETE: return '🗑';
+            case HistoryOperationType.ENTITY_EDIT: return '✏️';
+            case HistoryOperationType.RELATIONSHIP_CREATE: return '🔗';
+            case HistoryOperationType.RELATIONSHIP_DELETE: return '✂️';
+            case HistoryOperationType.NODE_POSITION_CHANGE: return '↔️';
+            case HistoryOperationType.BATCH_OPERATION: return '📦';
+            default: return '•';
+        }
+    }
+
+    /**
+     * Format timestamp for display.
+     */
+    private formatTime(date: Date): string {
+        const now = new Date();
+        const diff = now.getTime() - date.getTime();
+
+        if (diff < 60000) return 'just now';
+        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+        if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+        return date.toLocaleDateString();
+    }
+
+    /**
+     * Add entity to graph without triggering layout.
+     */
+    private addEntityToGraphPreserveLayout(entity: Entity): void {
+        if (!this.cy) return;
+
+        const existingNode = this.cy.getElementById(entity.id);
+        if (existingNode.length > 0) return;
+
+        const cachedPos = this.nodePositionsCache.get(entity.id);
+        const position = cachedPos || {
+            x: Math.random() * 400 + 100,
+            y: Math.random() * 400 + 100
+        };
+
+        this.cy.add({
+            data: this.buildNodeData(entity),
+            classes: this.entityNodeClasses(this.entityHasCoordinates(entity)),
+            position: position,
+        });
+
+        this.joinWorkspace(entity.id, position);
+    }
+
+    /**
+     * Update entity in graph.
+     */
+    private updateEntityInGraph(entity: Entity): void {
+        if (!this.cy) return;
+
+        const node = this.cy.getElementById(entity.id);
+        if (node.length === 0) return;
+
+        // Every field the builder produces, so an entity that gains a picture updates in
+        // place. `id` is skipped: cytoscape will not let it be reassigned, and it has not
+        // changed. Setting data() is also what re-runs the style mappers.
+        const data = this.buildNodeData(entity);
+        for (const [key, value] of Object.entries(data)) {
+            if (key === 'id') continue;
+            node.data(key, value);
+        }
+
+        node.removeClass('has-coordinates');
+        if (data.hasCoordinates) node.addClass('has-coordinates');
+    }
+
+    /**
+     * Update connection in graph.
+     */
+    private updateConnectionInGraph(connection: Connection): void {
+        if (!this.cy) return;
+
+        const edge = this.cy.getElementById(connection.id);
+        if (edge.length === 0) return;
+
+        // Update edge data
+        edge.data('label', connection.relationship);
+
+        // If the connection has additional properties, we could show them in a tooltip
+        // For now, just update the label
+    }
+
+    /**
+     * Add connection to graph without triggering layout.
+     */
+    private addConnectionToGraph(connection: Connection): void {
+        if (!this.cy) return;
+
+        const existingEdge = this.cy.getElementById(connection.id);
+        if (existingEdge.length > 0) return;
+
+        this.cy.add({
+            data: {
+                id: connection.id,
+                source: connection.fromEntityId,
+                target: connection.toEntityId,
+                label: connection.relationship
+            }
+        });
+    }
+
+    /**
+     * Geolocate a location entity (Location, Address or GeoLocation) by converting its address to coordinates.
+     */
+    private async geolocateEntity(entityId: string): Promise<void> {
+        const entity = this.entityManager.getEntity(entityId);
+        if (!entity) {
+            new Notice('Entity not found');
+            return;
+        }
+
+        // The map's own field picker, so an `address`-typed or GeoLocation note is read
+        // the way the map's geolocate dialog reads it instead of falling through to "no
+        // address information".
+        const fields = geocodeFieldsFor(entity);
+        const { address, city, state, country } = fields;
+
+        // Validate we have at least some address information
+        if (!address && !city && !country) {
+            new Notice('No address information found. Please add address details to the entity first.');
+            return;
+        }
+
+        try {
+            new Notice('Geocoding address...');
+
+            const result = await this.geocodingService.geocodeAddressWithRetry(
+                address,
+                city,
+                state,
+                country,
+                (attempt, maxAttempts, delaySeconds) => {
+                    new Notice(`Network error, retrying in ${delaySeconds}s... (attempt ${attempt} / ${maxAttempts})`);
+                }
+            );
+
+            // Coordinates, and any address components the note left blank.
+            const updatedEntity = await this.entityManager.updateEntity(entityId, geocodeResultUpdates(entity, fields, result));
+            if (!updatedEntity) {
+                // Found, but not written: the note is locked or the entity is gone.
+                new Notice(`Could not save the coordinates of ${entity.label}.`);
+                return;
+            }
+
+            // Update the node in the graph
+            this.updateEntityInGraph(updatedEntity);
+
+            new Notice(`✓ Geocoded: ${result.displayName} \nLat: ${result.latitude.toFixed(4)}, Lng: ${result.longitude.toFixed(4)} \nConfidence: ${result.confidence} `);
+
+        } catch (error) {
+            if (error instanceof GeocodingError) {
+                new Notice(`Geocoding failed: ${error.message} `);
+            } else {
+                console.error('[GraphView] Geocoding error:', error);
+                new Notice('Failed to geocode address. Please try again.');
+            }
+        }
+    }
+}

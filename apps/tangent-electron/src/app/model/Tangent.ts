@@ -1,0 +1,372 @@
+import { WritableStore, StoreUndoStack, CachingStore, ReadableStore, ForwardingStore } from 'common/stores'
+import type WorkspaceViewState from "./WorkspaceViewState"
+
+import type { TreeChange, TreeNode } from 'common/trees'
+import type TangentMap from 'common/tangentMap/TangentMap'
+import ViewStateContext from './nodeViewStates/ViewStateContext'
+import { osintViewStateCreator } from 'osint/integration/view-states'
+import { FolderViewState, ImageViewState, NoteViewState, type NodeViewState } from './nodeViewStates'
+import { derived } from 'svelte/store'
+import type LensViewState from './nodeViewStates/LensViewState'
+import DataFile from './DataFile'
+import type Session from 'common/dataTypes/Session'
+import TangentInfo, { FocusLevel, filename } from 'common/dataTypes/TangentInfo'
+import paths from 'common/paths'
+import { type UpdateThreadOptions, getSessionFilename } from 'common/dataTypes/Session'
+import NoteFile from './NoteFile'
+import { NoteDetailMode } from './nodeViewStates/NoteViewState'
+import Folder from './Folder'
+import Tag from './Tag'
+import TagViewState from './nodeViewStates/TagViewState'
+import EmbedFile from './EmbedFile'
+import { EmbedType } from 'common/embedding'
+import QueryInfo from 'common/dataTypes/QueryInfo'
+import QueryViewState from './nodeViewStates/QueryViewState'
+import AudioVideoViewState from './nodeViewStates/AudioVideoViewState'
+import PdfViewState from './nodeViewStates/PdfViewState'
+
+export default class Tangent {
+	_state: WorkspaceViewState
+
+	tangentName: string
+	tangentInfoFile: DataFile
+	tangentInfo = new WritableStore<TangentInfo>(null)
+	tangentUnsubs: (() => void)[] = []
+
+	openSessions = new WritableStore<Session[]>([])
+	activeSession = new WritableStore<Session>(null)
+
+	focusLevel = new ForwardingStore<FocusLevel>(FocusLevel.Thread)
+
+	map: ReadableStore<TangentMap>
+	context: ViewStateContext
+
+	thread: ReadableStore<TreeNode[]>
+	currentNode: ReadableStore<TreeNode>
+
+	threadLenses: CachingStore<LensViewState[]>
+	currentThreadState: CachingStore<NodeViewState>
+
+	debug = {
+		sessionTimeout: -1
+	}
+
+	constructor(state: WorkspaceViewState, tangentName: string) {
+		this._state = state
+		this.tangentName = tangentName
+
+		this.thread = new CachingStore(derived(this.activeSession, (session, set) => {
+			if (session) {
+				return session.currentThread.subscribe(th => set(th?.thread ?? []))
+			}
+			set([])
+		}), (o, n) => this.onThreadChanged(o, n))
+
+		this.currentNode = new CachingStore(derived(this.activeSession, (session, set) => {
+			return session?.currentThread.subscribe(th => set(th?.currentNode))
+		}))
+
+		this.map = new CachingStore(derived(this.activeSession, (session) => {
+			return session?.map
+		}))
+
+		this.threadLenses = new CachingStore(derived(this.thread, (thread, set) => {
+			return derived(thread.map(t => this.context.getState(t)?.currentLens), lenses => {
+				const result: LensViewState[] = []
+				let hasRepresented = false
+				for (const lens of lenses) {
+					if (lens === null) break
+					if (result.length !== 0) {
+						const last = result[result.length - 1]
+						if (!hasRepresented && last.willRepresent && last.willRepresent(lens.parent.node)) {
+							// Don't push that one, and don't allow double representation
+							hasRepresented = true
+							continue
+						}
+					}
+					result.push(lens)
+					hasRepresented = false
+				}
+				return result
+			}).subscribe(set)
+		}))
+
+		this.currentThreadState = new CachingStore(derived(
+			[this.threadLenses, this.currentNode],
+			([lenses, currentNode]) => {
+				for (const lens of lenses) {
+					if (lens?.parent.node === currentNode || lens?.currentlyRepresenting === currentNode) {
+						return lens.parent
+					}
+				}
+			})
+		)
+
+		this.context = new ViewStateContext(state.workspace, this)
+		this.context.creators = [
+			// OSINT Copilot's views. Declines anything that is not one of its file types,
+			// so OSINT Copilot's own handling of notes, folders, embeds and queries is untouched.
+			osintViewStateCreator as any,
+			(context, node, reference) => {
+				if (node instanceof NoteFile) {
+					const noteViewState = new NoteViewState(context, node, NoteDetailMode.All)
+					if (reference?.annotations) {
+						noteViewState.setAnnotations(reference.annotations)
+					}
+					return noteViewState
+				}
+
+				if (node instanceof Folder) {
+					return new FolderViewState(context, node)
+				}
+		
+				if (node instanceof Tag) {
+					return new TagViewState(context, node)
+				}
+		
+				if (node instanceof EmbedFile) {
+					switch (node.embedType) {
+						case EmbedType.Image:
+							return new ImageViewState(node)
+						case EmbedType.Audio:
+						case EmbedType.Video:
+							return new AudioVideoViewState(context, node)
+						case EmbedType.PDF:
+							return new PdfViewState(node)
+					}
+				}
+		
+				if (node instanceof DataFile) {
+					if (QueryInfo.isType(null, node)) {
+						return new QueryViewState(context, node)
+					}
+				}
+			}
+		]
+	}
+
+	async startup() {
+		const workspace = this._state.workspace
+
+		if (!this.tangentName) {
+			console.error('No tangent name set!')
+			return
+		}
+
+		const relativeTangentDir = `.tangent/tangents/${this.tangentName}`
+		
+		this.tangentInfoFile = workspace.commands.createNewFile.execute({
+			relativePath: paths.join(relativeTangentDir, filename),
+			// Use case insensitivity so that case differences in the tangent name have no effect
+			creationMode: 'createOrOpenCaseInsensitive',
+			updateSelection: false
+		}) as DataFile
+
+		const tangentInfo = await this.tangentInfoFile.loadData<TangentInfo>()
+
+		this.tangentInfo.set(tangentInfo)
+
+		this.focusLevel.forwardFrom(tangentInfo.focusLevel)
+
+		let startupTasks: Promise<void>[] = []
+
+		this.tangentUnsubs.push(tangentInfo.activeSession.subscribe((file, oldFile) => {
+			if (oldFile) {
+				(oldFile as DataFile).dropFile()
+			}
+			if (file) {
+				startupTasks.push((file as DataFile).loadData<Session>()
+					.then(session => {
+						this.activeSession.set(session)
+					})
+					.catch(e => console.error('Session loading failed', e))
+				)
+			}
+			else {
+				this.activeSession.set(null)
+			}
+		}))
+
+		this.tangentUnsubs.push(tangentInfo.openSessions.subscribe((files, oldFiles) => {
+			if (oldFiles) {
+				oldFiles.forEach(f => (f as DataFile).dropFile())
+			}
+			if (files) {
+				startupTasks.push(
+					Promise.all(files.map(f => (f as DataFile).loadData<Session>()))
+						.then(sessions => this.openSessions.set(sessions))
+						.catch(e => console.error('Session loading failed', e))
+				)
+			}
+			else {
+				this.openSessions.set([])
+			}
+		}))
+
+		if (!tangentInfo.activeSession.value) {
+			// Create a new session
+			const newSessionFile = this.createSession()
+
+			tangentInfo.openSessions.add(newSessionFile)
+			tangentInfo.activeSession.set(newSessionFile)
+		}
+		else if (tangentInfo.openSessions.length === 0) {
+			// Make sure the active session is in the open sessions list
+			tangentInfo.openSessions.add(tangentInfo.activeSession.value)
+		}
+
+		// check for duplicates
+		{
+			const set = new Set<TreeNode>()
+			for (let index = 0; index < tangentInfo.openSessions.length; index++) {
+				const item = tangentInfo.openSessions.get(index) 
+				if (set.has(item)) {
+					console.warn('Removing duplicate session:', item.path)
+					tangentInfo.openSessions.splice(index, 1)
+					index--
+				}
+				else {
+					set.add(item)
+				}
+			}
+		}
+
+		if (startupTasks.length == 0) {
+			console.error('OSINT Copilot did not initialize session startup correctly!')
+		}
+		
+		return Promise.all(startupTasks)
+	}
+
+	createSession(followUp: (session: Session) => void = null) {
+		const sessionFilename = getSessionFilename()
+		console.log('Creating new session: ', sessionFilename)
+		const relativeTangentDir = `.tangent/tangents/${this.tangentName}`
+		const newSessionFile = this._state.workspace.commands.createNewFile.execute({
+			relativePath: paths.join(relativeTangentDir, 'sessions', sessionFilename),
+			creationMode: 'createOrOpen',
+			updateSelection: false
+		}) as DataFile
+
+		if (followUp) {
+			newSessionFile.loadData<Session>().then(session => {
+				followUp(session)
+				newSessionFile.dropFile()
+			})
+		}
+
+		return newSessionFile
+	}
+
+	/**
+	 * Updates the current node and modifies the thread so that from and to match.
+	 * @param options.currentNode The new current node of the thread.
+	 * @param opts.from The node the new current node will connect from (if any).
+	 * @param options.to The node the new current node will connect to (if any).
+	 */
+	updateThread(opts: { from?: TreeNode, currentNode: TreeNode, to?: TreeNode })
+	/**
+	 * Updates the current thread and sets a new current node.
+	 * @param opts.thread The new thread of nodes to set. Pass 'retain' to use the current thread.
+	 * @param opts.currentNode The new node, or the index of the new node in the given thread.
+	 * 		If not supplied, the current node is the same as the old current node if in the new thread
+	 * 		or is the last node in the thread.
+	 */
+	updateThread(opts: { thread: TreeNode[] | 'retain', currentNode?: TreeNode | number })
+	updateThread(options: UpdateThreadOptions)
+	updateThread(options: UpdateThreadOptions) {
+		const session = this.activeSession.value
+		if (session) {
+
+			const nextHistoryItem = session.optionsToThreadItem(options)
+			if (session === this.activeSession.value && !session.willItemChangeState(nextHistoryItem)) {
+				// No need to push state or create a new session
+				return
+			}
+
+			const now = new Date()
+			const { last } = session.getDateRange()
+			
+			// `last` can be null if there is no content!
+			const diff = now.getTime() - (last ?? now).getTime()
+			const newSessionDelta = this.debug.sessionTimeout > 0
+				? this.debug.sessionTimeout
+				: 1000 * 60 * 60 * 8 // 8 Hours
+
+			if (diff >= newSessionDelta) {
+
+				const tangentInfo = this.tangentInfo.value
+				const store = this._state.workspace.directoryStore
+				const previousSessionPath = store.pathToPortablePath(tangentInfo.activeSession.value?.path) ?? ''
+
+				// Seed the new session with the current state if the update request requires continuity
+				const injectedHistory = (() => {
+					const currentThread = this.thread.value
+
+					if (options.thread && Array.isArray(options.thread)) return false
+
+					if (options.from !== 'retain' && currentThread.includes(options.from)) return true
+					if (options.to !== 'retain' && currentThread.includes(options.to)) return true
+
+					if (typeof options.currentNode !== 'number' && currentThread.includes(options.currentNode)) {
+						return true
+					}
+
+					return false
+				})() ? this.activeSession.value.currentThread.value : null
+
+				const newSessionFile = this.createSession(newSession => {
+					newSession.previousSession.set(previousSessionPath)
+					if (injectedHistory) {
+						newSession.addThreadHistory(injectedHistory)
+					}
+					newSession.updateThread(options)
+				})
+				
+				tangentInfo.openSessions.addUnique(newSessionFile)
+				tangentInfo.activeSession.set(newSessionFile)
+			}
+			else {
+				// Use the previously computed history item
+				session.addThreadHistory(nextHistoryItem)
+			}
+		}
+		else {
+			console.error('Cannot set current node without an active session!')
+		}
+	}
+
+	onTreeChange(change: TreeChange) {
+		// No need to update the active session; it should be in the "open sessions" list.
+		for (const session of this.openSessions.value) {
+			session.onTreeChange(change)
+		}
+
+		this.context.onTreeChange(change)
+	}
+
+	onThreadChanged(oldValue: TreeNode[], value: TreeNode[]) {
+		const oldValues = oldValue?.filter(n => !value?.includes(n)) || []
+		const newValues = value?.filter(n => !oldValue?.includes(n)) || []
+
+		for (const node of oldValues) {
+			this.context.dropState(node)
+		}
+
+		for (const node of newValues) {
+			const viewState = this.context.getState(node, true)
+			if (!viewState) {
+				console.error('Did not create view state for:', node)
+			}
+		}
+	}
+
+	getCurrentViewState() {
+		let view = this.currentThreadState.value
+		if (!view) return null
+		if (view.currentLens.value.currentlyRepresenting) {
+			return view.currentLens.value.currentlyRepresentingView
+		}
+		return view
+	}
+}

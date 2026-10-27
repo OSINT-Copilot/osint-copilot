@@ -1,0 +1,29 @@
+{
+  "id": "crtsh-subdomains",
+  "name": "crt.sh subdomains",
+  "description": "Certificates issued for a domain, from Certificate Transparency logs",
+  "documentationUrl": "https://crt.sh/",
+  "status": "active",
+  "enabled": true,
+  "allowedDomains": [
+    "crt.sh"
+  ],
+  "auth": {
+    "type": "none"
+  },
+  "request": {
+    "method": "GET",
+    "urlTemplate": "https://crt.sh/?q=%25.{{query}}&output=json",
+    "headers": {}
+  },
+  "inputHints": [
+    "domain"
+  ],
+  "skillInstructions": "Use to find a domain's subdomains and when their certificates were issued.",
+  "limits": {
+    "timeoutMs": 20000,
+    "retries": 1,
+    "maxResponseChars": 12000
+  },
+  "updatedAt": "2026-09-17T10:05:00.000Z"
+}

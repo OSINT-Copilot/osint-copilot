@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+
+	<!--
+		The renderer holds window.api, which reaches vault writes and cli.exec, and it
+		displays content it did not author: rendered markdown, LLM output and enricher
+		output. Nothing else stops an injection in any of those from executing.
+
+		The point of this policy is the script-src line: no 'unsafe-inline', no
+		'unsafe-eval', so injected markup cannot run even if it survives DOMPurify.
+
+		The rest is as tight as the app actually allows, and no tighter. The page is loaded
+		from disk, so `file:` is spelled out rather than relying on 'self', which Chromium
+		does not reliably match for file: documents. img-src and connect-src stay broad
+		because link previews, entity pictures and the optional online basemap legitimately
+		reach arbitrary hosts. frame-src is the YouTube embed in EmbedRoot.svelte.
+	-->
+	<meta http-equiv="Content-Security-Policy" content="
+		default-src 'none';
+		script-src 'self' file:;
+		style-src 'self' file: 'unsafe-inline';
+		img-src 'self' file: data: blob: https:;
+		font-src 'self' file: data:;
+		media-src 'self' file: blob:;
+		connect-src 'self' file: data: blob: https:;
+		frame-src https://www.youtube.com https://www.youtube-nocookie.com;
+		worker-src 'self' blob:;
+		object-src 'none';
+		base-uri 'none';
+		form-action 'none';
+	">
+
+	<title>OSINT Copilot</title>
+
+	<link rel="icon" type="image/png" href="./favicon.png" />
+	<link rel="stylesheet" href="./global.css" />
+	<link rel="stylesheet" href="./media.css" />
+	<link rel="stylesheet" href="../__build/bundle/app.css" />
+	<link rel="stylesheet" href="./app.css" />
+	
+	<!-- Include katex styling here so that fonts can load. See: https://github.com/mdn/interactive-examples/issues/887#issuecomment-470703209 -->
+	<link rel="stylesheet" href="../__build/bundle/katex.min.css" />
+
+	<script defer src="../__build/bundle/prism/prism.js"></script>
+	<script defer src="../__build/bundle/prism/languages/prism-yaml.min.js"></script>
+	<script defer src="../__build/bundle/prism/languages/prism-latex.min.js"></script>
+
+	<script defer src="../__build/bundle/app.js"></script>
+</head>
+
+<body>
+</body>
+</html>

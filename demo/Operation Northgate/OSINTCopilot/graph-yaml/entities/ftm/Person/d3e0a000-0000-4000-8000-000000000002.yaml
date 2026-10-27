@@ -1,0 +1,36 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000002
+type: Person
+label: Daniel Arendt
+properties:
+  name: Daniel Arendt
+  firstName: Daniel
+  lastName: Arendt
+  nationality: nl
+  position: Managing director, Northgate Freight BV
+  notes: Quoted in the customs seizure coverage as saying the pallets were "declared correctly by the shipper".
+  image: OSINTCopilot/Evidence/daniel-arendt-picture.png
+  Name: Daniel Arendt
+  Nationality: nl
+  First name: Daniel
+  Last name: Arendt
+  Position: Managing director, Northgate Freight BV
+ftmSchema: Person
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Person/Daniel Arendt.md
+osint_sources:
+  - id: src_33e6f70fcaf4c772
+    source_url: https://kvk-register.example/company/00000000
+    archive_status: skipped
+    inferred: false
+    rationale: Managing director in the trade register
+    captured_at: 2026-09-18T09:30:00.000Z
+  - id: src_53782bcaa6d5a5b5
+    source_url: https://news.example/2024/06/21/rotterdam-customs-seize-counterfeit-cancer-drugs
+    archive_status: skipped
+    inferred: false
+    rationale: Quoted by name in the seizure article
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: medium
+

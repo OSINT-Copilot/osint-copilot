@@ -1,0 +1,45 @@
+# STIX relationship types (starter vocabulary)
+version: 1
+family: stix2
+relationshipTypes:
+  - name: indicates
+    label: Indicates
+    description: Indicator indicates a SDO.
+    color: "#5c6bc0"
+    properties:
+      description: { label: Notes, type: text }
+
+  - name: uses
+    label: Uses
+    description: Threat uses malware, tool, or technique.
+    color: "#7e57c2"
+    properties:
+      description: { label: Notes, type: text }
+
+  - name: targets
+    label: Targets
+    description: Targets victim or location.
+    color: "#e53935"
+    properties:
+      description: { label: Notes, type: text }
+
+  - name: related-to
+    label: Related To
+    description: Generic relationship.
+    color: "#78909c"
+    properties:
+      description: { label: Notes, type: text }
+
+  - name: attributed-to
+    label: Attributed To
+    description: Campaign or intrusion set attributed to threat actor.
+    color: "#8d6e63"
+    properties:
+      description: { label: Notes, type: text }
+
+  - name: communicates-with
+    label: Communicates With
+    description: Network communication relationship.
+    color: "#43a047"
+    properties:
+      description: { label: Notes, type: text }

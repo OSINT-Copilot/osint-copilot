@@ -1,0 +1,72 @@
+From: <Saved by Blink>
+Snapshot-Content-Location: http://medsupply-direct.example/
+Subject: =?utf-8?Q?MedSupply=20Direct=20=C2=B7=20Oncology=20generics=20without=20p?=
+ =?utf-8?Q?rescription?=
+Date: Wed, 21 Oct 2026 17:19:14 +0200
+MIME-Version: 1.0
+Content-Type: multipart/related;
+	type="text/html";
+	boundary="----MultipartBoundary--wteAKPkqOc7txndjRav3uWWfx9miuF7ms9VQJ9LC1i----"
+
+
+------MultipartBoundary--wteAKPkqOc7txndjRav3uWWfx9miuF7ms9VQJ9LC1i----
+Content-Type: text/html
+Content-ID: <frame-134F8F084C4806E95F1FD3C33C964374@mhtml.blink>
+Content-Transfer-Encoding: quoted-printable
+Content-Location: http://medsupply-direct.example/
+
+<!DOCTYPE html><html lang=3D"en"><head><meta http-equiv=3D"Content-Type" co=
+ntent=3D"text/html; charset=3DUTF-8"><link rel=3D"stylesheet" type=3D"text/=
+css" href=3D"cid:css-455e5f44-3477-4cfa-a475-daae991ca94e@mhtml.blink" /><t=
+itle>MedSupply Direct =C2=B7 Oncology generics without prescription</title>=
+</head>
+<body><header><strong>MedSupply Direct</strong> =C2=B7 Home =C2=B7 Products=
+ =C2=B7 <a href=3D"http://medsupply-direct.example/checkout">Checkout</a></=
+header><main><h1>Oncology generics, delivered discreetly</h1>
+	<p>Quality generics at a fraction of pharmacy prices. No prescription, no =
+questions.</p>
+	<p>All orders are dispatched by Northgate Freight BV from Rotterdam.</p>
+	<h2>Contact</h2>
+	<p>Orders and support: sales@medsupply-direct.example</p>
+	<p>Secure checkout: http://medsupply-direct.example/checkout</p>
+	<p class=3D"meta">Status: all systems normal =C2=B7 served from 2001:db8::=
+47</p></main>
+<footer>A fictional page made for the OSINT Copilot demo investigation. Not=
+hing on it is real.</footer></body></html>
+------MultipartBoundary--wteAKPkqOc7txndjRav3uWWfx9miuF7ms9VQJ9LC1i----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-455e5f44-3477-4cfa-a475-daae991ca94e@mhtml.blink
+
+@charset "utf-8";
+
+body { font: 16px / 1.5 Georgia, serif; margin: 0px; background: rgb(246, 2=
+44, 239); color: rgb(34, 34, 34); }
+
+header { background: rgb(31, 58, 77); color: rgb(255, 255, 255); padding: 1=
+4px 32px; }
+
+header a { color: rgb(207, 227, 242); }
+
+main { max-width: 820px; margin: 24px auto; padding: 0px 24px 48px; backgro=
+und: rgb(255, 255, 255); }
+
+.post { border-bottom: 1px solid rgb(221, 221, 221); padding: 16px 0px; }
+
+.meta { color: rgb(119, 119, 119); font-size: 13px; }
+
+code, pre { font-family: ui-monospace, monospace; font-size: 13px; backgrou=
+nd: rgb(241, 241, 241); }
+
+pre { padding: 8px 12px; white-space: pre-wrap; }
+
+table { border-collapse: collapse; width: 100%; }
+
+td { border-bottom: 1px solid rgb(238, 238, 238); padding: 6px 4px; vertica=
+l-align: top; }
+
+td:first-child { color: rgb(85, 85, 85); width: 38%; }
+
+footer { text-align: center; font: 12px sans-serif; color: rgb(153, 153, 15=
+3); padding: 16px; }
+------MultipartBoundary--wteAKPkqOc7txndjRav3uWWfx9miuF7ms9VQJ9LC1i------

@@ -1,0 +1,45 @@
+{
+	"version": 1,
+	"creationRules": [
+		{
+			"name": "📥 Inbox Note",
+			"nameTemplate": "%name%",
+			"folder": "Inbox",
+			"description": "Creates a new note for quickly capturing thoughts that are not yet completely formed."
+		},
+		{
+			"name": "🌲 Evergreen Note",
+			"nameTemplate": "%name%",
+			"mode": "createOrOpen",
+			"description": "Creates a note intended to live forever and be updated if needed."
+		},
+		{
+			"name": "📆 Daily Note",
+			"nameTemplate": "%YYYY%/%MM%-%Month%/%YYYY%-%MM%-%DD%",
+			"folder": "Log",
+			"mode": "createOrOpen",
+			"description": "Creates or opens a timestamped note for the current day for journaling and quickly jotting down quick thoughts.",
+			"openInContext": "Log"
+		},
+		{
+			"name": "Other Inbox",
+			"nameTemplate": "%name% %WeekDay% %Mth%",
+			"folder": "Inbox"
+		},
+		{
+			"name": "Moar Inbox!",
+			"nameTemplate": "%name%",
+			"folder": "Inbox"
+		},
+		{
+			"name": "Rule With Bad Characters",
+			"nameTemplate": "My: Fancy/aux/%name%"
+		},
+		{
+			"name": "Rule with Template",
+			"nameTemplate": "%name%",
+			"contentTemplate": "Integration Tests/Example Template.md"
+		}
+	],
+	"styleFiles": []
+}

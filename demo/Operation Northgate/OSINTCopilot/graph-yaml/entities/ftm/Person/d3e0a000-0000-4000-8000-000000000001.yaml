@@ -1,0 +1,33 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000001
+type: Person
+label: Marta Koval
+properties:
+  name: Marta Koval
+  firstName: Marta
+  lastName: Koval
+  nationality: cy
+  birthDate: 1979-04-11
+  position: Director, Brightwater Holdings Ltd
+  notes: Sole director of Brightwater since incorporation. Her e-mail is also the board contact on Northgate Freight's
+    website.
+  image: OSINTCopilot/Evidence/marta-koval-picture.png
+  Name: Marta Koval
+  Nationality: cy
+  Birth date: 1979-04-11
+  First name: Marta
+  Last name: Koval
+  Position: Director, Brightwater Holdings Ltd
+ftmSchema: Person
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Person/Marta Koval.md
+osint_sources:
+  - id: src_15856cbc0b96072d
+    source_url: http://registry.cy.example/company/HE000000
+    archive_status: skipped
+    inferred: false
+    rationale: Named as director in the registry extract
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

@@ -1,0 +1,24 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000007
+type: Organization
+label: Harbour Market
+properties:
+  name: Harbour Market
+  description: Invite-only marketplace where harbor_pharma sells
+  website: http://harbourmarket.example
+  Name: Harbour Market
+  Description: Invite-only marketplace where harbor_pharma sells
+  Website: http://harbourmarket.example
+ftmSchema: Organization
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Organization/Harbour Market.md
+osint_sources:
+  - id: src_818d918a0550b2ab
+    source_url: http://harbourmarket.example/thread/4471
+    archive_status: skipped
+    inferred: false
+    rationale: The seller's thread is hosted here
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

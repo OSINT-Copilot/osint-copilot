@@ -1,0 +1,56 @@
+node_modules/
+.DS_Store
+.svelte-kit/
+*.env
+.env*
+!.env.example
+*.tsbuildinfo
+
+# Local tooling and generated integration workspaces.
+.claude/
+.github/
+.vscode/
+/apps/IntegrationTestWorkspace/
+.tangent_*/
+
+# Credential and private-key containers should never enter the repository.
+*.docx
+*.kdbx
+*.key
+*.p12
+*.pem
+*.pfx
+*.pptx
+*.xlsx
+
+/packages/**/lib/
+
+**/.tangent/**/*.workspace
+**/.tangent/tangents/
+**/.tangent/Temp/
+**/.tangent/Generated/
+**/.tangent/generated/
+.obsidian
+
+# Plugin settings, written into whatever directory is opened as a vault. Ends up in
+# the repo whenever the app is launched with the checkout itself as the workspace.
+.osint-copilot/
+# The same accident's other traces, when apps/tangent-electron itself is opened as the
+# workspace: the OSINT layer's defaults and Tangent's index. Path-specific, because
+# vaults legitimately contain an OSINTCopilot/ folder, and test workspaces a .tangent/.
+/apps/tangent-electron/OSINTCopilot/
+/apps/tangent-electron/.tangent/
+# ...except the demo investigation's, which are part of it (graph workspaces, persona).
+!/demo/*/.osint-copilot/
+
+# Provider credentials are vault-local secrets. Keep the deliberately fake demo fixture.
+**/OSINTCopilot/custom/credentials/**
+!/demo/*/OSINTCopilot/custom/credentials/leakcheck/api-key.txt
+
+# Licence signing key. NEVER commit: anyone holding it can mint valid licence keys.
+.license-signing-key.pem
+*.license-signing-key.pem
+
+# Playwright failure artifacts (screenshots, traces, error context).
+# Only ever appear when the e2e suite actually runs, which on Linux it now can.
+test-results/

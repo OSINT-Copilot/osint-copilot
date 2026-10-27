@@ -1,0 +1,14 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: f7274c9b-cafb-4927-b9af-889c870e556e
+fromEntityId: d3e0a000-0000-4000-8000-000000000005
+toEntityId: d815f3fe-2f4e-496f-ae41-f0710c22e51b
+fromLabel: Northgate Freight BV
+toLabel: +44 20 7946 0958
+relationship: USES_PHONE
+label: Northgate Freight BV → USES_PHONE → +44 20 7946 0958
+properties: {}
+ftmSchema: USES_PHONE
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/Northgate Freight BV - USES_PHONE - +44 20 7946 0958.md
+

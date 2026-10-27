@@ -1,0 +1,34 @@
+:host {
+	cursor: pointer;
+}
+
+svg {
+	--boxStroke: var(--accentBackgroundColor);
+	--boxFill: var(--accentBackgroundColor);
+	--boxFillOpacity: 0;
+	
+	--checkStroke: white;
+	--checkOpacity: 0;
+
+	--cancelStroke: white;
+	--cancelOpacity: 0;
+}
+
+:host(:hover) svg {
+	--boxFillOpacity: .25;
+}
+
+:host([state="checked"]) svg {
+	--boxFillOpacity: 1;
+	--checkOpacity: 1;
+}
+:host([state="checked"]:hover) svg {
+	--boxFillOpacity: .75;
+}
+
+:host([state="canceled"]) svg {
+	--boxFillOpacity: 1;
+	--boxFill: #666;
+	--boxStroke: #666;
+	--cancelOpacity: 1;
+}

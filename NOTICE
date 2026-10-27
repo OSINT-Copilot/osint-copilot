@@ -1,0 +1,44 @@
+OSINT Copilot
+Copyright 2024-2026 Probe Point Analytics LLC and the OSINT Copilot contributors
+
+This product is a derivative work of Tangent.
+
+  Tangent
+  Copyright 2022-2026 Taylor Hadden
+  https://github.com/suchnsuch/Tangent
+  https://www.tangentnotes.com
+
+Tangent is licensed under the Apache License, Version 2.0. A copy of that
+licence is included in this repository as LICENSE.txt and may also be
+obtained at https://www.apache.org/licenses/LICENSE-2.0
+
+OSINT Copilot is distributed under the same Apache License, Version 2.0.
+
+--------------------------------------------------------------------------
+Statement of changes (Apache-2.0 section 4(b))
+--------------------------------------------------------------------------
+
+OSINT Copilot modifies Tangent by rebranding the application and adding an
+open-source investigation toolset on top of its note-writing workspace. The
+substantive additions live primarily under:
+
+  apps/tangent-electron/src/osint/**       renderer investigation features
+  apps/tangent-electron/src/main/osint/**  privileged investigation services
+
+They include an entity and relationship model persisted as Markdown, schema
+support, graph/timeline/map/canvas views, optional local CLI-driven AI tools,
+guarded enrichers, skills, task agents, and a paired browser extension.
+
+Parts of the investigation layer originated in the OSINT Copilot plugin for
+Obsidian. The copyright holders release the code included in this repository
+under Apache-2.0. Files derived from Tangent retain their original copyright;
+the repository history identifies integration and rebranding modifications.
+
+--------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------
+
+Directly incorporated and vendored components, including FollowTheMoney
+schema material and the Typewriter submodules, are listed with their licence
+texts in THIRD_PARTY_NOTICES.md. The browser extension carries a separate
+NOTICE. Package dependency licence files remain with their packages.

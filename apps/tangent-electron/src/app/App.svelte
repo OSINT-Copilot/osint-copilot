@@ -1,0 +1,419 @@
+<script lang="ts">
+import { setContext } from 'svelte'
+
+import type WindowApi from 'common/WindowApi'
+
+import Workspace from './model/Workspace'
+import type { WorkspaceInitState } from 'common/workspaceState'
+
+import WorkspaceView from './views/WorkspaceView.svelte'
+import WorkspaceSelector from './WorkspaceSelector.svelte'
+import { Focus } from './utils/focus'
+import type { AnnotatedFocusEvent } from './utils/focus'
+import MessageToast from './views/MessageToast.svelte'
+import { isMac } from 'common/platform'
+import { mediaQueryStore } from './utils/svelte'
+import SvgIcon from './views/smart-icons/SVGIcon.svelte'
+import LicenseGate from './views/LicenseGate.svelte'
+import { openStatus, type LicenseStatus } from 'common/license'
+import { PREMIUM_LICENSING_ENABLED } from 'common/premium'
+
+import { dropAllTooltips, tooltips } from './utils/tooltips'
+import Tooltip from './utils/Tooltip.svelte'
+import { setTLinkTooltipComponent } from './views/editors/NoteEditor/t-link'
+import TLinkTooltip from './views/editors/TLinkTooltip.svelte'
+import { updateMermaidStyle } from './style/mermaidStyle'
+
+// Doing this here so that mhchem is loaded
+import 'katex/contrib/mhchem/mhchem'
+import { setDefaultUseKeyCode } from './utils/shortcuts'
+
+let applicationState: 'initializing' | 'choosingWorkspace' | 'buildingWorkspace' | 'usingWorkspace' | 'error' = 'initializing'
+let showLoading = false
+let showLoadingTimeout: number = null
+let workspace:Workspace = null
+let api = (window as any).api as WindowApi
+
+if (isMac) {
+	document.body.classList.add('mac')
+}
+else {
+	document.body.classList.add('win')
+}
+
+setTLinkTooltipComponent(TLinkTooltip)
+
+let selectionHistory: ({ element: HTMLElement, layer: string })[] = []
+let reselectionTimeout: number
+
+setContext('api', api)
+
+const osDarkMode = mediaQueryStore('(prefers-color-scheme: dark)')
+$: settingsMode = workspace?.settings.appearance
+$: {
+	const appearanceMode = (settingsMode != null && $settingsMode != 'system') ? $settingsMode : ($osDarkMode ? 'dark' : 'light')
+	document.body.classList.remove('light', 'dark')
+	document.body.classList.add(appearanceMode)
+
+	updateMermaidStyle(appearanceMode === 'dark')
+}
+
+$: linkCursor = workspace?.settings.linkCursor
+$: {
+	const linkCursorMode = (linkCursor != null && $linkCursor) ?? 'directional'
+	document.body.classList.remove('link-cursor-arrow', 'link-cursor-pointer', 'link-cursor-directional')
+	document.body.classList.add('link-cursor-' + linkCursorMode)
+}
+
+$: noteLinkFollowBehavior = workspace?.settings.noteLinkFollowBehavior
+$: {
+	const behavior = (noteLinkFollowBehavior != null) ? $noteLinkFollowBehavior : 'mod'
+	document.body.classList.remove('note-link-click-mod')
+	document.body.classList.remove('note-link-click-none')
+
+	document.body.classList.add('note-link-click-' + behavior)
+}
+
+$: linkClickPaneBehavior = workspace?.settings.linkClickPaneBehavior
+$: {
+	const linkPaneMode = (linkClickPaneBehavior != null && $linkClickPaneBehavior) ?? 'new'
+	document.body.classList.remove('link-click-pane-new', 'link-click-pane-replace')
+	document.body.classList.add('link-click-pane-' + linkPaneMode)
+}
+
+$: useKeyCodeShortcuts = workspace?.settings.useKeyCodeShortcuts
+$: {
+	setDefaultUseKeyCode($useKeyCodeShortcuts)
+}
+
+$: collapseEmbedLinkLines = workspace?.settings.collapseEmbedLinkLines
+$: {
+	if ($collapseEmbedLinkLines) {
+		document.body.classList.add('collapse-embed-link-lines')
+	}
+	else {
+		document.body.classList.remove('collapse-embed-link-lines')
+	}
+}
+
+$: accentHue = workspace?.settings.accentHue
+$: accentSaturation = workspace?.settings.accentSaturation
+$: noteFont = workspace?.settings.noteFont
+$: noteCodeFont = workspace?.settings.noteCodeFont
+$: noteFontSize = workspace?.settings.noteFontSize
+$: noteCodeTabWidth = workspace?.settings.noteCodeTabWidth
+$: uiFontSize = workspace?.settings.uiFontSize
+$: lineHeight = workspace?.settings.lineHeight
+$: scrollBarWidth = workspace?.settings.scrollBarWidth
+$: {
+	let style = ''
+	if (accentHue) {
+		style += `--accentHue: ${$accentHue};`
+	}
+	if (accentSaturation) {
+		style += `--accentSaturation: ${$accentSaturation}%;`
+	}
+	if (noteFont && $noteFont) {
+		style += `--noteFontFamily: "${$noteFont}";`;
+	}
+	if (noteCodeFont && $noteCodeFont) {
+		style += `--codeFontFamily: "${$noteCodeFont}";`;
+	}
+	if (noteFontSize) {
+		style += `--fontSize: ${$noteFontSize}px;`
+	}
+	if (noteCodeTabWidth) {
+		style += `--codeTabSize: ${$noteCodeTabWidth};`
+	}
+	if (uiFontSize) {
+		style += `font-size: ${$uiFontSize}px;`
+	}
+	if (lineHeight) {
+		style += `--baseline: ${$lineHeight};`
+	}
+	if (scrollBarWidth) {
+
+		let size = 4
+		switch ($scrollBarWidth) {
+			case "Small":
+				size = 4
+				break
+			case "Medium":
+				size = 8
+				break
+			case "Large":
+				size = 12
+				break
+		}
+
+		style += `--scrollBarWidth: ${size}px;`
+	}
+
+	document.body.style.cssText = style
+}
+
+window.addEventListener('beforeunload', () => {
+	if (workspace) {
+		workspace.shutdown()
+	}
+})
+window.addEventListener('keydown', (event:KeyboardEvent) => {
+	if (event.key === 'Meta') {
+		document.body.classList.add('meta-pressed')
+	}
+	if (event.key === 'Control') {
+		document.body.classList.add('ctrl-pressed')
+	}
+	if (event.key === 'Alt') {
+		document.body.classList.add('alt-pressed')
+	}
+	if (event.key === 'Shift') {
+		document.body.classList.add('shift-pressed')
+	}
+})
+window.addEventListener('keyup', (event:KeyboardEvent) => {
+	if (event.key === 'Meta') {
+		document.body.classList.remove('meta-pressed')
+	}
+	if (event.key === 'Control') {
+		document.body.classList.remove('ctrl-pressed')
+	}
+	if (event.key === 'Alt') {
+		document.body.classList.remove('alt-pressed')
+	}
+	if (event.key === 'Shift') {
+		document.body.classList.remove('shift-pressed')
+	}
+})
+
+/**
+ * A build that explicitly enables premium licensing runs its gate before anything else.
+ *
+ * `null` means "not asked yet", and the app renders nothing at all until main answers --
+ * a few milliseconds -- because flashing the loading screen and then replacing it with a
+ * licence prompt looks like a failure. No workspace is opened, and no vault is read,
+ * until a key has been accepted. The open-source build takes the `openStatus()` branch and
+ * starts normally without reading a stored key or contacting a licence server.
+ */
+let licenseStatus: LicenseStatus = PREMIUM_LICENSING_ENABLED ? null : openStatus()
+$: licensed = licenseStatus?.valid === true
+
+if (PREMIUM_LICENSING_ENABLED) {
+	api.license.status().then(status => {
+		applyLicense(status)
+		if (status.valid) loadDefaultWorkspace()
+	})
+	.catch(e => {
+		console.error('Could not check the licence', e)
+		// Fail closed only when this build deliberately enables premium licensing.
+		applyLicense({
+			valid: false,
+			reason: 'missing',
+			message: 'The licence could not be checked. Please restart OSINT Copilot.'
+		})
+	})
+}
+else {
+	loadDefaultWorkspace()
+}
+
+function applyLicense(status: LicenseStatus) {
+	licenseStatus = status
+}
+
+function onLicensed(status: LicenseStatus) {
+	applyLicense(status)
+	loadDefaultWorkspace()
+}
+
+// Try to load a default workspace
+function loadDefaultWorkspace() {
+	api.getWorkspace().then(setState)
+	.catch(e => {
+		console.error('Could not load default workspace.')
+		console.log(e)
+	})
+}
+
+let title = 'OSINT Copilot'
+async function setState(state: WorkspaceInitState) {
+	if (showLoadingTimeout) {
+		window.clearTimeout(showLoadingTimeout)
+		showLoadingTimeout = null
+	}
+	if (state === null) {
+		applicationState = 'choosingWorkspace'
+		title = 'Select Workspace - OSINT Copilot'
+	}
+	else {
+		console.log(state)
+		try {
+			workspace = new Workspace(state, api)
+
+			applicationState = 'buildingWorkspace'
+			title = workspace.directoryStore.files.name
+			
+			// Inject the workspace into the document
+			const doc = document as any
+			doc.workspace = workspace
+			
+			await workspace.startup()
+
+			// OSINT Copilot starts once the workspace is live. Deliberately not awaited:
+			// its startup reads schemas and prompts off disk, and the note workspace
+			// should not wait on that. Views opened before it finishes wait for it.
+			// Failures are contained — a bug on our side must not stop the app opening.
+			import('osint/integration/bootstrap')
+				.then(m => m.startOsintCopilot(workspace as any))
+				.catch(e => console.error('[osint] failed to start', e))
+
+			applicationState = 'usingWorkspace'
+		}
+		catch (e) {
+			applicationState = 'error'
+			console.error('OSINT Copilot failed to initialize', e)
+			return
+		}
+	}
+}
+
+async function onWorkspaceSelected(workspacePath: string) {
+	console.log('Switching workspace to', workspacePath)
+	applicationState = 'initializing'
+	showLoading = false
+	showLoadingTimeout = window.setTimeout(() => {
+		showLoading = true
+	}, 500)
+	try {
+		const workspaceState = await api.getWorkspace(workspacePath)
+		setState(workspaceState)
+	}
+	catch (e) {
+		console.error('Could not load the selected workspace.')
+		console.log(e)
+	}
+}
+
+function cleanSelectionHistory(exclude?: HTMLElement, layer?: string) {
+	selectionHistory = selectionHistory.filter(h => {
+		if (h.layer === layer) return false
+		return h.element !== exclude && h.element.getRootNode() === document
+	})
+}
+
+function onFocusIn(event: AnnotatedFocusEvent) {
+	if (reselectionTimeout) {
+		window.clearTimeout(reselectionTimeout)
+		reselectionTimeout = null
+	}
+	if (event.target instanceof HTMLElement) {
+		const layer = Focus.getLayer(event)
+		cleanSelectionHistory(event.target, layer)
+		selectionHistory.push({ element: event.target, layer })
+	}
+}
+
+const refocusArgs = { preventScroll: true }
+function onFocusOut(event: AnnotatedFocusEvent) {
+	if (reselectionTimeout) {
+		window.clearTimeout(reselectionTimeout)
+		reselectionTimeout = null
+	}
+
+	const target = event.target
+
+	if (target instanceof HTMLElement) {
+
+		cleanSelectionHistory()
+		
+		reselectionTimeout = window.setTimeout(() => {
+			if (selectionHistory[selectionHistory.length - 1]?.element === target) {
+				selectionHistory.pop()
+				const nextTarget = selectionHistory[selectionHistory.length - 1]
+				console.log('Refocusing to', nextTarget)
+				nextTarget?.element.focus(refocusArgs)
+			}
+		}, 100)
+	}
+	
+}
+
+// Do this so that child tooltips can have workspace context
+function tooltipContextInjection(injector) {
+	injector('workspace', workspace)
+}
+
+</script>
+
+<svelte:head>
+	<title>{title}</title>
+</svelte:head>
+<svelte:body on:focusin={onFocusIn} on:focusout={onFocusOut} on:contextmenu={dropAllTooltips} />
+
+{#if PREMIUM_LICENSING_ENABLED && licenseStatus && !licensed}
+	<LicenseGate {api} status={licenseStatus} {onLicensed} />
+{:else if applicationState === 'initializing' && showLoading}
+	<div class="loading">
+		<SvgIcon
+			ref="tangent-icon-nocolor.svg#icon"
+			size="256"
+			styleString="--iconStroke: var(--embossedBackgroundColor);"
+			/>
+		<span>Loading...</span>
+	</div>
+{:else if applicationState === 'buildingWorkspace'}
+	<div class="loading">
+		<SvgIcon
+			ref="tangent-icon-nocolor.svg#icon"
+			size="256"
+			styleString="--iconStroke: var(--embossedBackgroundColor);"
+			/>
+		<span>Initial Setup...</span>
+	</div>
+{:else if applicationState === 'usingWorkspace'}
+	<WorkspaceView {workspace} />
+{:else if applicationState === 'choosingWorkspace'}
+	<WorkspaceSelector {api} {onWorkspaceSelected} />
+{:else if applicationState === 'error'}
+	<div class="loading error">
+		<SvgIcon
+			ref="tangent-icon-nocolor.svg#icon"
+			size="256"
+			styleString="--iconStroke: var(--embossedBackgroundColor);"
+			/>
+		<p>OSINT Copilot encountered an issue while initializing.</p>
+		<p>
+			Please
+			<a href="https://github.com/OSINT-Copilot/osint-copilot/issues/new?template=bug_report.yml"
+				target="_blank" rel="noreferrer noopener">open a bug report</a>.
+		</p>
+	</div>
+{/if}
+
+<MessageToast {api} />
+
+{#each $tooltips as {origin, originEvent, config} (origin)}
+	<Tooltip {origin} {originEvent} {config} injectContext={tooltipContextInjection} />
+{/each}
+
+<style lang="scss">
+.loading {
+	position: absolute;
+	inset: 0;
+
+	font-size: 200%;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	color: var(--deemphasizedTextColor);
+	font-style: italic;
+
+	&.error p {
+		font-style: normal;
+		margin-top: 1em;
+		margin-bottom: 0;
+		font-size: 1.2rem;
+	}
+}
+</style>

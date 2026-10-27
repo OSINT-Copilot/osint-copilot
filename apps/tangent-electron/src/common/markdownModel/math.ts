@@ -1,0 +1,141 @@
+import { applyCodeFormat, type CodeParsingContext, parseCodeLine } from './code'
+import DocumentFeeder from './DocumentFeeder'
+import { isWhitespace } from './matches'
+import NoteParser from './NoteParser'
+import { type ParsingContext, ParsingContextType } from './parsingContext'
+
+export type MathData = {
+	source?: string
+}
+
+type MathBlockContext = CodeParsingContext & {
+	mathData: MathData
+}
+
+export function parseInlineMath(char: string, parser: NoteParser): boolean {
+	if (char !== '$') return false
+
+	const { feed } = parser
+
+	const isBlock = feed.checkFor('$$', false)
+	const token = isBlock ? '$$' : char
+	let rightTouchingText = !isWhitespace(feed.peek(token.length))
+
+	if (rightTouchingText) {
+		const postTokenIndex = feed.index + token.length + 1
+		const findResult = feed.findNext(token, postTokenIndex)
+		if (findResult.foundMatch) {
+			if (!isWhitespace(feed.peek(token.length + findResult.contentCount))) {
+				// We've got it!
+				// Close old stuff
+				parser.commitSpan(null, 0)
+				// Consume the opening token
+				feed.next(token.length)
+				const index = feed.index
+				feed.next(findResult.contentCount + token.length)
+				parser.commitSpan({
+					math: {
+						source: feed.substring(index, index + findResult.contentCount + 1),
+						isBlock
+					},
+					// Using hiddenGroup instead of hidden allows for math to embed within inline formatting.
+					// The "hidden" class is implicit and added afterwards.
+					hiddenGroup: true
+				})
+				return true
+			}
+		}
+	}
+	return false
+}
+
+export function parseMathBlock(char: string, parser: NoteParser): boolean {
+	if (char !== '$' || !parser.isStartOfContent) return false
+	if (!parser.feed.checkFor('$$', false)) return false
+
+	const { feed, builder } = parser
+
+	const remainingContent = feed.getLineText(feed.index + 2)
+	if (remainingContent) {
+		// This will be read as an inline math expression that starts with `$$`, supported for legacy reasons
+		return false
+	}
+	
+	// Interpret as math block
+	feed.getLineText(feed.index + 1, true)
+	parser.commitSpan({
+		line_format: 'math',
+		hidden: true,
+		start: true
+	}, 0)
+
+	const indent = parser.getCurrentIndent()
+	
+	// Declare here so its source can be updated after the fact
+	const mathData: MathData = {}
+
+	builder.addOpenLineFormat('math-block', {
+		math: mathData,
+		hidden: true
+	})
+
+	const context: MathBlockContext = {
+		type: ParsingContextType.Block,
+		programs: [parseCodeLine],
+		indent: indent.indent,
+		indentBlock: true,
+		extendContext: true,
+		exit: finishMathBlock,
+
+		data: {
+			language: 'latex'
+		},
+		mathData,
+		firstLine: builder.lines.length + 1,
+		resolvedLanguage: 'latex',
+		code: '',
+		isAtEnd: (char, parser, context) => {
+			const line = parser.feed.getLineText()
+			if (line.trimEnd() === '$$') {
+				parser.feed.nextByLength(line.length)
+				
+				return true
+			}
+			return false
+		},
+		reachedEnd: false
+	}
+
+	parser.pushContext(context)
+
+	return true
+}
+
+function finishMathBlock(lastIndex: number, ctxt: ParsingContext, parser: NoteParser) {
+	const { feed, builder } = parser
+	const context = ctxt as MathBlockContext
+
+	applyCodeFormat(parser, context)
+	builder.dropOpenLineFormat('math-block')
+
+	context.mathData.source = context.code
+
+	if (context.reachedEnd) {
+		parser.commitSpan({
+			line_format: 'math',
+			hidden: true,
+			end: true
+		}, 0)
+
+		parser.lineData.math = context.mathData
+		parser.lineData.hidden = true
+	}
+	else if (lastIndex === feed.index) {
+		parser.lineData.math = context.mathData
+		parser.lineData.hidden = true
+	}
+
+	if (feed instanceof DocumentFeeder && !feed.hasMore()) {
+		feed.injectAdjacentLinesWhile(line => 'math' in line)
+	}
+}

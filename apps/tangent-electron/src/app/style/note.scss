@@ -1,0 +1,898 @@
+@function fontUnit($number) {
+	@return calc(var(--fontSize) * #{$number});
+}
+
+@function rhythmUnit($number) {
+	@return calc(var(--fontSize) * var(--baseline) * #{$number});
+}
+
+:root {
+	--noteFontSize: 16px;
+	--fontSize: var(--noteFontSize);
+	--headerFontSizeFactor: 2.5;
+	--baseline: 1.5;
+}
+
+article.note {
+	font-family: var(--noteFontFamily);
+	font-size: var(--fontSize);
+	line-height: rhythmUnit(1);
+	caret-color: var(--textColor);
+
+	padding: 1em 2em;
+
+	.line {
+		transition: opacity 1s;
+		padding: 0;
+	}
+
+	&.focusing .line {
+		opacity: .5;
+		transition: opacity .3s;
+
+		// See usage in `NoteEditor.svelte` for why class isn't used
+		&[data-focus="focused"] {
+			opacity: unset;
+
+			.unfocused:not(.unfocused *) { // Don't double up unfocused opacity
+				opacity: .5;	
+			}
+		}
+	}
+	&.focusing {
+		figure:not(.revealed) {
+			opacity: .5;
+			transition: opacity .3s;
+		}
+		figure.revealed .line {
+			opacity: unset !important;
+		}
+	}
+
+	p {
+		line-height: rhythmUnit(1); // to defeat default styling
+		min-height: rhythmUnit(1);
+	}
+
+	s {
+		&.hidden {
+			text-decoration: none;
+		}
+	}
+
+	h1, h2, h3, h4, h5, h6, p {
+		margin: 0;
+
+		--lineIndent: 0; // Modified by the target
+
+		margin-inline-start: calc(var(--spaceWidth) * var(--lineIndent));
+		&.revealed {
+			text-indent: calc(-1 * var(--spaceWidth) * var(--lineIndent));
+		}
+	}
+
+	h1.line {
+		padding: 0;
+		font-size: 200%;
+		--spaceWidth: calc(.25em / 2);
+		line-height: rhythmUnit(1.5);
+		margin-bottom: rhythmUnit(.5);
+		font-weight: 600;
+	}
+	
+	h2.line {
+		padding: 0;
+		font-size: 150%;
+		--spaceWidth: calc(.25em / 1.5);
+		line-height: rhythmUnit(1.25);
+		margin-bottom: rhythmUnit(.25);
+	}
+
+	h3.line {
+		padding: 0;
+		line-height: rhythmUnit(1);
+		font-size: 120%;
+		--spaceWidth: calc(.25em / 1.20);
+	}
+
+	h4.line {
+		padding: 0;
+		font-size: 100%;
+		line-height: rhythmUnit(1);
+	}
+
+	h5.line {
+		font-size: 85%;
+		font-weight: 600;
+		text-decoration: underline;
+		--spaceWidth: calc(.25em / .85);
+		line-height: rhythmUnit(1);
+	}
+
+	h6.line {
+		font-size: 85%;
+		font-weight: 500;
+		font-style: italic;
+		text-decoration: underline;
+		--spaceWidth: calc(.25em / .85);
+		line-height: rhythmUnit(1);
+	}
+
+	blockquote {
+		margin: 0;
+
+		margin-inline-start: 2em;
+		border-inline-start: 4px solid var(--deemphasizedTextColor);
+
+		// TODO: Block quotes would idealy be nested
+		&.depth-1 {
+			border-inline-start-width: 4px;
+		}
+		&.depth-2 {
+			border-inline-start-width: 8px;
+		}
+		&.depth-3 {
+			border-inline-start-width: 12px;
+		}
+		&.depth-4 {
+			border-inline-start-width: 16px;
+		}
+
+		--lineIndent: 0;
+
+		margin-inline-start: calc(var(--spaceWidth) * (var(--lineIndent) + 8));
+		&.revealed {
+			margin-inline-start: calc(var(--spaceWidth) * 8);
+			text-indent: 0;
+
+			.line {
+				margin-inline-start: calc(var(--spaceWidth) * var(--innerLineIndent));
+				text-indent: calc(-1 * var(--spaceWidth) * var(--innerLineIndent));
+			}
+
+			.indent {
+				font-size: unset;
+				line-height: unset;
+				tab-size: unset;
+			}
+		}
+
+		p {
+			line-height: rhythmUnit(1);
+			&:after {
+				content: "\a0";	
+			}
+		}
+	}
+
+	p.list {
+		--lineIndent: 0; // Modified by the target
+
+		position: relative;
+
+		&:not(.revealed) {
+			margin-inline-start: calc((var(--spaceWidth) * var(--lineIndent)) + var(--indentWidth));
+			text-indent: calc(-1 * var(--spaceWidth));
+		}
+
+		&.revealed {
+			margin-inline-start: calc(var(--spaceWidth) * var(--lineIndent));
+			text-indent: calc(-1 * var(--spaceWidth) * var(--lineIndent));
+		}
+
+		.list {
+			&:not(.revealed) {
+				span.text {
+					font-size: 0;
+					line-height: 0;
+					tab-size: 0; // Without this, tabs are always rendered. Silly.
+				}
+				
+				&:not(.checkbox)::after {
+					font-size: 100%;
+					position: absolute;
+					top: 0;
+					inset-inline-start: calc(-1 * var(--indentWidth));
+
+					content: attr(listGlyph);
+					width: var(--indentWidth);
+					display: block;
+					text-align: center;
+					text-indent: 0;
+
+					color: var(--accentTextColor);
+				}
+
+				&[listGlyph='*']::after {
+					content: '•';
+				}
+
+				&.checkbox t-checkbox {
+					// This is super hacky, but it gets the right result
+					// accross different line heights and font sizes
+					position: absolute;
+					inset-inline-start: calc(-.42 * var(--indentWidth));
+					top: calc(rhythmUnit(1) * .5);
+					transform: translateY(-75%);
+				}
+			}
+
+			&.revealed {
+				span.text {
+					color: var(--revealedTextColor);
+				}
+				&.checkbox t-checkbox {
+					display: none;
+					font-size: 0;
+				}
+			}
+		}
+
+		.crossOutFinishedTodos & {
+			&.checked:not(.revealed) {
+				color: var(--deemphasizedTextColor);
+			}
+			&.canceled:not(.revealed) {
+				color: var(--deemphasizedTextColor);
+			}
+
+			&:not([data-focus="focused"]) {
+				&.checked:not(.revealed) {
+					text-decoration: line-through 1.5px var(--textColor);
+				}
+				&.canceled:not(.revealed) {
+					text-decoration: line-through wavy 1.5px;
+				}
+			}
+		}
+	}
+
+	// We want large lists to have extra space around them, but we don't want extra space when adjacent to blank lines.
+	// We also don't want extra space between a large list item and a child normal list item.
+	// Technically a large followed by a small sibling also doesn't have space, but I'm okay with that slight glitch.
+	.line:not(.empty) + .list.largeList, .list.largeList + .line:not(.list):not(.empty) {
+		margin-top: .5em;
+	}
+
+	.line {
+		.hidden, .line_format {
+			color: var(--revealedTextColor);
+		}
+
+		&.collapsed:not(.collapsed-revealed) {
+			display: none;
+		}
+		&.collapsed-revealed {
+			opacity: .7;
+		}
+
+		&.collapse-parent {
+			&::after {
+				content: "…";
+				font-size: var(--fontSize);
+				color: var(--deemphasizedTextColor);
+				padding-inline-start: .5em;
+				line-height: 1em; // Not sure why this is needed, but it prevents children from moving down
+			}
+		}
+	}
+
+	// This second term allows hidden contents of lines to remain hidden when a set of lines is revealed by an outer block
+	// but the individual line itself has not been explicitly marked as revealed. Works great for hidden code.
+	.hidden, .revealed .line.hidden:not(.revealed) .hidden:not(.revealed) {
+		/*
+		 * This is a cheaky trick that makes text invisible but allows it to be navigated as expected.
+		 * `display: none;` does _not_ handle this as well.
+		 */
+		font-size: 0;
+		line-height: 0;
+		tab-size: 0; // Without this, tabs are always rendered. Silly.
+	}
+
+	.hidden.revealed, .revealed .line.hidden {
+		font-size: unset;
+		line-height: unset;
+		tab-size: unset;
+	}
+
+	// This gives a consistent "revealed" styling for things like images, code preview, math, etc.
+	.output-container.revealed .output {
+		border-radius: var(--inputBorderRadius);
+		outline: 1px solid var(--textColor);
+		outline-offset: .5em;
+	}
+
+	.horizontal_rule {
+		height: rhythmUnit(1);
+		position: relative;
+
+		&:not(.revealed)::after {
+			content: "";
+			display: block;
+			background: var(--deemphasizedTextColor);
+			opacity: .5;
+			height: 1px;
+
+			position: absolute;
+			top: rhythmUnit(.5);
+			left: .5em;
+			right: .5em;
+		}
+	}
+
+	.frontMatterLine {
+		&.start, &.end {
+			height: rhythmUnit(1);
+			position: relative;
+			
+			&:not(.revealed):not(.collapse-parent)::after {
+				content: "";
+				display: block;
+				background: var(--deemphasizedTextColor);
+				opacity: .5;
+				height: 1px;
+
+				position: absolute;
+				top: rhythmUnit(.5);
+				left: .5em;
+				right: .5em;
+			}
+		}
+
+		&.start.collapse-parent {
+			&::after {
+				content: "--- front matter ---";
+				font-style: italic;
+				font-weight: 200;
+				display: inline-block;
+				border-top: 1px solid var(--deemphasizedTextColor);
+				border-bottom: 1px solid var(--deemphasizedTextColor);
+				opacity: .5;
+				line-height: rhythmUnit(1);
+
+				position: absolute;
+				left: 0;
+				right: .5em;
+				height: rhythmUnit(1);
+			}
+		}
+	}
+
+	code, .code_wrapper {
+		font-family: var(--codeFontFamily);
+	}
+
+	code.inline_code {
+		font-family: var(--codeFontFamily);
+		line-height: 1em; // This fixes an issue where the code was shifting other text down slightly
+
+		&:not(.hidden) {
+			color: var(--accentTextColor);
+
+			&:not(.revealed) {
+				&.afterSpace {
+					padding-inline-start: .25em;
+				}
+				&.beforeSpace {
+					padding-inline-end: .25em;
+				}
+			}
+		}
+
+		&.hidden.revealed {
+			// This fixes an issue where the code was shifting other text down slightly
+			line-height: 1em;
+		}
+
+		&.html {
+			color: unset;
+		}
+	}
+
+	.line_format.code.start:not(.hidden):not(.revealed) {
+		font-size: 80%;
+		color: var(--deemphasizedTextColor);
+	}
+
+	pre {
+		margin: 0;
+		padding: 0 .5em;
+		margin-left: -.5em; // Counteract the padding so text starts at the same place
+		margin-right: -.5em;
+		overflow: auto;
+		border-radius: var(--borderRadius);
+
+		transition: margin-left .2s, margin-right .2s;
+
+		color: var(--codeColor);
+		caret-color: var(--codeColor);
+
+		&.indented {
+			transition: none;
+			margin-left: calc(var(--spaceWidth) * var(--lineIndent) - .5em);
+
+			&.revealed {
+				margin-left: 0;
+
+				.line.codeLine {
+					margin-left: -.5em;
+					.indent {
+						font-size: unset;
+						line-height: unset;
+						tab-size: unset;
+					}
+				}
+			}
+		}
+	}
+
+	figure {
+		margin: 0;
+		margin-left: calc(var(--spaceWidth) * var(--lineIndent));
+
+		cursor: pointer;
+
+		.revealed .line_format {
+			font-size: unset;
+			line-height: unset;
+			tab-size: unset;
+		}
+
+		pre {
+			cursor: text;
+		}
+	}
+
+	span.tag:not(.token) {
+		font-size: 90%;
+		font-weight: 300;
+
+		span.tagSection {
+			white-space: nowrap;
+		}
+
+		&:not(.revealed) {
+
+			span.tagSection {
+				position: relative;
+				padding: .075em .3em;
+				background: var(--accentBackgroundColor);
+				border: 1px solid var(--accentBackgroundColor);
+				
+				&:not(.last) {
+					padding-inline-end: 0;
+					border-inline-end: none;
+				}
+
+				&.last {
+					border-start-end-radius: .4em;
+					border-end-end-radius: .4em;
+				}
+
+				&.tagSectionDepth-1 {
+					padding-inline-start: 1.25em;
+					border-start-start-radius: .7em;
+					border-end-start-radius: .7em;
+
+					&::before {
+						content: "";
+						position: absolute;
+						width: .5em;
+						height: .5em;
+
+						inset-inline-start: 0.45em;
+						inset-block-start: 50%;
+						transform: translateY(-50%);
+						
+						background: var(--noteBackgroundColor);
+						border-radius: .25em;
+					}
+				}
+				&:not(.tagSectionDepth-1) {
+					padding-inline-start: 0;
+					border-inline-start: none;
+				}
+
+				// Default colors for different depths
+				&.tagSectionDepth-2, &.tagSectionDepth-4, &.tagSectionDepth-6 {
+					background: var(--accentDeemphasizedBackgroundColor);
+				}
+			}
+
+			span.tagSeperator {
+				padding: .075em 0;
+				background: var(--accentBackgroundColor);
+				border: 1px solid var(--accentBackgroundColor);
+				border-left: none;
+				border-right: none;
+
+				--linearGradientAngle: 100deg;
+
+				&:dir(rtl) {
+					--linearGradientAngle: -100deg;
+				}
+
+				// Default colors for different depths
+				&.tagSeperatorDepth-1, &.tagSeperatorDepth-3, &.tagSeperatorDepth-5 {
+					background: linear-gradient(var(--linearGradientAngle), var(--accentBackgroundColor) 48%, var(--accentDeemphasizedBackgroundColor) 52%);
+				}
+				&.tagSeperatorDepth-2, &.tagSeperatorDepth-4, &.tagSeperatorDepth-6 {
+					background: linear-gradient(var(--linearGradientAngle), var(--accentDeemphasizedBackgroundColor) 48%, var(--accentBackgroundColor) 52%);
+				}
+
+				&:not(.revealed) {
+					color: transparent;
+				}
+			}
+		}
+
+		&.revealed {
+			border: 1px solid var(--accentBackgroundColor);
+			padding: .075em .3em;
+
+			border-top-right-radius: .56em;
+			border-bottom-right-radius: .56em;
+			border-top-left-radius: 1em;
+			border-bottom-left-radius: 1em;
+		}
+	}
+
+	.inline-math-container.revealed {
+		outline: 2px solid var(--textColor);
+		outline-offset: 4px;
+		border-radius: var(--inputBorderRadius);
+	}
+
+	span.math-source {
+		font-family: var(--codeFontFamily);
+		color: var(--accentTextColor);
+
+		&.revealed {
+			padding-right: .5em;
+		}
+	}
+
+	.mathLine {
+		color: var(--codeColor);
+	}
+
+	t-math[block] {
+		display: block;
+		margin-top: .5em;
+		margin-bottom: .5em;
+		&.indented {
+			margin-left: calc(var(--spaceWidth) * var(--lineIndent));
+		}
+	}
+
+	.annotation {
+		background-color: color(from var(--accentActiveBackgroundColor) srgb r g b / .7);
+		&.soft {
+			background-color: color(from var(--accentDeemphasizedBackgroundColor) srgb r g b / .7);
+		}
+		&.current {
+			background-color: var(--accentBackgroundColor);
+		}
+	}
+
+	mark {
+		background: var(--highlightBackgroundColor);
+		color: var(--highlightTextColor);
+		caret-color: var(--highlightTextColor);
+		border-radius: 1px;
+		padding: 0 .1em;
+
+		&.circle {
+			padding: 0 .3em;
+			border-radius: .5em;
+			&.start, &.end {
+				padding: 0;
+			}
+		}
+
+		&.revealed {
+			&:not(.start) {
+				padding-inline-start: 0;
+				border-start-start-radius: 0;
+				border-end-start-radius: 0;
+			}
+			&:not(.end) {
+				padding-inline-end: 0;
+				border-start-end-radius: 0;
+				border-end-end-radius: 0;
+			}
+		}
+
+		&.red {
+			background-color: var(--highlightRedBGColor);
+		}
+
+		&.orange {
+			background-color: var(--highlightOrangeBGColor);
+		}
+
+		&.yellow {
+			background-color: var(--highlightYellowBGColor);
+		}
+
+		&.green {
+			background-color: var(--highlightGreenBGColor);
+		}
+
+		&.blue {
+			background-color: var(--highlightBlueBGColor);
+		}
+
+		&.purple {
+			background-color: var(--highlightPurpleBGColor);
+		}
+
+		&.gray {
+			background-color: var(--highlightGrayBGColor);
+		}
+	}
+
+	.comment:not(.token) {
+		font-size: 90%;
+		color: var(--deemphasizedTextColor);
+
+		&.start {
+			&.hidden {
+				font-size: 0;
+				&.revealed {
+					font-size: 90%;
+				}
+			}
+		}
+	}
+
+	.html_comment.hidden {
+		color: var(--deemphasizedTextColor);
+		&.revealed {
+			font-size: 90%;
+		}
+	}
+
+	// A line holding only an html comment takes no space until the caret is on it
+	.line.commentLine:not([data-focus="focused"]) {
+		line-height: 0;
+		font-size: 0;
+		min-height: 0;
+	}
+
+	.templateToken {
+		font-family: var(--codeFontFamily);
+		color: var(--templateTokenTextColor);
+	}
+
+	.error {
+		border-bottom: 2px solid red;
+	}
+	.warning {
+		border-bottom: 2px solid orange;
+	}
+}
+
+.code_syntax.invalid {
+	text-decoration: underline;
+	text-decoration-color: red;
+}
+
+// Options
+.margins-tight article.note {
+	padding: .5em;
+	padding-top: 0;
+
+	h1, h2, h3 {
+		&.line {
+			margin-bottom: 0;
+		}
+	}
+}
+
+.margins-relaxed article.note {
+	padding: 2em 3em;
+
+	h1, h2, h3 {
+		&.line:not(:first-child) {
+			margin-top: rhythmUnit(1);
+		}
+	}
+
+	.horizontal_rule {
+		margin-top: rhythmUnit(1);
+		margin-bottom: rhythmUnit(1);
+	}
+}
+
+.hangingHeaders article.note {
+	.line {
+		padding-inline-start: fontUnit(.5);
+	}
+	
+	h1, h2, h3, h4, h5, h6 {
+		&.line {
+			padding: 0;
+		}
+	}
+
+	// Oh dear…
+	p.list .list:not(.revealed):after {
+		left: calc(-1 * var(--indentWidth) + .5em);
+	}
+}
+
+// I might want to move this elsewhere
+t-link {
+	position: relative;
+
+	&[link-state="resolved"] {
+		color: var(--accentTextColor);
+	}
+	&[link-state="empty"], &[link-state="ambiguous"] {
+		color: var(--emptyLinkTextColor);
+	}
+	&[link-state="external"] {
+		color: var(--externalLinkColor);
+	}
+	&[link-state="untracked"] {
+		color: var(--untrackedLinkColor);
+	}
+
+	.link_internal {
+		//text-decoration: underline;
+		&:not(.start):not(.end) {
+			color: inherit;
+		}
+		
+		&.hidden.revealed {
+			color: inherit;
+		}
+
+		&.hashtag {
+			font-size: 0;
+			line-height: 0;
+			&.revealed {
+				font-size: unset;
+				line-height: unset;
+				padding: 0 .2em;
+			}
+		}
+
+		&.id.name:not(.hidden):not(.revealed)::before {
+			content: '→';
+			padding: 0 .2em;
+		}
+	}
+}
+
+t-link[form="wiki"] {
+	.revealed, :not(.hidden) {
+		&.start, &.end {
+			// Shift the [[ and ]] brackets down a touch to better wrap the text
+			position: relative;
+			top: -.05em;
+		}
+	}
+}
+
+.note-link-click-mod.meta-pressed,
+.note-link-click-mod.ctrl-pressed,
+.note-link-click-none:not(.ctrl-pressed):not(.meta-pressed) {
+	t-link, t-embed {
+		cursor: pointer;
+
+		&:hover, &.revealed {
+			.link_internal {
+				text-decoration: underline;
+			}
+		}
+	}
+	.tagSection:hover {
+		cursor: pointer;
+		text-decoration: underline;
+	}
+
+	&.link-cursor-arrow {
+		t-link, t-embed {
+			cursor: default;
+		}
+	}
+
+	&.link-cursor-directional {
+		t-link, t-embed {
+			cursor: e-resize;
+		}
+		&.link-click-pane-new.shift-pressed, &.link-click-pane-replace:not(.shift-pressed) {
+			t-link, t-embed {
+				cursor: pointer;
+			}
+		}
+		&.alt-pressed {
+			t-link, t-embed {
+				// TODO: This is a gross important, but leaving it for now
+				cursor: w-resize !important;
+			}
+		}
+	}
+}
+
+.collapse-embed-link-lines {
+	.line.embedLine:not([data-focus="focused"]):not(:has(.error)) {
+		// List lines can still count as embed lines,
+		// but we don't want to collapse the list glyph
+		&.list {
+			display: flex;
+
+			.t-embed:not(.revealed):not(.error) {
+				display: flex;
+				justify-content: center;
+				flex-grow: 1;
+				t-link {
+					font-size: 0;
+					line-height: 0;
+				}
+				t-embed {
+					flex-grow: 1;
+				}
+			}
+		}
+		// Normal embed lines can be collapsed a little more directly
+		&:not(.list) {
+			line-height: 0;
+			font-size: 0;
+			min-height: 0;
+
+			
+			--lineIndent: 0;
+			t-embed {
+				margin-inline-start: calc(var(--spaceWidth) * var(--lineIndent));
+			}
+		}
+	}
+}
+
+.t-embed.error {
+	.hidden {
+		font-size: var(--fontSize);
+		line-height: rhythmUnit(1);
+		tab-size: unset;
+	}
+}
+
+t-code-preview {
+	display: block;
+	margin-top: .5em;
+	margin-bottom: .5em;
+}
+
+t-embed {
+	display: block;
+	margin-top: .5em;
+	margin-bottom: .5em;
+
+	// Ensure that line height and font size is always consistent, regardless of containing collapsed state
+	line-height: rhythmUnit(1);
+	font-size: var(--fontSize);
+
+	&[link-state="error"] {
+		color: var(--emptyLinkTextColor);
+
+		.hidden {
+			color: var(--emptyLinkTextColor);
+			font-size: unset;
+			line-height: unset;
+			tab-size: unset;
+		}
+	}
+
+	&.float-left {
+		float: left;
+		margin-right: 1em;
+	}
+	
+	&.float-right {
+		float: right;
+		margin-left: 1em;
+	}
+}

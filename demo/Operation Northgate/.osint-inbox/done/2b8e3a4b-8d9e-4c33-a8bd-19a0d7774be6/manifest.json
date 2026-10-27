@@ -1,0 +1,23 @@
+{
+  "v": 1,
+  "bundleId": "2b8e3a4b-8d9e-4c33-a8bd-19a0d7774be6",
+  "workspaceId": "VClqFaLRd7XJWp-Z0ilaTr",
+  "page": {
+    "url": "http://northgate-freight.example/contact",
+    "title": "Contact · Northgate Freight BV"
+  },
+  "clientTime": "2026-10-21T15:19:40.326Z",
+  "kind": "entity",
+  "entity": {
+    "kind": "phone",
+    "value": "+44 20 7946 0958",
+    "context": "UK sales line"
+  },
+  "server": {
+    "receivedAt": "2026-10-21T15:19:40.340Z",
+    "clientId": "DjZ3RfbCgAcRblvrn0K8BA",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0"
+  },
+  "mac": "wKWCPIqOnjG_hOR8-FD9w3tG-N1CzZJENLJ5R50pDTY"
+}

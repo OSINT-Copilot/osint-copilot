@@ -1,0 +1,3010 @@
+/* Vault AI (Remote) Plugin Styles */
+
+.vault-ai-modal {
+  padding: 20px;
+}
+
+.vault-ai-modal textarea {
+  width: 100%;
+  min-height: 100px;
+  margin-bottom: 10px;
+  font-family: var(--font-monospace);
+}
+
+.vault-ai-modal input {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.vault-ai-modal button {
+  margin-right: 10px;
+}
+
+.vault-ai-answer {
+  margin-top: 20px;
+  padding: 15px;
+  background-color: var(--background-secondary);
+  border-radius: 5px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.vault-ai-answer pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.vault-ai-notes-list {
+  margin-top: 15px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.vault-ai-note-item {
+  padding: 5px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.vault-ai-note-item:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+/* Chat View Styles */
+.vault-ai-chat-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 10px;
+  box-sizing: border-box;
+  /* The responsive rules below measure THIS box, not the window: a chat pane beside a
+     note in a wide window is narrow, and a viewport media query never fired for it. */
+  container-type: inline-size;
+}
+.vault-ai-header-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9em;
+  color: var(--text-muted);
+}
+.vault-ai-header-field select { font: inherit; color: var(--text-normal); }
+
+.vault-ai-chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 10px;
+}
+
+.vault-ai-chat-header h3 {
+  margin: 0;
+}
+
+.vault-ai-chat-header-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.vault-ai-chat-header button {
+  padding: 4px 12px;
+  font-size: 0.9em;
+}
+
+.vault-ai-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 10px;
+  padding: 10px;
+  background-color: var(--background-primary);
+  border-radius: 5px;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.vault-ai-chat-empty {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 20px;
+}
+
+.vault-ai-chat-message {
+  margin-bottom: 15px;
+  padding: 10px;
+  border-radius: 5px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.vault-ai-chat-user {
+  background-color: var(--background-secondary);
+  margin-left: 20px;
+}
+
+.vault-ai-chat-assistant {
+  background-color: var(--background-secondary-alt);
+  margin-right: 20px;
+}
+
+.vault-ai-chat-content {
+  margin-top: 5px;
+  word-wrap: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+/* Markdown formatting in chat content */
+.vault-ai-chat-content h1,
+.vault-ai-chat-content h2,
+.vault-ai-chat-content h3,
+.vault-ai-chat-content h4,
+.vault-ai-chat-content h5,
+.vault-ai-chat-content h6 {
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+}
+
+.vault-ai-chat-content h1 {
+  font-size: 1.5em;
+}
+
+.vault-ai-chat-content h2 {
+  font-size: 1.3em;
+}
+
+.vault-ai-chat-content h3 {
+  font-size: 1.1em;
+}
+
+.vault-ai-chat-content ul,
+.vault-ai-chat-content ol {
+  margin-left: 1.5em;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.vault-ai-chat-content li {
+  margin-bottom: 0.25em;
+}
+
+.vault-ai-chat-content p {
+  margin-bottom: 0.75em;
+}
+
+.vault-ai-chat-content code {
+  background-color: var(--code-background);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-family: var(--font-monospace);
+  font-size: 0.9em;
+}
+
+.vault-ai-chat-content pre {
+  background-color: var(--code-background);
+  padding: 1em;
+  border-radius: 5px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+.vault-ai-chat-content pre code {
+  background-color: transparent;
+  padding: 0;
+}
+
+.vault-ai-chat-content a {
+  color: var(--link-color);
+  text-decoration: none;
+}
+
+.vault-ai-chat-content a:hover {
+  text-decoration: underline;
+}
+
+.vault-ai-chat-content strong {
+  font-weight: 600;
+}
+
+.vault-ai-chat-content em {
+  font-style: italic;
+}
+
+.vault-ai-chat-content blockquote {
+  border-left: 3px solid var(--quote-opening-modifier);
+  padding-left: 1em;
+  margin-left: 0;
+  color: var(--text-muted);
+}
+
+.vault-ai-chat-content hr {
+  border: none;
+  border-top: 1px solid var(--background-modifier-border);
+  margin: 1em 0;
+}
+
+.vault-ai-chat-notes {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.vault-ai-note-link {
+  display: block;
+  padding: 3px 5px;
+  margin-top: 3px;
+  color: var(--text-accent);
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 0.9em;
+}
+
+.vault-ai-note-link:hover {
+  text-decoration: underline;
+  background-color: var(--background-modifier-hover);
+}
+
+.vault-ai-upload-btn {
+  font-size: 1.2em;
+  padding: 0 10px !important;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.vault-ai-upload-btn:hover {
+  color: var(--text-normal);
+}
+
+/* Drag overlay */
+.vault-ai-drag-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7);
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  backdrop-filter: blur(2px);
+}
+
+.vault-ai-drag-overlay.active {
+  display: flex;
+  cursor: copy !important;
+}
+
+.vault-ai-chat-input:hover {
+  cursor: auto;
+}
+
+/* Attachments Display */
+.vault-ai-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.vault-ai-attachment-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  position: relative;
+}
+
+.vault-ai-attachment-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+}
+
+.vault-ai-attachment-icon {
+  font-size: 1em;
+}
+
+.vault-ai-attachment-name {
+  color: var(--text-accent);
+  font-size: 0.9em;
+}
+
+.vault-ai-attachment-preview {
+  font-size: 0.8em;
+  color: var(--text-muted);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-ai-attachment-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  border: none;
+  border-radius: 50%;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s, background 0.2s;
+}
+
+.vault-ai-attachment-remove:hover {
+  opacity: 1;
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+}
+
+.vault-ai-chat-input {
+  position: relative;
+  /* Context for absolute overlay */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.vault-ai-chat-input textarea {
+  width: 100%;
+  padding: 8px;
+  font-family: var(--font-text);
+  resize: vertical;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background-color: var(--background-primary);
+}
+
+.vault-ai-chat-input button {
+  /* align-self: flex-end; Removed to allow action row alignment */
+  padding: 8px 20px;
+}
+
+.vault-ai-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.vault-ai-action-row button {
+  padding: 6px 12px;
+  /* Uniform padding */
+  height: 36px;
+  /* Uniform height */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  /* Minimum width for icon buttons */
+}
+
+/* Specific button styles */
+.vault-ai-upload-btn,
+.vault-ai-url-btn,
+.vault-ai-miro-btn {
+  font-size: 1.2em;
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+
+.vault-ai-upload-btn:hover,
+.vault-ai-url-btn:hover,
+.vault-ai-miro-btn:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+}
+
+.vault-ai-send-btn {
+  background-color: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
+  font-weight: 600;
+}
+
+.vault-ai-send-btn:hover:not(:disabled) {
+  background-color: var(--interactive-accent-hover) !important;
+}
+
+/* Disabled must look disabled: with no agent CLI installed, a bright Send that does nothing
+   reads as a broken app rather than as "set up a runtime first". */
+.vault-ai-send-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.vault-ai-action-spacer {
+  flex-grow: 1;
+}
+
+/* Conversation Sidebar Styles */
+.vault-ai-chat-layout {
+  display: flex;
+  height: 100%;
+  gap: 0;
+}
+
+.vault-ai-chat-sidebar {
+  width: 250px;
+  min-width: 200px;
+  max-width: 300px;
+  background: var(--background-secondary);
+  border-right: 1px solid var(--background-modifier-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.vault-ai-chat-sidebar.hidden {
+  display: none;
+}
+
+.vault-ai-chat-sidebar-header {
+  padding: 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.vault-ai-chat-sidebar-header h4 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.vault-ai-chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.vault-ai-sidebar-toggle {
+  padding: 4px 8px;
+  font-size: 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.vault-ai-sidebar-toggle:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+  border-radius: 4px;
+}
+
+.vault-ai-conversation-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.vault-ai-no-conversations {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 20px 10px;
+  font-size: 13px;
+}
+
+.vault-ai-conversation-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  background: var(--background-primary);
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.vault-ai-conversation-item:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--background-modifier-border);
+}
+
+.vault-ai-conversation-item.active {
+  background: var(--background-modifier-active-hover);
+  border-color: var(--interactive-accent);
+  border-left: 3px solid var(--interactive-accent);
+}
+
+.vault-ai-conversation-content {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  padding-right: 8px;
+}
+
+.vault-ai-conversation-content:hover .vault-ai-conversation-title {
+  color: var(--text-accent);
+}
+
+.vault-ai-conversation-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.15s ease;
+}
+
+.vault-ai-conversation-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.vault-ai-conversation-date {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.vault-ai-conversation-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.vault-ai-conversation-item:hover .vault-ai-conversation-actions {
+  opacity: 1;
+}
+
+.vault-ai-conv-action-btn {
+  padding: 4px 6px;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0.7;
+  transition: all 0.15s ease;
+}
+
+.vault-ai-conv-action-btn:hover {
+  background: var(--background-modifier-hover);
+  opacity: 1;
+}
+
+.vault-ai-new-chat-btn {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.vault-ai-new-chat-btn:hover {
+  opacity: 0.9;
+}
+
+/* Report View Styles */
+
+/* Progress Bar Styles */
+.vault-ai-progress-container {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  padding: 8px;
+  background-color: var(--background-secondary);
+  border-radius: 4px;
+}
+
+.vault-ai-progress-bar {
+  height: 8px;
+  background-color: var(--interactive-accent);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  margin-bottom: 5px;
+}
+
+.vault-ai-progress-text {
+  display: block;
+  font-size: 0.9em;
+  color: var(--text-muted);
+  margin-top: 5px;
+}
+
+/* ============================================================================
+   OSINTCopilot Graph Plugin Styles
+   ============================================================================ */
+
+/* Graph View */
+.graph_copilot-graph-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--background-primary);
+  /*
+   * Never scrolls, overriding the generic `.view-content { overflow: auto }` in
+   * theme-bridge.css. That default is right for chat, wrong here: Cytoscape absolutely
+   * positions its canvases and owns pan and zoom itself, so a scrollbar on this element
+   * can never do anything useful.
+   *
+   * It was also visibly wrong. Cytoscape keeps the canvases at their previous pixel size
+   * for a few frames after the panel resizes -- toggling the sidebar left them overflowing
+   * by up to ~300px on 18% of frames -- and `auto` turned every one of those frames into a
+   * scrollbar flashing along the bottom and right edges. Cytoscape catches up on its own,
+   * so clipping is the whole fix; there is no stale-size bug underneath.
+   *
+   * The selector below must out-specify that rule (.workspace-leaf-content > .view-content,
+   * two classes); a bare .graph_copilot-graph-container loses and silently keeps `auto`.
+   */
+}
+
+.workspace-leaf-content > .view-content.graph_copilot-graph-container {
+  overflow: hidden;
+}
+
+.graph_copilot-graph-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.graph_copilot-graph-toolbar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 100;
+  display: flex;
+  gap: 5px;
+  background: var(--background-secondary);
+  padding: 5px;
+  border-radius: 5px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.graph_copilot-graph-toolbar button {
+  padding: 5px 10px;
+  border: none;
+  border-radius: 3px;
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.graph_copilot-graph-toolbar button:hover {
+  background: var(--interactive-hover);
+}
+
+.graph_copilot-graph-workspace-row .graph_copilot-graph-select {
+  max-width: 160px;
+  font-size: 12px;
+}
+
+.graph_copilot-graph-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Timeline View */
+.graph_copilot-timeline-container {
+  width: 100%;
+  height: 100%;
+  background: var(--background-primary);
+  display: flex;
+  flex-direction: column;
+  /* The query container for the date gutter (@container, end of file). */
+  container-type: inline-size;
+}
+
+.graph_copilot-timeline-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  flex-shrink: 0;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.graph_copilot-timeline-canvas {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.graph_copilot-timeline-wrapper {
+  position: relative;
+  min-height: 100%;
+  padding-left: 200px;
+}
+
+.graph_copilot-timeline-line {
+  position: absolute;
+  left: 180px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--interactive-accent);
+  border-radius: 2px;
+}
+
+.graph_copilot-timeline-event {
+  position: relative;
+  margin-bottom: 30px;
+  padding-left: 40px;
+  cursor: pointer;
+}
+
+.graph_copilot-timeline-dot {
+  position: absolute;
+  left: -12px;
+  top: 5px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 3px solid var(--background-primary);
+}
+
+.graph_copilot-timeline-date {
+  position: absolute;
+  left: -180px;
+  top: 0;
+  width: 150px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.graph_copilot-timeline-card {
+  background: var(--background-secondary);
+  padding: 15px;
+  border-radius: 0 8px 8px 0;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.graph_copilot-timeline-card:hover {
+  transform: translateX(5px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.graph_copilot-timeline-card h4 {
+  margin: 0 0 5px 0;
+  color: var(--text-normal);
+}
+
+.graph_copilot-timeline-time {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.graph_copilot-timeline-empty {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-muted);
+}
+
+/* Map View */
+.graph_copilot-map-container {
+  width: 100%;
+  height: 100%;
+  background: var(--background-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+.graph_copilot-map-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  flex-shrink: 0;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.graph_copilot-map-canvas {
+  flex: 1;
+}
+
+.graph_copilot-map-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* AI Panel */
+
+/* Graph Common */
+
+/* Entity Creation Modal */
+.graph_copilot-entity-modal {
+  padding: 20px;
+  max-width: 500px;
+}
+
+.graph_copilot-entity-modal h2 {
+  margin-top: 0;
+  margin-bottom: 5px;
+}
+
+.graph_copilot-entity-modal-description {
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+.graph_copilot-entity-form {
+  margin-bottom: 15px;
+}
+
+.graph_copilot-entity-field {
+  margin-bottom: 12px;
+}
+
+.graph_copilot-entity-field label {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.graph_copilot-entity-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 14px;
+}
+
+.graph_copilot-entity-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+}
+
+.graph_copilot-entity-input[type="checkbox"] {
+  width: auto;
+  margin-right: 8px;
+}
+
+.graph_copilot-datetime-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.graph_copilot-datetime-row .graph_copilot-entity-input {
+  flex: 1;
+  width: auto;
+}
+
+.graph_copilot-now-btn {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.graph_copilot-now-btn:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+}
+
+.graph_copilot-entity-modal h4 {
+  margin-top: 20px;
+  margin-bottom: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.graph_copilot-entity-modal-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.graph_copilot-entity-modal-buttons button {
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.graph_copilot-entity-modal-buttons button.mod-cta {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+}
+
+/* Entity Type Selector Modal */
+.graph_copilot-entity-selector-modal {
+  padding: 20px;
+  max-width: 600px;
+}
+
+.graph_copilot-entity-selector-modal h2 {
+  margin-top: 0;
+}
+
+.graph_copilot-entity-type-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin: 20px 0;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.graph_copilot-entity-type-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  border-left: 4px solid;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.graph_copilot-entity-type-btn:hover {
+  transform: translateX(3px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.graph_copilot-entity-type-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.graph_copilot-entity-type-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.graph_copilot-entity-type-info strong {
+  color: var(--text-normal);
+}
+
+.graph_copilot-entity-type-info small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.graph_copilot-entity-cancel-btn {
+  display: block;
+  margin: 0 auto;
+  padding: 8px 24px;
+}
+
+/* Geocoding Section Styles */
+.graph_copilot-geocode-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  margin: 15px 0;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+}
+
+.graph_copilot-geocode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 14px;
+  transition: opacity 0.15s, transform 0.15s;
+  align-self: flex-start;
+}
+
+.graph_copilot-geocode-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.graph_copilot-geocode-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.graph_copilot-geocode-status {
+  font-size: 13px;
+  padding: 4px 0;
+  min-height: 20px;
+}
+
+.graph_copilot-geocode-status-success {
+  color: var(--text-success, #4ade80);
+}
+
+.graph_copilot-geocode-status-error {
+  color: var(--text-error, #f87171);
+}
+
+.graph_copilot-geocode-status-loading {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.graph_copilot-geocode-help {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Add Entity Button in Toolbars */
+.graph_copilot-add-entity-btn {
+  background: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
+  font-weight: 500;
+}
+
+.graph_copilot-add-entity-btn:hover {
+  opacity: 0.9;
+}
+
+/* Toolbar Separator */
+.graph_copilot-toolbar-separator {
+  width: 1px;
+  height: 20px;
+  background: var(--background-modifier-border);
+  margin: 0 5px;
+}
+
+/* Connection Button Styles */
+.graph_copilot-connect-btn {
+  background: var(--background-modifier-hover) !important;
+  color: var(--text-normal) !important;
+  font-weight: 500;
+  border: 1px solid var(--background-modifier-border) !important;
+}
+
+.graph_copilot-connect-btn:hover {
+  background: var(--background-modifier-border) !important;
+}
+
+.graph_copilot-connect-btn-active {
+  background: #ff6b6b !important;
+  color: white !important;
+  border-color: #ff6b6b !important;
+}
+
+.graph_copilot-connect-btn-active:hover {
+  background: #ee5a5a !important;
+}
+
+/* Connection Mode Status Indicator */
+.graph_copilot-connection-status {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  margin-left: 5px;
+}
+
+.graph_copilot-connection-status-active {
+  background: #4CAF50;
+  color: white;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.7;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Connection Mode Cursor */
+.graph_copilot-connection-mode {
+  cursor: crosshair !important;
+}
+
+/* Box Select Mode Styles */
+.graph_copilot-box-select-active {
+  background: #4CAF50 !important;
+  color: white !important;
+  border-color: #4CAF50 !important;
+}
+
+.graph_copilot-box-select-active:hover {
+  background: #45a049 !important;
+}
+
+.graph_copilot-box-select-mode {
+  cursor: crosshair !important;
+}
+
+/* Connection Modal Styles */
+
+.graph_copilot-connection-warning {
+  color: var(--text-error);
+  padding: 10px;
+  background: var(--background-modifier-error);
+  border-radius: 4px;
+  margin: 10px 0;
+}
+
+/* Relationship Suggestions */
+
+/* ============================================================================
+   Digital Footprint Mode Styles
+   ============================================================================ */
+
+/* Digital Footprint toggle in header */
+
+/* Digital Footprint options panel */
+
+/* Conversation list Digital Footprint badge */
+
+/* Mode disclaimer banner */
+.vault-ai-mode-disclaimer {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.vault-ai-mode-disclaimer strong {
+  color: var(--text-normal);
+}
+
+/* Ensure textarea is always clickable and on top */
+.vault-ai-chat-input textarea {
+  position: relative;
+  z-index: 2;
+}
+
+/* ============================================
+   RESPONSIVE LAYOUT STYLES
+   ============================================ */
+
+/* Chat header buttons - wrap on smaller screens */
+.vault-ai-chat-header-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Responsive adjustments for a narrow chat pane */
+@container (max-width: 600px) {
+  .vault-ai-chat-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .vault-ai-chat-header-buttons {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+/* A very narrow pane */
+@container (max-width: 400px) {
+  .vault-ai-chat-view {
+    padding: 5px;
+  }
+
+  .vault-ai-chat-header-buttons {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .vault-ai-new-chat-btn {
+    width: 100%;
+  }
+
+  .vault-ai-chat-input button {
+    width: 100%;
+  }
+}
+
+/* Ensure chat area fills available space properly */
+.vault-ai-chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.vault-ai-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 100px;
+}
+
+.vault-ai-chat-input {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vault-ai-chat-input textarea {
+  min-height: 60px;
+  max-height: 200px;
+  resize: vertical;
+}
+
+/* ============================================================================
+   Leaflet CSS v1.9.4 - Inlined for CSP compliance
+   ============================================================================ */
+.leaflet-pane,
+.leaflet-tile,
+.leaflet-marker-icon,
+.leaflet-marker-shadow,
+.leaflet-tile-container,
+.leaflet-pane>svg,
+.leaflet-pane>canvas,
+.leaflet-zoom-box,
+.leaflet-image-layer,
+.leaflet-layer {
+  position: absolute;
+  left: 0;
+  top: 0
+}
+
+.leaflet-container {
+  overflow: hidden
+}
+
+.leaflet-tile,
+.leaflet-marker-icon,
+.leaflet-marker-shadow {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none
+}
+
+.leaflet-tile::selection {
+  background: transparent
+}
+
+.leaflet-safari .leaflet-tile {
+  image-rendering: -webkit-optimize-contrast
+}
+
+.leaflet-safari .leaflet-tile-container {
+  width: 1600px;
+  height: 1600px;
+  transform-origin: 0 0;
+  -webkit-transform-origin: 0 0
+}
+
+.leaflet-marker-icon,
+.leaflet-marker-shadow {
+  display: block
+}
+
+.leaflet-container .leaflet-overlay-pane svg {
+  max-width: none !important;
+  max-height: none !important
+}
+
+.leaflet-container .leaflet-marker-pane img,
+.leaflet-container .leaflet-shadow-pane img,
+.leaflet-container .leaflet-tile-pane img,
+.leaflet-container img.leaflet-image-layer,
+.leaflet-container .leaflet-tile {
+  max-width: none !important;
+  max-height: none !important;
+  width: auto;
+  padding: 0
+}
+
+.leaflet-container img.leaflet-tile {
+  mix-blend-mode: plus-lighter
+}
+
+.leaflet-container.leaflet-touch-zoom {
+  -ms-touch-action: pan-x pan-y;
+  touch-action: pan-x pan-y
+}
+
+.leaflet-container.leaflet-touch-drag {
+  -ms-touch-action: pinch-zoom;
+  touch-action: none;
+  touch-action: pinch-zoom
+}
+
+.leaflet-container.leaflet-touch-drag.leaflet-touch-zoom {
+  -ms-touch-action: none;
+  touch-action: none
+}
+
+.leaflet-container {
+  -webkit-tap-highlight-color: transparent
+}
+
+.leaflet-container a {
+  -webkit-tap-highlight-color: rgba(51, 181, 229, .4)
+}
+
+.leaflet-tile {
+  filter: inherit;
+  visibility: hidden
+}
+
+.leaflet-tile-loaded {
+  visibility: inherit
+}
+
+.leaflet-zoom-box {
+  width: 0;
+  height: 0;
+  -moz-box-sizing: border-box;
+  box-sizing: border-box;
+  z-index: 800
+}
+
+.leaflet-overlay-pane svg {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none
+}
+
+.leaflet-pane {
+  z-index: 400
+}
+
+.leaflet-tile-pane {
+  z-index: 200
+}
+
+.leaflet-overlay-pane {
+  z-index: 400
+}
+
+.leaflet-shadow-pane {
+  z-index: 500
+}
+
+.leaflet-marker-pane {
+  z-index: 600
+}
+
+.leaflet-tooltip-pane {
+  z-index: 650
+}
+
+.leaflet-popup-pane {
+  z-index: 700
+}
+
+.leaflet-map-pane canvas {
+  z-index: 100
+}
+
+.leaflet-map-pane svg {
+  z-index: 200
+}
+
+.leaflet-vml-shape {
+  width: 1px;
+  height: 1px
+}
+
+.lvml {
+  behavior: url(#default#VML);
+  display: inline-block;
+  position: absolute
+}
+
+.leaflet-control {
+  position: relative;
+  z-index: 800;
+  pointer-events: visiblePainted;
+  pointer-events: auto
+}
+
+.leaflet-top,
+.leaflet-bottom {
+  position: absolute;
+  z-index: 1000;
+  pointer-events: none
+}
+
+.leaflet-top {
+  top: 0
+}
+
+.leaflet-right {
+  right: 0
+}
+
+.leaflet-bottom {
+  bottom: 0
+}
+
+.leaflet-left {
+  left: 0
+}
+
+.leaflet-control {
+  float: left;
+  clear: both
+}
+
+.leaflet-right .leaflet-control {
+  float: right
+}
+
+.leaflet-top .leaflet-control {
+  margin-top: 10px
+}
+
+.leaflet-bottom .leaflet-control {
+  margin-bottom: 10px
+}
+
+.leaflet-left .leaflet-control {
+  margin-left: 10px
+}
+
+.leaflet-right .leaflet-control {
+  margin-right: 10px
+}
+
+.leaflet-fade-anim .leaflet-popup {
+  opacity: 0;
+  -webkit-transition: opacity .2s linear;
+  -moz-transition: opacity .2s linear;
+  transition: opacity .2s linear
+}
+
+.leaflet-fade-anim .leaflet-map-pane .leaflet-popup {
+  opacity: 1
+}
+
+.leaflet-zoom-animated {
+  -webkit-transform-origin: 0 0;
+  -ms-transform-origin: 0 0;
+  transform-origin: 0 0
+}
+
+svg.leaflet-zoom-animated {
+  will-change: transform
+}
+
+.leaflet-zoom-anim .leaflet-zoom-animated {
+  -webkit-transition: -webkit-transform .25s cubic-bezier(0, 0, .25, 1);
+  -moz-transition: -moz-transform .25s cubic-bezier(0, 0, .25, 1);
+  transition: transform .25s cubic-bezier(0, 0, .25, 1)
+}
+
+.leaflet-zoom-anim .leaflet-tile,
+.leaflet-pan-anim .leaflet-tile {
+  -webkit-transition: none;
+  -moz-transition: none;
+  transition: none
+}
+
+.leaflet-zoom-anim .leaflet-zoom-hide {
+  visibility: hidden
+}
+
+.leaflet-interactive {
+  cursor: pointer
+}
+
+.leaflet-grab {
+  cursor: -webkit-grab;
+  cursor: -moz-grab;
+  cursor: grab
+}
+
+.leaflet-crosshair,
+.leaflet-crosshair .leaflet-interactive {
+  cursor: crosshair
+}
+
+.leaflet-popup-pane,
+.leaflet-control {
+  cursor: auto
+}
+
+.leaflet-dragging .leaflet-grab,
+.leaflet-dragging .leaflet-grab .leaflet-interactive,
+.leaflet-dragging .leaflet-marker-draggable {
+  cursor: move;
+  cursor: -webkit-grabbing;
+  cursor: -moz-grabbing;
+  cursor: grabbing
+}
+
+.leaflet-marker-icon,
+.leaflet-marker-shadow,
+.leaflet-image-layer,
+.leaflet-pane>svg path,
+.leaflet-tile-container {
+  pointer-events: none
+}
+
+.leaflet-marker-icon.leaflet-interactive,
+.leaflet-image-layer.leaflet-interactive,
+.leaflet-pane>svg path.leaflet-interactive,
+svg.leaflet-image-layer.leaflet-interactive path {
+  pointer-events: visiblePainted;
+  pointer-events: auto
+}
+
+.leaflet-container {
+  background: #ddd;
+  outline-offset: 1px
+}
+
+.leaflet-container a {
+  color: #0078A8
+}
+
+.leaflet-zoom-box {
+  border: 2px dotted #38f;
+  background: rgba(255, 255, 255, .5)
+}
+
+.leaflet-container {
+  font-family: "Helvetica Neue", Arial, Helvetica, sans-serif;
+  font-size: 12px;
+  font-size: .75rem;
+  line-height: 1.5
+}
+
+.leaflet-bar {
+  box-shadow: 0 1px 5px rgba(0, 0, 0, .65);
+  border-radius: 4px
+}
+
+.leaflet-bar a {
+  background-color: #fff;
+  border-bottom: 1px solid #ccc;
+  width: 26px;
+  height: 26px;
+  line-height: 26px;
+  display: block;
+  text-align: center;
+  text-decoration: none;
+  color: #000
+}
+
+.leaflet-bar a,
+.leaflet-control-layers-toggle {
+  background-position: 50% 50%;
+  background-repeat: no-repeat;
+  display: block
+}
+
+.leaflet-bar a:hover,
+.leaflet-bar a:focus {
+  background-color: #f4f4f4
+}
+
+.leaflet-bar a:first-child {
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px
+}
+
+.leaflet-bar a:last-child {
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
+  border-bottom: none
+}
+
+.leaflet-bar a.leaflet-disabled {
+  cursor: default;
+  background-color: #f4f4f4;
+  color: #bbb
+}
+
+.leaflet-touch .leaflet-bar a {
+  width: 30px;
+  height: 30px;
+  line-height: 30px
+}
+
+.leaflet-touch .leaflet-bar a:first-child {
+  border-top-left-radius: 2px;
+  border-top-right-radius: 2px
+}
+
+.leaflet-touch .leaflet-bar a:last-child {
+  border-bottom-left-radius: 2px;
+  border-bottom-right-radius: 2px
+}
+
+.leaflet-control-zoom-in,
+.leaflet-control-zoom-out {
+  font: bold 18px 'Lucida Console', Monaco, monospace;
+  text-indent: 1px
+}
+
+.leaflet-touch .leaflet-control-zoom-in,
+.leaflet-touch .leaflet-control-zoom-out {
+  font-size: 22px
+}
+
+.leaflet-control-layers {
+  box-shadow: 0 1px 5px rgba(0, 0, 0, .4);
+  background: #fff;
+  border-radius: 5px
+}
+
+.leaflet-control-layers-toggle {
+  width: 36px;
+  height: 36px
+}
+
+.leaflet-touch .leaflet-control-layers-toggle {
+  width: 44px;
+  height: 44px
+}
+
+.leaflet-control-layers .leaflet-control-layers-list,
+.leaflet-control-layers-expanded .leaflet-control-layers-toggle {
+  display: none
+}
+
+.leaflet-control-layers-expanded .leaflet-control-layers-list {
+  display: block;
+  position: relative
+}
+
+.leaflet-control-layers-expanded {
+  padding: 6px 10px 6px 6px;
+  color: #333;
+  background: #fff
+}
+
+.leaflet-control-layers-scrollbar {
+  overflow-y: scroll;
+  overflow-x: hidden;
+  padding-right: 5px
+}
+
+.leaflet-control-layers-selector {
+  margin-top: 2px;
+  position: relative;
+  top: 1px
+}
+
+.leaflet-control-layers label {
+  display: block;
+  font-size: 13px;
+  font-size: 1.08333em
+}
+
+.leaflet-control-layers-separator {
+  height: 0;
+  border-top: 1px solid #ddd;
+  margin: 5px -10px 5px -6px
+}
+
+.leaflet-container .leaflet-control-attribution {
+  background: #fff;
+  background: rgba(255, 255, 255, .8);
+  margin: 0
+}
+
+.leaflet-control-attribution,
+.leaflet-control-scale-line {
+  padding: 0 5px;
+  color: #333;
+  line-height: 1.4
+}
+
+.leaflet-control-attribution a {
+  text-decoration: none
+}
+
+.leaflet-control-attribution a:hover,
+.leaflet-control-attribution a:focus {
+  text-decoration: underline
+}
+
+.leaflet-attribution-flag {
+  display: inline !important;
+  vertical-align: baseline !important;
+  width: 1em;
+  height: .6669em
+}
+
+.leaflet-left .leaflet-control-scale {
+  margin-left: 5px
+}
+
+.leaflet-bottom .leaflet-control-scale {
+  margin-bottom: 5px
+}
+
+.leaflet-control-scale-line {
+  border: 2px solid #777;
+  border-top: none;
+  line-height: 1.1;
+  padding: 2px 5px 1px;
+  white-space: nowrap;
+  -moz-box-sizing: border-box;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, .8);
+  text-shadow: 1px 1px #fff
+}
+
+.leaflet-control-scale-line:not(:first-child) {
+  border-top: 2px solid #777;
+  border-bottom: none;
+  margin-top: -2px
+}
+
+.leaflet-control-scale-line:not(:first-child):not(:last-child) {
+  border-bottom: 2px solid #777
+}
+
+.leaflet-touch .leaflet-control-attribution,
+.leaflet-touch .leaflet-control-layers,
+.leaflet-touch .leaflet-bar {
+  box-shadow: none
+}
+
+.leaflet-touch .leaflet-control-layers,
+.leaflet-touch .leaflet-bar {
+  border: 2px solid rgba(0, 0, 0, .2);
+  background-clip: padding-box
+}
+
+.leaflet-popup {
+  position: absolute;
+  text-align: center;
+  margin-bottom: 20px
+}
+
+.leaflet-popup-content-wrapper {
+  padding: 1px;
+  text-align: left;
+  border-radius: 12px
+}
+
+.leaflet-popup-content {
+  margin: 13px 24px 13px 20px;
+  line-height: 1.3;
+  font-size: 13px;
+  font-size: 1.08333em;
+  min-height: 1px
+}
+
+.leaflet-popup-content p {
+  margin: 17px 0;
+  margin: 1.3em 0
+}
+
+.leaflet-popup-tip-container {
+  width: 40px;
+  height: 20px;
+  position: absolute;
+  left: 50%;
+  margin-top: -1px;
+  margin-left: -20px;
+  overflow: hidden;
+  pointer-events: none
+}
+
+.leaflet-popup-tip {
+  width: 17px;
+  height: 17px;
+  padding: 1px;
+  margin: -10px auto 0;
+  pointer-events: auto;
+  -webkit-transform: rotate(45deg);
+  -moz-transform: rotate(45deg);
+  -ms-transform: rotate(45deg);
+  transform: rotate(45deg)
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: #fff;
+  color: #333;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, .4)
+}
+
+.leaflet-container a.leaflet-popup-close-button {
+  position: absolute;
+  top: 0;
+  right: 0;
+  border: none;
+  text-align: center;
+  width: 24px;
+  height: 24px;
+  font: 16px/24px Tahoma, Verdana, sans-serif;
+  color: #757575;
+  text-decoration: none;
+  background: transparent
+}
+
+.leaflet-container a.leaflet-popup-close-button:hover,
+.leaflet-container a.leaflet-popup-close-button:focus {
+  color: #585858
+}
+
+.leaflet-popup-scrolled {
+  overflow: auto
+}
+
+.leaflet-oldie .leaflet-popup-content-wrapper {
+  zoom: 1;
+  -webkit-zoom: 1;
+  -ms-zoom: 1;
+}
+
+.leaflet-oldie .leaflet-popup-tip {
+  width: 24px;
+  margin: 0 auto;
+  -ms-filter: "progid:DXImageTransform.Microsoft.Matrix(M11=0.70710678, M12=0.70710678, M21=-0.70710678, M22=0.70710678)";
+  filter: progid:DXImageTransform.Microsoft.Matrix(M11=0.70710678, M12=0.70710678, M21=-0.70710678, M22=0.70710678)
+}
+
+.leaflet-oldie .leaflet-control-zoom,
+.leaflet-oldie .leaflet-control-layers,
+.leaflet-oldie .leaflet-popup-content-wrapper,
+.leaflet-oldie .leaflet-popup-tip {
+  border: 1px solid #999
+}
+
+.leaflet-div-icon {
+  background: #fff;
+  border: 1px solid #666
+}
+
+.leaflet-tooltip {
+  position: absolute;
+  padding: 6px;
+  background-color: #fff;
+  border: 1px solid #fff;
+  border-radius: 3px;
+  color: #222;
+  white-space: nowrap;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  pointer-events: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .4)
+}
+
+.leaflet-tooltip.leaflet-interactive {
+  cursor: pointer;
+  pointer-events: auto
+}
+
+.leaflet-tooltip-top:before,
+.leaflet-tooltip-bottom:before,
+.leaflet-tooltip-left:before,
+.leaflet-tooltip-right:before {
+  position: absolute;
+  pointer-events: none;
+  border: 6px solid transparent;
+  background: transparent;
+  content: ""
+}
+
+.leaflet-tooltip-bottom {
+  margin-top: 6px
+}
+
+.leaflet-tooltip-top {
+  margin-top: -6px
+}
+
+.leaflet-tooltip-bottom:before,
+.leaflet-tooltip-top:before {
+  left: 50%;
+  margin-left: -6px
+}
+
+.leaflet-tooltip-top:before {
+  bottom: 0;
+  margin-bottom: -12px;
+  border-top-color: #fff
+}
+
+.leaflet-tooltip-bottom:before {
+  top: 0;
+  margin-top: -12px;
+  margin-left: -6px;
+  border-bottom-color: #fff
+}
+
+.leaflet-tooltip-left {
+  margin-left: -6px
+}
+
+.leaflet-tooltip-right {
+  margin-left: 6px
+}
+
+.leaflet-tooltip-left:before,
+.leaflet-tooltip-right:before {
+  top: 50%;
+  margin-top: -6px
+}
+
+.leaflet-tooltip-left:before {
+  right: 0;
+  margin-right: -12px;
+  border-left-color: #fff
+}
+
+.leaflet-tooltip-right:before {
+  left: 0;
+  margin-left: -12px;
+  border-right-color: #fff
+}
+
+@media print {
+  .leaflet-control {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact
+  }
+}
+
+/* Custom Layer Control Styles */
+.leaflet-control-layers-toggle {
+  background-size: cover;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  background-color: #fff;
+}
+
+.leaflet-retina .leaflet-control-layers-toggle {
+  background-size: cover;
+}
+
+/* ============================================
+   Custom Type Modal & Shared Utility Classes
+   (replacing inline styles for lint compliance)
+   ============================================ */
+
+/* Properties table in custom type modal */
+.graph_copilot-properties-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.graph_copilot-properties-header {
+  text-align: left;
+}
+
+.graph_copilot-properties-th {
+  padding: 8px;
+}
+
+.graph_copilot-properties-row {
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.graph_copilot-properties-td {
+  padding: 8px;
+}
+
+.graph_copilot-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: var(--background-modifier-hover);
+}
+
+.graph_copilot-tag--mr {
+  margin-right: 4px;
+}
+
+/* Add property form */
+.graph_copilot-add-property-form {
+  background: var(--background-secondary);
+  padding: 10px;
+  border-radius: 6px;
+  margin-top: 10px;
+}
+
+.graph_copilot-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.graph_copilot-input-full {
+  width: 100%;
+}
+
+.graph_copilot-flags-container {
+  margin-top: 10px;
+  display: flex;
+  gap: 20px;
+}
+
+.graph_copilot-btn-container {
+  margin-top: 10px;
+  text-align: right;
+}
+
+.graph_copilot-section--properties {
+  margin-top: 20px;
+}
+
+/* Confirm modal button container */
+.graph_copilot-confirm-buttons {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.graph_copilot-confirm-btn--danger {
+  background-color: var(--background-modifier-error);
+  color: var(--text-on-accent);
+}
+
+/* Settings tab utility classes */
+
+/* Chat view inline style replacements */
+
+/* Report generation button */
+
+/* Centered container for report/empty states */
+
+/* Status indicator colors */
+
+/* Graph drag-and-drop overlay */
+.graph-drop-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 100;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.55);
+  border: 3px dashed var(--interactive-accent);
+  border-radius: 8px;
+  backdrop-filter: blur(2px);
+}
+
+.graph-drop-overlay.active {
+  display: flex;
+}
+
+.graph-drop-overlay-text {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-on-accent-inverted, #ffffff);
+  background: var(--interactive-accent);
+  padding: 12px 28px;
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+/* OSINT Copilot — tools / skills / enrichers registry view */
+.osint-copilot-registry-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0.5rem 0.75rem;
+  overflow: hidden;
+}
+
+/*
+ * theme-bridge's `.workspace-leaf-content > .view-content { overflow: auto }` outranks
+ * the bare class above, so its `overflow: hidden` silently lost and the whole view
+ * scrolled instead of the grid. Same fix as .graph_copilot-graph-container.
+ */
+.workspace-leaf-content > .view-content.osint-copilot-registry-root {
+  overflow: hidden;
+}
+
+.osint-copilot-registry-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  flex-shrink: 0;
+}
+
+.osint-copilot-registry-grid {
+  display: grid;
+  /*
+   * Intrinsic rather than a media query: a media query measures the window, and this
+   * view lives in a pane that may be a third of it. Columns wrap as the pane narrows.
+   */
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.osint-copilot-registry-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.5rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 6px);
+  background: var(--background-primary);
+}
+
+.osint-copilot-registry-column h3 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1em;
+}
+
+.osint-copilot-registry-hint {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+}
+
+.osint-copilot-registry-empty {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.osint-copilot-registry-row {
+  padding: 0.45rem 0.5rem;
+  border-radius: var(--radius-s, 4px);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+.osint-copilot-registry-row-title {
+  font-weight: 500;
+}
+
+.osint-copilot-registry-row-id {
+  display: block;
+  font-size: var(--font-ui-smaller);
+  margin: 0.2rem 0;
+  word-break: break-word;
+}
+
+.osint-copilot-registry-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+/* ============================================================================
+   Leaflet control icons.
+
+   The vendored Leaflet CSS above is a faithful copy of 1.9.4 except for the two
+   rules that reference bundled image files -- those were dropped, which is why
+   the layer-switcher rendered as a blank white box, and why the code used to
+   paint a REMOTE MAP TILE as the button's background (invisible offline, and an
+   outbound request on every layer change).
+
+   These are inlined as data URIs rather than imported from
+   leaflet/dist/leaflet.css because this app's css-loader runs with `url: false`
+   (src/app/webpack.config.js), so a url(images/...) reference would be emitted
+   verbatim and resolve against __build/bundle/, where the images do not exist.
+   Inlining sidesteps URL resolution entirely and works offline.
+   ============================================================================ */
+.leaflet-control-layers-toggle {
+  background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABoAAAAaCAQAAAADQ4RFAAACf0lEQVR4AY1UM3gkARTePdvdoTxXKc+qTl3aU5U6b2Kbkz3Gtq3Zw6ziLGNPzrYx7946Tr6/ee/XeCQ4D3ykPtL5tHno4n0d/h3+xfuWHGLX81cn7r0iTNzjr7LrlxCqPtkbTQEHeqOrTy4Yyt3VCi/IOB0v7rVC7q45Q3Gr5K6jt+3Gl5nCoDD4MtO+j96Wu8atmhGqcNGHObuf8OM/x3AMx38+4Z2sPqzCxRFK2aF2e5Jol56XTLyggAMTL56XOMoS1W4pOyjUcGGQdZxU6qRh7B9Zp+PfpOFlqt0zyDZckPi1ttmIp03jX8gyJ8a/PG2yutpS/Vol7peZIbZcKBAEEheEIAgFbDkz5H6Zrkm2hVWGiXKiF4Ycw0RWKdtC16Q7qe3X4iOMxruonzegJzWaXFrU9utOSsLUmrc0YjeWYjCW4PDMADElpJSSQ0vQvA1Tm6/JlKnqFs1EGyZiFCqnRZTEJJJiKRYzVYzJck2Rm6P4iH+cmSY0YzimYa8l0EtTODFWhcMIMVqdsI2uiTvKmTisIDHJ3od5GILVhBCarCfVRmo4uTjkhrhzkiBV7SsaqS+TzrzM1qpGGUFt28pIySQHR6h7F6KSwGWm97ay+Z+ZqMcEjEWebE7wxCSQwpkhJqoZA5ivCdZDjJepuJ9IQjGGUmuXJdBFUygxVqVsxFsLMbDe8ZbDYVCGKxs+W080max1hFCarCfV+C1KATwcnvE9gRRuMP2prdbWGowm1KB1y+zwMMENkM755cJ2yPDtqhTI6ED1M/82yIDtC/4j4BijjeObflpO9I9MwXTCsSX8jWAFeHr05WoLTJ5G8IQVS/7vwR6ohirYM7f6HzYpogfS3R2OAAAAAElFTkSuQmCC");
+  background-size: 26px 26px;
+  width: 36px;
+  height: 36px;
+}
+.leaflet-retina .leaflet-control-layers-toggle {
+  background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADQAAAA0CAQAAABvcdNgAAAEsklEQVR4AWL4TydIhpZK1kpWOlg0w3ZXP6D2soBtG42jeI6ZmQTHzAxiTbSJsYLjO9HhP+WOmcuhciVnmHVQcJnp7DFvScowZorad/+V/fVzMdMT2g9Cv9guXGv/7pYOrXh2U+RRR3dSd9JRx6bIFc/ekqHI29JC6pJ5ZEh1yWkhkbcFeSjxgx3L2m1cb1C7bceyxA+CNjT/Ifff+/kDk2u/w/33/IeCMOSaWZ4glosqT3DNnNZQ7Cs58/3Ce5HL78iZH/vKVIaYlqzfdLu8Vi7dnvUbEza5Idt36tquZFldl6N5Z/POLof0XLK61mZCmJSWjVF9tEjUluu74IUXvgttuVIHE7YxSkaYhJZam7yiM9Pv82JYfl9nptxZaxMJE4YSPty+vF0+Y2up9d3wwijfjZbabqm/3bZ9ecKHsiGmRflnn1MW4pjHf9oLufyn2z3y1D6n8g8TZhxyzipLNPnAUpsOiuWimg52psrTZYnOWYNDTMuWBWa0tJb4rgq1UvmutpaYEbZlwU3CLJm/ayYjHW5/h7xWLn9Hh1vepDkyf7dE7MtT5LR4e7yYpHrkhOUpEfssBLq2pPhAqoSWKUkk7EDqkmK6RrCEzqDjhNDWNE+XSMvkJRDWlZTmCW0l0PHQGRZY5t1L83kT0Y3l2SItk5JAWHl2dCOBm+fPu3fo5/3v61RMCO9Jx2EEYYhb0rmNQMX/vm7gqOEJLcXTGw3CAuRNeyaPWwjR8PRqKQ1PDA/dpv+on9Shox52WFnx0KY8onHayrJzm87i5h9xGw/tfkev0jGsQizqezUKjk12hBMKJ4kbCqGPVNXudyyrShovGw5CgxsRICxF6aRmSjlBnHRzg7Gx8fKqEubI2rahQYdR1YgDIRQO7JvQyD52hoIQx0mxa0ODtW2Iozn1le2iIRdzwWewedyZzewidueOGqlsn1MvcnQpuVwLGG3/IR1hIKxCjelIDZ8ldqWz25jWAsnldEnK0Zxro19TGVb2ffIZEsIO89EIEDvKMPrzmBOQcKQ+rroye6NgRRxqR4U8EAkz0CL6uSGOm6KQCdWjvjRiSP1BPalCRS5iQYiEIvxuBMJEWgzSoHADcVMuN7IuqqTeyUPq22qFimFtxDyBBJEwNyt6TM88blFHao/6tWWhuuOM4SAK4EI4QmFHA+SEyWlp4EQoJ13cYGzMu7yszEIBOm2rVmHUNqwAIQabISNMRstmdhNWcFLsSm+0tjJH1MdRxO5Nx0WDMhCtgD6OKgZeljJqJKc9po8juskR9XN0Y1lZ3mWjLR9JCO1jRDMd0fpYC2VnvjBSEFg7wBENc0R9HFlb0xvF1+TBEpF68d+DHR6IOWVv2BECtxo46hOFUBd/APU57WIoEwJhIi2CdpyZX0m93BZicktMj1AS9dClteUFAUNUIEygRZCtik5zSxI9MubTBH1GOiHsiLJ3OCoSZkILa9PxiN0EbvhsAo8tdAf9Seepd36lGWHmtNANTv5Jd0z4QYyeo/UEJqxKRpg5LZx6btLPsOaEmdMyxYdlc8LMaJnikDlhclqmPiQnTEpLUIZEwkRagjYkEibQErwhkTAKCLQEbUgkzJQWc/0PstHHcfEdQ+UAAAAASUVORK5CYII=");
+  background-size: 26px 26px;
+}
+
+/* ============================================================================
+   Map: coordinate grid and basemap status.
+
+   The grid is what makes the map usable with no basemap at all -- the air-gapped
+   case, and the case where a tile provider is down. Markers on a blank canvas
+   say nothing; markers against a labelled grid are positioned.
+   ============================================================================ */
+/*
+ * A text token, not a chrome token. --background-modifier-border against a dark
+ * --background-primary canvas was very nearly invisible, so the grid that is supposed to
+ * say "this map works, it just has no imagery" read as an empty broken pane instead --
+ * which is exactly how it got reported.
+ */
+.osint-map-graticule {
+  stroke: var(--text-faint, var(--text-muted));
+  stroke-opacity: 0.5;
+  stroke-width: 1;
+  stroke-dasharray: 4 6;
+  fill: none;
+}
+.osint-map-graticule-tooltip {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 0 2px;
+}
+.osint-map-graticule-tooltip::before { display: none; }
+
+/*
+ * A full sentence in a flex toolbar. It used to be capped at 40ch with nowrap and an
+ * ellipsis, which cut the message in half -- and the half it cut was the one telling the
+ * user what to do. It wraps to two lines instead, and only turns warning-coloured when
+ * something is actually wrong (.is-problem); an unconfigured basemap is a default.
+ */
+.graph_copilot-map-basemap-status {
+  color: var(--text-muted);
+  font-size: 12px;
+  align-self: center;
+  max-width: 46ch;
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/*
+ * With no basemap the canvas was the same flat colour as the surrounding app chrome, so
+ * there was no visual edge where the map began. A slightly distinct surface makes the
+ * pane read as a map with nothing on it rather than as a failed panel.
+ */
+.leaflet-container.osint-map-no-basemap {
+  background:
+    linear-gradient(0deg, var(--background-modifier-hover, transparent), var(--background-modifier-hover, transparent)),
+    var(--background-primary);
+}
+
+.graph_copilot-map-basemap-status.is-problem {
+  color: var(--text-warning, var(--text-error, var(--text-muted)));
+}
+
+.graph_copilot-map-error {
+  padding: 2em;
+  color: var(--text-muted);
+}
+
+/* Leaflet paints its own background; let the theme show through instead of #ddd. */
+.leaflet-container {
+  background: var(--background-primary);
+}
+
+/* ==========================================================================
+ * Location Map, Timeline, Tools & Skills registry -- audit fixes
+ * ========================================================================== */
+
+/*
+ * Leaflet's stylesheet is inlined above as shipped: white chrome, dark text. Under a
+ * dark theme that left the zoom buttons, the layers control, the attribution, the scale
+ * bar and every popup as bright white boxes with unreadable text. Themed here, prefixed
+ * with .leaflet-container for specificity, rather than edited in place, so the inlined
+ * block stays comparable with upstream Leaflet.
+ */
+.leaflet-container .leaflet-bar a {
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  border-bottom-color: var(--background-modifier-border);
+}
+.leaflet-container .leaflet-bar a:hover,
+.leaflet-container .leaflet-bar a:focus {
+  background-color: var(--interactive-hover);
+}
+.leaflet-container .leaflet-bar a.leaflet-disabled {
+  background-color: var(--background-secondary);
+  color: var(--text-faint);
+}
+.leaflet-touch .leaflet-control-layers,
+.leaflet-touch .leaflet-bar {
+  border-color: var(--background-modifier-border);
+}
+.leaflet-container .leaflet-control-layers,
+.leaflet-container .leaflet-control-layers-expanded {
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+.leaflet-container .leaflet-control-layers-separator {
+  border-top-color: var(--background-modifier-border);
+}
+.leaflet-container .leaflet-control-attribution {
+  background: var(--background-primary);
+  color: var(--text-muted);
+}
+.leaflet-container .leaflet-control-attribution a {
+  color: var(--text-accent);
+}
+.leaflet-container .leaflet-control-scale-line,
+.leaflet-container .leaflet-control-scale-line:not(:first-child),
+.leaflet-container .leaflet-control-scale-line:not(:first-child):not(:last-child) {
+  background: var(--background-primary);
+  color: var(--text-normal);
+  border-color: var(--text-muted);
+  text-shadow: none;
+}
+.leaflet-container .leaflet-popup-content-wrapper,
+.leaflet-container .leaflet-popup-tip {
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35);
+}
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--text-muted);
+}
+.leaflet-container a.leaflet-popup-close-button:hover,
+.leaflet-container a.leaflet-popup-close-button:focus {
+  color: var(--text-normal);
+}
+
+/* Toolbar buttons: a lucide glyph beside a label, never squeezed narrower than their text. */
+.graph_copilot-map-toolbar button,
+.graph_copilot-timeline-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.graph_copilot-map-btn-icon,
+.graph_copilot-timeline-btn-icon {
+  display: inline-flex;
+  line-height: 0;
+}
+
+/* The [refresh][fit] group rides at the right edge and wraps as one unit. */
+.graph_copilot-map-toolbar-trailing,
+.graph_copilot-timeline-toolbar-trailing {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/*
+ * The basemap strip takes whatever room the buttons leave and gives it up before they
+ * do. min-width: 0 is what lets it shrink at all -- a flex item's floor is its content
+ * width by default, and this one's content is a sentence.
+ */
+.graph_copilot-map-toolbar .graph_copilot-map-basemap-status {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* One line under the toolbar for the sentence that used to be a toolbar item. */
+.graph_copilot-map-hint,
+.graph_copilot-timeline-hint {
+  flex-shrink: 0;
+  padding: 0.3rem 0.625rem;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/*
+ * The map's empty state sits inside the Leaflet element, above the panes (z-index
+ * 400-700) and below the controls (1000), so the layer switcher still works while it
+ * shows. Pointer events are off: it is a caption, not a modal, and the map beneath must
+ * still pan. Styled like .graph_copilot-timeline-empty.
+ */
+.graph_copilot-map-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.graph_copilot-map-empty p {
+  margin: 0 0 10px 0;
+  max-width: 44ch;
+  padding: 0.2em 0.6em;
+  border-radius: 4px;
+  background: var(--background-primary);
+}
+.graph_copilot-map-empty-hint,
+.graph_copilot-timeline-empty-hint {
+  font-size: 12px;
+}
+.graph_copilot-timeline-empty p:first-child {
+  margin-bottom: 10px;
+}
+
+/*
+ * Remove button, hover included. The JS hover it replaces painted white text over
+ * --background-modifier-error, a tint rather than a fill, so the label vanished in the
+ * light theme; the error text colour reads on the tint in both.
+ */
+.graph_copilot-timeline-remove-btn {
+  background: transparent;
+  border: 1px solid var(--text-muted);
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+.graph_copilot-timeline-remove-btn:hover,
+.graph_copilot-timeline-remove-btn:focus-visible {
+  background: var(--background-modifier-error);
+  border-color: var(--text-error);
+  color: var(--text-error);
+}
+
+/*
+ * Below ~520px of pane the 200px date gutter left the cards no room. The date moves
+ * above its card and the line hugs the left edge. A container query, because a media
+ * query would measure the window and this view lives in a pane; the geometry it
+ * overrides is the stylesheet's, which is why renderEvent() no longer sets it inline.
+ */
+@container (max-width: 520px) {
+  .graph_copilot-timeline-wrapper {
+    padding-left: 32px;
+  }
+  .graph_copilot-timeline-line {
+    left: 12px;
+  }
+  .graph_copilot-timeline-date {
+    position: static;
+    width: auto;
+    text-align: left;
+    margin-bottom: 4px;
+  }
+}
+
+/* Registry: the trailing refresh, and the per-column line a failed registry leaves. */
+.osint-copilot-registry-toolbar-trailing {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.osint-copilot-registry-error {
+  color: var(--text-error);
+  font-size: 0.9em;
+}
+
+/* ============================================
+   Settings rows -- audit fixes
+   ============================================ */
+
+/* Inline validation, under the control it belongs to. Rows used to accept a value,
+   quietly substitute another, and say nothing. */
+.setting-item .osint-setting-error {
+  flex-basis: 100%;
+  margin-top: .35em;
+  color: var(--text-error);
+  font-size: var(--font-ui-smaller);
+  text-align: right;
+}
+.setting-item-control input[aria-invalid="true"] {
+  border-color: var(--text-error);
+}
+
+/* ============================================
+   Guide view, welcome tour, and the board picker
+   ============================================ */
+
+/* --- The Guide view -------------------------------------------------------- */
+
+/*
+ * Two columns: a contents rail that stays put, and the guide itself, which scrolls.
+ * The root is the ItemView's `.view-content`, which OsintViewHost stretches to the panel,
+ * so the height comes from the flex parent rather than a viewport unit.
+ */
+.osint-docs-root {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--background-primary);
+}
+
+.osint-docs-rail {
+  flex: 0 0 14em;
+  overflow-y: auto;
+  padding: 1.5em 0.75em;
+  border-right: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+.osint-docs-rail-title {
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  padding: 0 0.6em 0.5em;
+}
+
+.osint-docs-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.45em 0.6em;
+  margin-bottom: 2px;
+  border: none;
+  border-radius: var(--radius-s, 4px);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-ui-small);
+  text-align: left;
+  cursor: pointer;
+}
+.osint-docs-rail-item:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+/* Set by the IntersectionObserver as you scroll; it follows, it is not a click state. */
+.osint-docs-rail-item.is-current {
+  background: var(--background-modifier-active-hover);
+  color: var(--text-accent);
+}
+
+.osint-docs-rail-icon,
+.osint-docs-section-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+.osint-docs-rail-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.osint-docs-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 2.5em 3em 6em;
+}
+
+.osint-docs-header h1 {
+  margin: 0;
+  font-size: 1.9em;
+  font-weight: 600;
+}
+.osint-docs-subtitle {
+  margin: 0.25em 0 0;
+  color: var(--text-muted);
+}
+
+/* Generous, because a section is a place you are sent to, not a paragraph you pass. */
+.osint-docs-section {
+  margin-top: 2.75em;
+  max-width: 46em;
+}
+
+.osint-docs-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin: 0 0 0.6em;
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: 1.25em;
+  font-weight: 600;
+}
+.osint-docs-section-icon svg {
+  width: 18px;
+  height: 18px;
+  color: var(--text-accent);
+}
+
+.osint-docs-markdown {
+  line-height: 1.65;
+  color: var(--text-normal);
+}
+.osint-docs-markdown p,
+.osint-welcome-markdown p {
+  margin: 0.7em 0;
+}
+.osint-docs-markdown ol,
+.osint-docs-markdown ul,
+.osint-welcome-markdown ol,
+.osint-welcome-markdown ul {
+  padding-left: 1.4em;
+}
+.osint-docs-markdown li,
+.osint-welcome-markdown li {
+  margin: 0.35em 0;
+}
+.osint-docs-markdown code,
+.osint-welcome-markdown code {
+  font-family: var(--font-monospace);
+  font-size: 0.88em;
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-s, 4px);
+  background: var(--code-background);
+}
+
+/*
+ * Tables scroll inside their own box. The guide's shortcut table is wider than a narrow
+ * panel, and without this the whole view scrolled sideways.
+ */
+.osint-docs-markdown table,
+.osint-welcome-markdown table {
+  display: block;
+  overflow-x: auto;
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.95em;
+}
+.osint-docs-markdown th,
+.osint-docs-markdown td,
+.osint-welcome-markdown th,
+.osint-welcome-markdown td {
+  padding: 0.4em 0.8em;
+  border: 1px solid var(--background-modifier-border);
+  text-align: left;
+}
+/*
+ * Only the first column resists wrapping. It carries the shortcut or the label -- the
+ * short, scannable thing -- while the last column is a sentence; letting the sentence wrap
+ * is what keeps the table inside a narrow panel instead of scrolling it out of reach.
+ */
+.osint-docs-markdown td:first-child,
+.osint-docs-markdown th:first-child,
+.osint-welcome-markdown td:first-child,
+.osint-welcome-markdown th:first-child {
+  white-space: nowrap;
+}
+.osint-docs-markdown th,
+.osint-welcome-markdown th {
+  background: var(--background-secondary);
+  font-weight: 600;
+}
+
+/* --- The first-run tour ---------------------------------------------------- */
+
+.osint-welcome-modal {
+  width: min(680px, calc(100vw - 4em));
+  max-height: min(80vh, 46em);
+}
+
+.osint-welcome {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.osint-welcome h1 {
+  margin: 0;
+  font-size: 1.6em;
+  font-weight: 600;
+}
+.osint-welcome-lede {
+  margin: 0.3em 0 0;
+  color: var(--text-muted);
+}
+
+/* The sections scroll; the footer buttons must not scroll away with them. */
+.osint-welcome-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  margin: 1.2em 0;
+  padding-right: 0.5em;
+}
+
+.osint-welcome-section + .osint-welcome-section {
+  margin-top: 1.6em;
+  padding-top: 1.4em;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.osint-welcome-section h2 {
+  margin: 0 0 0.4em;
+  font-size: 1.1em;
+  font-weight: 600;
+  color: var(--text-accent);
+}
+.osint-welcome-markdown {
+  line-height: 1.6;
+}
+
+.osint-welcome-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  flex-wrap: wrap;
+  padding-top: 1em;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.osint-welcome-count {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
+.osint-welcome-buttons {
+  display: flex;
+  gap: 0.6em;
+  margin-left: auto;
+}
+.osint-welcome-buttons button {
+  font: inherit;
+  padding: 0.5em 1.1em;
+  border-radius: var(--radius-s, 4px);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  cursor: pointer;
+}
+.osint-welcome-buttons button:hover {
+  background: var(--interactive-hover);
+}
+.osint-welcome-buttons button.mod-cta {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.osint-welcome-buttons button.mod-cta:hover {
+  background: var(--interactive-accent-hover);
+}
+
+/* --- The board picker ------------------------------------------------------ */
+
+.osint-board-picker-modal {
+  width: min(520px, calc(100vw - 4em));
+}
+
+.osint-board-search {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 0.5em 0.7em;
+  border-radius: var(--radius-s, 4px);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.osint-board-new {
+  width: 100%;
+  margin: 0.6em 0;
+  font: inherit;
+  text-align: left;
+  padding: 0.55em 0.8em;
+  border-radius: var(--radius-s, 4px);
+  border: 1px dashed var(--background-modifier-border);
+  background: transparent;
+  color: var(--text-accent);
+  cursor: pointer;
+}
+.osint-board-new:hover {
+  background: var(--background-modifier-hover);
+  border-style: solid;
+}
+
+/* Capped so a vault with fifty boards does not grow a dialog taller than the window. */
+.osint-board-list {
+  max-height: 22em;
+  overflow-y: auto;
+}
+
+.osint-board-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7em;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5em 0.8em;
+  border: none;
+  border-radius: var(--radius-s, 4px);
+  background: transparent;
+  color: var(--text-normal);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.osint-board-item:hover {
+  background: var(--background-modifier-hover);
+}
+.osint-board-title {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.osint-board-folder {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-left: auto;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
+
+.osint-board-empty {
+  padding: 1.5em 0.8em;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  text-align: center;
+}
+
+/* ============================================
+   Entity picture field (create / edit dialogs)
+   ============================================ */
+
+.graph_copilot-entity-picture {
+  margin: 1em 0 0.5em;
+}
+
+.graph_copilot-entity-picture-label {
+  display: block;
+  margin-bottom: 0.35em;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.graph_copilot-entity-picture-zone {
+  border: 2px dashed var(--background-modifier-border);
+  border-radius: var(--radius-m, 6px);
+  padding: 0.85em;
+  background: var(--background-secondary);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.graph_copilot-entity-picture-zone.is-dragging {
+  border-color: var(--interactive-accent);
+  background: var(--background-primary-alt);
+}
+
+.graph_copilot-entity-picture-preview img {
+  /* contain, not cover: an evidence photo must not be silently cropped by the box it
+     happens to be previewed in. Same rule the canvas applies to its image cards. */
+  object-fit: contain;
+  margin-bottom: 0.4em;
+  background: var(--background-primary);
+}
+
+.graph_copilot-entity-picture-path {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-accent);
+  /* A vault path can be long and has no spaces to break on. */
+  word-break: break-all;
+}
+
+.graph_copilot-entity-picture-status {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.graph_copilot-entity-picture-actions {
+  display: flex;
+  gap: 0.5em;
+  margin-top: 0.6em;
+}
+.graph_copilot-entity-picture-actions button {
+  font: inherit;
+  padding: 0.35em 0.8em;
+  border-radius: var(--radius-s, 4px);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  cursor: pointer;
+}
+.graph_copilot-entity-picture-actions button:hover {
+  background: var(--interactive-hover);
+}
+
+/* Browser extension activity (modals/extension-activity-modal.ts) */
+.osint-extension-activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.osint-extension-activity-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.osint-extension-activity-item.is-removed {
+  opacity: 0.55;
+}
+.osint-extension-activity-main {
+  flex: 1;
+  min-width: 0;
+}
+.osint-extension-activity-type {
+  font-weight: 600;
+  margin-right: 6px;
+}
+.osint-extension-activity-summary,
+.osint-extension-activity-url {
+  overflow-wrap: anywhere;
+}
+.osint-extension-activity-merged,
+.osint-extension-activity-url,
+.osint-extension-activity-time {
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+.osint-extension-activity-warning {
+  font-size: 0.85em;
+  color: var(--text-warning, var(--text-muted));
+  overflow-wrap: anywhere;
+}

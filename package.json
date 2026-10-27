@@ -1,0 +1,46 @@
+{
+	"name": "osint-copilot",
+	"version": "0.1.0",
+	"private": true,
+	"description": "The OSINT Copilot monorepo. A fork of Tangent.",
+	"repository": "https://github.com/OSINT-Copilot/osint-copilot",
+	"type": "module",
+	"engines": {
+		"node": ">=22.2"
+	},
+	"scripts": {
+		"test": "npm run test --workspaces --if-present",
+		"build": "npm run build --workspaces --if-present",
+		"build:tangent-electron": "npm run build --workspace=lib/typewriter --workspace=packages/tangent-query-parser --workspace=packages/tangent-html-to-markdown --workspace=apps/tangent-electron",
+		"generate:icons": "npm run generate:icons --workspace=apps/tangent-electron"
+	},
+	"author": "Probe Point Analytics LLC",
+	"license": "Apache-2.0",
+	"workspaces": [
+		"lib/typewriter-document",
+		"lib/typewriter",
+		"packages/tangent-query-parser",
+		"packages/tangent-html-to-markdown",
+		"apps/tangent-electron",
+		"apps/osint-copilot-extension",
+		"apps/tangent-website",
+		"apps/tangent-test-workspace-generator"
+	],
+	"devDependencies": {
+		"@vitest/browser": "^4.0.16",
+		"vitest": "^4.0.16"
+	},
+	"overrides": {
+		"@electron/get": {
+			"undici": "7.29.1"
+		},
+		"cheerio": {
+			"undici": "7.29.1"
+		},
+		"js-yaml": "4.3.2",
+		"jsdom": {
+			"undici": "7.29.1"
+		},
+		"lodash": "4.18.1"
+	}
+}

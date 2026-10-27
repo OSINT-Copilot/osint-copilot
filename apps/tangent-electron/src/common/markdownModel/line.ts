@@ -1,0 +1,261 @@
+import { Line, deltaToText, type EditorRange, TextDocument } from '@typewriter/document'
+import noteTypeset from './typewriterTypes'
+import { getDelimiterForGlyph, getGlyphForNumber, ListForm, matchList } from './list'
+import { indentMatcher } from './matches'
+import NoteParser from './NoteParser'
+
+export interface IndentDefinition {
+	indent: string,
+	indentSize?: number
+}
+
+/**
+ * Gets the contents of the primary line formatting attribute
+ * @param line 
+ */
+export function getLineFormatData(line: Line) {
+	const attr = line.attributes
+	for (const type of noteTypeset.lines) {
+		const typeName = typeof type === 'string' ? type : type.name
+		const value = attr[typeName]
+		if (value) return value
+	}
+}
+
+export function lineHasMultiLineContext(line: Line) {
+	return line.attributes.list
+}
+
+export function lineIsMultiLineFormat(line: Line) {
+	if ('code' in line.attributes ||
+		'front_matter' in line.attributes ||
+		'math' in line.attributes ||
+		'html' in line.attributes
+	) {
+		return true
+	}
+	return false
+}
+
+/**
+ * Gets the line formatting prefix from a given line
+ * @param line The line to extract from.
+ * @param forNextLine Whether the returned prefix should be the one that logically follows the provided line.
+ */
+export function getLineFormattingPrefix(line: Line, forNextLine = false): string {
+	const attr = line.attributes
+	const lineString = deltaToText(line.content)
+	if (attr.header && !forNextLine) {
+		const match = lineString.match(/^\s*#+ /)
+		if (match) {
+			return match[0]
+		}
+	}
+	else if (attr.blockquote) {
+		const match = lineString.match(/^\s*(> ?)+/)
+		if (match) {
+			let result = match[0]
+			if (!result.endsWith(' ')) {
+				result += ' '
+			}
+			return result
+		}
+	}
+	else if (attr.list) {
+		const match = matchList(lineString)
+		if (match) {
+			let nextGlyph = match.glyph
+			if (forNextLine) {
+				if (ListForm.isNumeric(match.form)) {
+					// Increment the number from the current value
+					nextGlyph = getGlyphForNumber(match.form, match.index + 1, getDelimiterForGlyph(nextGlyph))
+				}
+				if (match.todoState !== undefined) {
+					nextGlyph = nextGlyph.replace(/\[[x-]?\]/, '[ ]')
+				}
+			}
+
+			// Reconstruct list start
+			return match.indent + nextGlyph + ' '
+		}
+	}
+	else {
+		const match = lineString.match(indentMatcher)
+		if (match) {
+			return match[0]
+		}
+	}
+	return ''
+}
+
+function getActiveSentenceStart(lineStart: number, lineEnd: number, from: number, matchList: RegExpExecArray[]) {
+	let startMatch: RegExpMatchArray = null
+	for (let i = 0; i < matchList.length; i++) {
+		const match = matchList[i]
+		const offset = match[1].length
+		if (match.index + offset < from) {
+			startMatch = match
+		}
+		else break // thereby grabbing the closest one
+	}
+
+	if (startMatch) {
+		const last = lineStart + startMatch.index + startMatch[0].length
+		if (last === lineEnd) {
+			if (matchList.length > 1) {
+				// Include the previous sentence when we're within trailing whitespace on a line.
+				startMatch = matchList.at(-2)
+			}
+			else {
+				// This is the first sentence.
+				return lineStart
+			}
+		}
+
+		return lineStart + startMatch.index + startMatch[1].length // Start just after the period
+	}
+
+	return lineStart
+}
+
+export function getActiveSentenceRange(doc: TextDocument, line: Line, selection: EditorRange): EditorRange {
+	const lineRange = doc.getLineRange(line)
+	const text = doc.getText(lineRange)
+	const [lineStart, lineEnd] = lineRange
+	const from = selection[0] - lineStart
+	const to = selection[1] - lineStart
+	
+	let start = lineStart
+	let end = lineEnd
+
+	const matches = text.matchAll(/([\.\?\!]["']?)\s+/g)
+	if (matches) {
+		const matchList = [...matches]
+
+		start = getActiveSentenceStart(lineStart, lineEnd, from, matchList)
+		
+		let endMatch: RegExpMatchArray = null
+		for (let i = matchList.length - 1; i >= 0; i--) {
+			const match = matchList[i]
+			const offset = match[1].length
+			if (match.index + offset >= to) {
+				endMatch = match
+			}
+			else break // thereby grabbing the closest one
+		}
+
+		if (endMatch) {
+			end = lineStart + endMatch.index + endMatch[1].length // Include just the period
+		}
+	}
+
+	return [start, end]
+}
+
+/**
+ * Whether a line belongs to the focused paragraph in paragraph focus mode.
+ * A line holding only a hidden comment does not: focusing it would open it as an empty row.
+ */
+export function lineContinuesParagraphFocus(line: Line) {
+	const attr = line.attributes
+	return (!attr.empty && !attr.whitespace && !attr.commentLine)
+		|| attr.code
+		|| attr.front_matter
+		|| attr.math
+}
+
+/**
+ * Extends the focused lines to the adjacent lines that qualify
+ */
+export function extendFocusedLines(doc: TextDocument, lines: Line[], isValidLine: (line: Line) => boolean): Line[] {
+	const first = lines[0]
+	if (isValidLine(first)) {
+		const linesToAdd: Line[] = []
+		let lineIndex = doc.lines.indexOf(first) - 1
+		for (; lineIndex >= 0; lineIndex--) {
+			const line = doc.lines[lineIndex]
+			if (isValidLine(line)) {
+				linesToAdd.push(line)
+			}
+			else {
+				break
+			}
+		}
+
+		if (linesToAdd.length) {
+			linesToAdd.reverse()
+			lines = [...linesToAdd, ...lines]
+		}
+	}
+
+	const last = lines[lines.length - 1]
+	if (isValidLine(last)) {
+		const linesToAdd: Line[] = []
+		// After the last line: from the first, a selection over several lines added its own
+		// lines again and stopped at the first one inside it that does not qualify.
+		let lineIndex = doc.lines.indexOf(last) + 1
+		for (; lineIndex < doc.lines.length; lineIndex++) {
+			const line = doc.lines[lineIndex]
+			if (isValidLine(line)) {
+				linesToAdd.push(line)
+			}
+			else {
+				break
+			}
+		}
+
+		if (linesToAdd.length) {
+			lines = [...lines, ...linesToAdd]
+		}
+	}
+
+	return lines
+}
+
+export function lineFormatEscapeMode(line: Line) {
+	const attr = line.attributes
+	if (attr.blockquote) {
+		return 'double'
+	}
+	else if (attr.list) {
+		return 'single'
+	}
+	return 'none'
+}
+
+const horizontalRuleText = /^((- *){3,}|(\* *){3,}|(_ *){3,})$/
+export function parseHorizontalRule(char: string, parser: NoteParser): boolean {
+	if (parser.isStartOfContent && (char === '_' || char === '-' || char === '*')) {
+		const line = parser.feed.getLineText()
+		if (line.match(horizontalRuleText)) {
+			parser.feed.nextByLength(line.length)
+			parser.commitSpan({ line_format: true, hidden: true }, 0)
+			parser.lineData.horizontal_rule = true
+			return true
+		}
+	}
+	return false
+}
+
+export function parseBlockquote(char: string, parser: NoteParser): boolean {
+	if (char !== '>' || !parser.isStartOfContent) return false
+
+	const { feed } = parser
+	let blockDepth = 0
+	while (feed.currentChar === '>') {
+		blockDepth++
+		const next = feed.peek()
+		if (next === ' ' && feed.peek(2) === '>') {
+			feed.next()
+		}
+		else if (next != '>') break // This is gross, but it's functioning
+
+		feed.next()
+	}
+
+	if (feed.peek() === ' ') feed.next()
+
+	parser.lineData.blockquote = blockDepth
+	parser.commitSpan({ line_format: true, hidden: true })
+	return true
+}

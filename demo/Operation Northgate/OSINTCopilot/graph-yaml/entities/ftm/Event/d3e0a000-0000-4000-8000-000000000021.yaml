@@ -1,0 +1,22 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000021
+type: Event
+label: Brightwater Holdings Ltd incorporated
+properties:
+  name: Brightwater Holdings Ltd incorporated
+  add_to_timeline: true
+  start_date: 2024-03-03
+  Name: Brightwater Holdings Ltd incorporated
+ftmSchema: Event
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Event/Brightwater Holdings Ltd incorporated.md
+osint_sources:
+  - id: src_08dda4047ff63c05
+    source_url: http://registry.cy.example/company/HE000000
+    archive_status: skipped
+    inferred: false
+    rationale: Reported here
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

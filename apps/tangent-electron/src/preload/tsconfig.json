@@ -1,0 +1,21 @@
+{
+	"compilerOptions": {
+		"outDir": "../__build",
+		"sourceMap": true,
+		"baseUrl": "../src",
+		"lib": ["ESNext", "DOM"],
+		"moduleResolution": "bundler",
+		"allowJs": true,
+		"esModuleInterop": true,
+		"target": "ESNext",
+		"paths": {
+			"main/*": ["../main/*"],
+			"common/*": ["../common/*"]
+		},
+		"verbatimModuleSyntax": true
+	},
+	"include": [
+		".",
+		"../common"
+	]
+}

@@ -1,0 +1,250 @@
+import { Notice, WorkspaceLeaf } from 'obsidian';
+import { GraphView, GRAPH_VIEW_TYPE } from '../views/graph-view';
+import { TimelineView, TIMELINE_VIEW_TYPE } from '../views/timeline-view';
+import { MapView, MAP_VIEW_TYPE, isMappableEntity } from '../views/map-view';
+import { CHAT_VIEW_TYPE } from '../views/chat-view';
+import { TOOLS_SKILLS_REGISTRY_VIEW_TYPE } from '../views/tools-skills-registry-view';
+import type VaultAIPlugin from './vault-ai-plugin';
+
+/**
+ * Waits out a view's async onOpen(). A refresh that overlapped it ran a second load of
+ * the shared entity store alongside the view's own. A view whose onOpen() failed is
+ * refreshed anyway; its own guards make that a no-op.
+ */
+function opened(leaf: WorkspaceLeaf): Promise<void> {
+  return leaf.view.whenLoaded().catch(() => undefined);
+}
+
+/** OSINT pane placement: main leaf, graph/timeline/map/chat/tools views. */
+export class OsintWorkspaceController {
+  constructor(private readonly plugin: VaultAIPlugin) {}
+
+  private async getMainEditorLeaf(): Promise<WorkspaceLeaf | null> {
+    const osintViewTypes = [GRAPH_VIEW_TYPE, TIMELINE_VIEW_TYPE, MAP_VIEW_TYPE, CHAT_VIEW_TYPE, TOOLS_SKILLS_REGISTRY_VIEW_TYPE];
+
+    const mainLeaves: WorkspaceLeaf[] = [];
+    this.plugin.app.workspace.iterateAllLeaves((leaf) => {
+      const root = leaf.getRoot();
+      if (root === this.plugin.app.workspace.rootSplit) {
+        mainLeaves.push(leaf);
+      }
+    });
+
+    const existingOsintLeaves = mainLeaves.filter((leaf) =>
+      osintViewTypes.includes(leaf.view?.getViewType() || ''),
+    );
+
+    const noteEditorLeaves = mainLeaves.filter((leaf) =>
+      leaf.view?.getViewType() === 'empty',
+    );
+
+    if (existingOsintLeaves.length > 0) {
+      const activeLeaf = this.plugin.app.workspace.activeLeaf;
+      let anchor = existingOsintLeaves[0];
+      if (
+        activeLeaf &&
+        mainLeaves.includes(activeLeaf) &&
+        osintViewTypes.includes(activeLeaf.view?.getViewType() || '')
+      ) {
+        anchor = activeLeaf;
+      }
+      // An empty tab beside the anchor, not a duplicate of it: duplicating built and
+      // loaded a second copy of the anchor's view (a whole GraphView when the map was
+      // opened from the graph), which the caller's setViewState then unloaded while its
+      // onOpen() was still running -- leaking it and racing its load of the entity store.
+      try {
+        return this.plugin.app.workspace.createLeafBeside(anchor);
+      } catch (e) {
+        console.warn('[VaultAIPlugin] createLeafBeside failed; falling back to new root tab', e);
+        return this.plugin.app.workspace.getLeaf('tab');
+      }
+    }
+
+    if (noteEditorLeaves.length > 0) {
+      return noteEditorLeaves[0];
+    }
+
+    return this.plugin.app.workspace.getLeaf('tab');
+  }
+  /**
+   * Open the Graph View in the main editor area.
+   */
+  async openGraphView() {
+    if (!this.plugin.settings.enableGraphFeatures) {
+      new Notice('Graph features are disabled. Enable them in Preferences → OSINT Copilot → Graph view.', 5000);
+      console.warn('[VaultAIPlugin] Attempted to open graph view but graph features are disabled');
+      return;
+    }
+
+    console.debug('[VaultAIPlugin] Opening graph view');
+    const existing = this.plugin.app.workspace.getLeavesOfType(GRAPH_VIEW_TYPE);
+
+    // If one exists, reveal it
+    if (existing.length > 0) {
+      void this.plugin.app.workspace.revealLeaf(existing[0]);
+      return existing[0];
+    }
+
+    const leaf = await this.getMainEditorLeaf();
+
+    if (leaf) {
+      await leaf.setViewState({ type: GRAPH_VIEW_TYPE, active: true });
+      void this.plugin.app.workspace.revealLeaf(leaf);
+      return leaf;
+    }
+    return null;
+  }
+
+  /**
+   * Refresh the graph view if it's currently open.
+   * This is called after entity creation operations complete.
+   */
+  async refreshGraphView(options?: { silent?: boolean }) {
+    const existing = this.plugin.app.workspace.getLeavesOfType(GRAPH_VIEW_TYPE);
+    if (existing.length > 0) {
+      const graphView = existing[0].view as GraphView;
+      if (graphView && typeof graphView.refreshWithSavedPositions === 'function') {
+        console.debug('[OSINT Copilot] Refreshing graph view with new entities...');
+        await opened(existing[0]);
+        await graphView.refreshWithSavedPositions();
+        if (!options?.silent) {
+          new Notice('Graph view updated with new entities');
+        }
+      }
+    }
+  }
+
+  /**
+   * Reload open Graph, Timeline, and Map views from the vault (after graph writes).
+   * Timeline may also refresh from its own vault listeners; this ensures consistency when those views are open.
+   * @param options.skipGraph — when true, do not refresh graph leaves (e.g. graph was just refreshed by {@link refreshOrOpenGraphView}).
+   */
+  async refreshOpenInsightViews(options?: { skipGraph?: boolean }): Promise<void> {
+    if (!this.plugin.settings.enableGraphFeatures) {
+      return;
+    }
+    if (!options?.skipGraph) {
+      for (const leaf of this.plugin.app.workspace.getLeavesOfType(GRAPH_VIEW_TYPE)) {
+        const graphView = leaf.view as GraphView;
+        if (graphView && typeof graphView.refreshWithSavedPositions === 'function') {
+          await opened(leaf);
+          await graphView.refreshWithSavedPositions();
+        }
+      }
+    }
+    for (const leaf of this.plugin.app.workspace.getLeavesOfType(TIMELINE_VIEW_TYPE)) {
+      const timelineView = leaf.view as TimelineView;
+      if (timelineView && typeof timelineView.refresh === 'function') {
+        await opened(leaf);
+        await timelineView.refresh();
+      }
+    }
+    for (const leaf of this.plugin.app.workspace.getLeavesOfType(MAP_VIEW_TYPE)) {
+      const mapView = leaf.view as MapView;
+      if (mapView && typeof mapView.refresh === 'function') {
+        void opened(leaf).then(() => mapView.refresh());
+      }
+    }
+  }
+
+  /**
+   * Refresh or open the graph view after entity creation.
+   * Respects user settings for auto-refresh and auto-open.
+   */
+  async refreshOrOpenGraphView() {
+    if (!this.plugin.settings.enableGraphFeatures) {
+      return;
+    }
+
+    const existing = this.plugin.app.workspace.getLeavesOfType(GRAPH_VIEW_TYPE);
+
+    if (existing.length > 0) {
+      // Graph is already open - refresh it if auto-refresh is enabled
+      if (this.plugin.settings.autoRefreshGraph) {
+        await this.refreshGraphView();
+      }
+    } else {
+      // Graph is not open - open it if auto-open is enabled
+      if (this.plugin.settings.autoOpenGraphOnEntityCreation) {
+        console.debug('[OSINT Copilot] Auto-opening graph view with new entities...');
+        await this.openGraphView();
+        new Notice('Graph view opened with new entities');
+      }
+    }
+  }
+
+  /**
+   * Open the Map View in the main editor area.
+   */
+  async openMapView() {
+    // The same gate openGraphView has. These views read the same entity store, which is
+    // only initialised when graph features are on -- without the guard they opened empty,
+    // reachable from the palette and shortcuts even though the toolbar hides them.
+    if (!this.plugin.settings.enableGraphFeatures) {
+      new Notice('Graph features are disabled. Enable them in Preferences → OSINT Copilot → Graph view.', 5000);
+      return;
+    }
+
+    const existing = this.plugin.app.workspace.getLeavesOfType(MAP_VIEW_TYPE);
+
+    // If one exists, reveal it
+    if (existing.length > 0) {
+      void this.plugin.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+
+    const leaf = await this.getMainEditorLeaf();
+
+    if (leaf) {
+      await leaf.setViewState({ type: MAP_VIEW_TYPE, active: true });
+      void this.plugin.app.workspace.revealLeaf(leaf);
+    }
+  }
+
+  async showEntityOnMap(entityId: string) {
+    const entity = this.plugin.entityManager.getEntity(entityId);
+    if (!entity) {
+      new Notice('Entity not found');
+      return;
+    }
+
+    // The map's own rule. Any entity with coordinates used to pass here, but the map only
+    // plots location types, so a Person with lat/lng ended in "not on the map yet".
+    if (!isMappableEntity(entity)) {
+      new Notice('Only Location, Address and GeoLocation entities with a valid latitude and longitude can be shown on the map.');
+      return;
+    }
+
+    // Open or reveal the map view
+    await this.openMapView();
+
+    const mapLeaves = this.plugin.app.workspace.getLeavesOfType(MAP_VIEW_TYPE);
+    const mapView = mapLeaves[0]?.view as MapView | undefined;
+    if (!mapView || typeof mapView.focusLocation !== 'function') {
+      new Notice('The map view could not be opened.');
+      return;
+    }
+
+    // Awaited, not two nested setTimeouts racing an un-awaited refresh(). The old code
+    // gave the map 300ms to exist and then the refresh 200ms to finish; on a cold vault
+    // the marker did not exist yet and the focus silently did nothing.
+    //
+    // whenLoaded() resolves when the view's async onOpen() has finished, so the map
+    // exists; refresh() is single-flight, so this awaits the run already in flight from
+    // onOpen() rather than starting a competing one. whenLoaded() rejects when onOpen()
+    // threw, which leaves no map to focus.
+    try {
+      await mapView.whenLoaded();
+      await mapView.refresh();
+    } catch (e) {
+      console.error('[VaultAIPlugin] the map view failed to load:', e);
+      new Notice('The map view failed to load.');
+      return;
+    }
+
+    if (!mapView.focusLocation(entityId)) {
+      new Notice('That entity is not on the map yet. Try refreshing the map view.');
+    }
+  }
+
+}

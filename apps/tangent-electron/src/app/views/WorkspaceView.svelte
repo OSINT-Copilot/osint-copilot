@@ -1,0 +1,551 @@
+<script lang="ts">
+import { setContext } from 'svelte'
+
+import type Workspace from 'app/model/Workspace'
+import { FocusLevel } from 'common/dataTypes/TangentInfo'
+import { SidebarMode } from 'common/SidebarState'
+
+import WindowBar from '../WindowBar.svelte'
+import TangentView from './Tangent/TangentView.svelte'
+import System from './System/System.svelte'
+
+import command from 'app/model/commands/CommandAction'
+import FocusLevelIcon from './smart-icons/FocusLevelIcon.svelte'
+import { appendContextTemplate, buildMainMenu, type ExtendedContextEvent, extractRawTemplate, prepareMainMenuForWindow } from 'app/model/menus'
+import { isMac } from 'common/platform'
+import CreationRuleName from './summaries/CreationRuleName.svelte'
+import PopUpButton from 'app/utils/PopUpButton.svelte'
+import ModalStateView from 'app/modal/ModalStateView.svelte'
+import LeftSidebar from './LeftSidebar.svelte'
+import SvgIcon from './smart-icons/SVGIcon.svelte'
+import OsintViewsPill from 'osint/integration/OsintViewsPill.svelte'
+import UpdateButton from './UpdateButton.svelte'
+import OsintNewNoteMenuItems from 'osint/integration/OsintNewNoteMenuItems.svelte'
+import ThreadHistoryListView from './summaries/ThreadHistoryListView.svelte'
+import { createCommandHandler } from 'app/model/commands/Command'
+import { shortcutDisplayString } from 'app/utils/shortcuts'
+
+export let workspace:Workspace
+
+setContext('workspace', workspace)
+
+$: focusLevel = workspace.viewState.tangent.focusLevel
+$: targetFocusModeLevel = workspace.viewState.targetFocusModeLevel
+$: focusing = workspace.viewState.focusing
+$: {
+	// It is dumb I have to do this instead of class:focusing={$focusing}
+	if ($focusing) {
+		document.body.classList.add('focusing')
+	}
+	else {
+		document.body.classList.remove('focusing')
+	}
+}
+// Rebuilt when the registry grows, not snapshotted once at mount: Tangent
+// registers its plugin commands after its async startup, and a handler built at mount
+// never saw them, so a shortcut assigned to one of them could not fire.
+let topCommandHandler: (event: KeyboardEvent) => void
+let topCommandCount = -1
+function currentTopCommandHandler() {
+	const all = Object.values(workspace.commands)
+	if (all.length !== topCommandCount) {
+		topCommandCount = all.length
+		topCommandHandler = createCommandHandler(all.filter(c => !c.group || c.group === 'Pane'))
+	}
+	return topCommandHandler
+}
+
+// Top bar
+let hoveringForTopBar = false
+let topBarShouldBeVisible = false
+
+let focusMenuIsOpen = false
+let newNoteMenuIsOpen = false
+let backMenuIsOpen = false
+let forwardMenuIsOpen = false
+let systemMenuIsOpen = workspace.viewState.system.showMenu
+workspace.on('editing', () => {
+	// This is cheeky, but it works!
+	if ($focusLevel >= FocusLevel.File) {
+		topBarShouldBeVisible = false
+	}
+})
+
+$: {
+	topBarShouldBeVisible = topBarShouldBeVisible
+		|| $focusLevel <= FocusLevel.Thread
+		|| hoveringForTopBar
+		|| leftSidebarVisible
+		|| focusMenuIsOpen
+		|| newNoteMenuIsOpen
+		|| backMenuIsOpen
+		|| forwardMenuIsOpen
+}
+
+// Sidebar
+let sidebarHoverHotspot = workspace.settings.sidebarHoverHotspot
+let leftSidebarMode = workspace.viewState.leftSidebar.mode
+let leftSidebarSize = 100
+
+let leftSidebarVisible = $leftSidebarMode === SidebarMode.pinned
+let lastLeftSidebarShouldBeVisible = leftSidebarVisible
+let shouldDelayClosingSidebar = false
+
+let hoveringForLeftSidebar = false
+let hoveringOverLeftSidebar = false
+let leftSidebarHasFocus = false
+
+let resizingLeftSidebar = false
+let sortMenuIsOpen = false
+
+let leftSidebarVisibilityTimeout = null
+
+$: {
+	if ($leftSidebarMode === SidebarMode.closed) {
+		leftSidebarVisible = lastLeftSidebarShouldBeVisible = false
+
+		if (leftSidebarVisibilityTimeout) {
+			clearTimeout(leftSidebarVisibilityTimeout)
+		}
+
+		leftSidebarVisibilityTimeout = setTimeout(() => {
+			$leftSidebarMode = SidebarMode.hoverable
+		}, 600)
+	}
+	else {
+		let shouldBeVisible = ($leftSidebarMode === SidebarMode.pinned
+			|| hoveringForLeftSidebar
+			|| hoveringOverLeftSidebar
+			|| leftSidebarHasFocus
+			|| resizingLeftSidebar
+			|| sortMenuIsOpen)
+
+		if (shouldBeVisible !== lastLeftSidebarShouldBeVisible) {
+			if (leftSidebarVisibilityTimeout) {
+				clearTimeout(leftSidebarVisibilityTimeout)
+			}
+
+			if (shouldBeVisible) {
+				leftSidebarVisible = true
+				shouldDelayClosingSidebar = hoveringForLeftSidebar
+					|| hoveringOverLeftSidebar
+					|| resizingLeftSidebar
+					|| sortMenuIsOpen
+			}
+			else {
+				leftSidebarVisibilityTimeout = setTimeout(() => {
+					leftSidebarVisible = false
+				}, shouldDelayClosingSidebar ? 350 : 0)
+			}
+
+			lastLeftSidebarShouldBeVisible = shouldBeVisible
+		}
+	}
+
+	topBarShouldBeVisible = topBarShouldBeVisible || $focusLevel <= FocusLevel.Thread || hoveringForTopBar || leftSidebarVisible || focusMenuIsOpen
+}
+
+function onMainMouseMove(event: MouseEvent) {
+	hoveringForLeftSidebar = event.clientX < $sidebarHoverHotspot
+	hoveringForTopBar = hoveringForLeftSidebar || event.clientY < 36
+}
+
+function onDocumentMouseLeave(event: MouseEvent) {
+	hoveringForLeftSidebar = false
+	hoveringForTopBar = false
+}
+
+function onWindowKeydown(event: KeyboardEvent) {
+	if (event.defaultPrevented) return 
+	if (event.key === 'Escape') {
+		if (workspace.viewState.modal.depth > 0) {
+			workspace.viewState.modal.pop()
+			event.preventDefault()
+			return
+		}
+		else if ($systemMenuIsOpen) {
+			$systemMenuIsOpen = false
+			event.preventDefault()
+			return
+		}
+		else {
+			const fl = workspace.viewState.tangent.focusLevel.value
+			if (fl === FocusLevel.Thread) {
+				workspace.commands.setMapFocusLevel.execute()
+				event.preventDefault()
+				return
+			}
+			else if (fl === FocusLevel.Map) {
+				workspace.commands.setThreadFocusLevel.execute()
+				event.preventDefault()
+				return
+			}
+			else if (fl > FocusLevel.Thread) {
+				workspace.commands.setThreadFocusLevel.execute()
+				event.preventDefault()
+				return
+			}
+		}
+	}
+
+	// Fallback to commands
+	currentTopCommandHandler()(event)
+}
+
+function onWindowAuxClick(event: MouseEvent) {
+	if (event.defaultPrevented) return
+
+	if (event.button === 3) {
+		event.preventDefault()
+		workspace.commands.shiftHistoryBack.execute()
+	}
+	else if (event.button === 4) {
+		workspace.commands.shiftHistoryForward.execute()
+	}
+}
+
+function onContextMenu(event: ExtendedContextEvent) {
+	if (!event.defaultPrevented && (event.top || event.middle || event.bottom)) {
+		workspace.showContextMenu(extractRawTemplate(event))
+	}
+}
+
+function openCreationRules(event: Event) {
+	event.preventDefault()
+	// Otherwise, the pop up menu closes itself immediately
+	event.stopPropagation()
+	newNoteMenuIsOpen = false
+	$systemMenuIsOpen = true
+	workspace.viewState.system.section.set('Creation Rules')
+}
+
+function onViewContextMenu(event: MouseEvent) {
+	appendContextTemplate(event, [
+		{
+			label: 'Open Map View Documentation',
+			click: () => {
+				workspace.api.documentation.open('Map View')
+			}
+		},
+		{
+			label: 'Open Thread View Documentation',
+			click: () => {
+				workspace.api.documentation.open('Thread View')
+			}
+		},
+		{
+			label: 'Open Focus Mode Documentation',
+			click: () => {
+				workspace.api.documentation.open('Focus Modes')
+			}
+		}
+	], 'bottom')
+}
+
+</script>
+
+<svelte:window on:keydown={onWindowKeydown} on:auxclick={onWindowAuxClick} />
+<!-- svelte-ignore avoid-mouse-events-on-document -->
+<svelte:document on:mouseleave={onDocumentMouseLeave} />
+<svelte:body on:mousemove={onMainMouseMove} on:contextmenu={onContextMenu}/>
+
+<WindowBar showBorder={true} visible={topBarShouldBeVisible}>
+	<nav class="buttonBar" slot="left">
+
+		{#if !isMac || process.env.NODE_ENV === 'development'}
+			<PopUpButton
+				buttonClass="subtle"
+				placement="bottom-start"
+				tooltip="Menus"
+				template={prepareMainMenuForWindow(buildMainMenu(workspace))}>
+				<svg slot="button" style={`width: 24px; height: 24px;`}>
+					<use href="tangent-icon-nocolor.svg#icon"/>
+				</svg>
+			</PopUpButton>
+			<div class="spacer"></div>
+		{/if}
+
+		<!-- svelte-ignore a11y_consider_explicit_label -->
+		<button class="subtle"
+			use:command={{
+				command: workspace.commands.toggleLeftSidebar,
+				getToolTip: () => $leftSidebarMode === SidebarMode.pinned ? 'Close the left sidebar' : 'Pin the left sidebar'
+			}}
+			
+		><svg style={`width: 24px; height: 24px; --sidebarStroke: var(--${$leftSidebarMode !== SidebarMode.pinned ? 'iconStroke' : 'backgroundColor'})`}>
+			<use href="sidebar.svg#sidebar-left-fill"
+				style={`opacity: ${$leftSidebarMode !== SidebarMode.pinned ? 0 : 1}; transition: opacity .5s;`}/>
+			<use href="sidebar.svg#sidebar-left-closed" />
+		</svg></button>
+
+		<div class="spacer"></div>
+
+		<PopUpButton name="New Note"
+			buttonClass="subtle"
+			command={workspace.commands.createNewFile}
+			placement="bottom-start"
+			menuMode="low-profile"
+			tooltip="Create New Note"
+			bind:showMenu={newNoteMenuIsOpen}
+			closeMenuOnClick
+		>
+			<svelte:fragment slot="button"><svg style={`width: 24px; height: 24px;`}>
+				<use href="file.svg#document"/>
+				<use href="file.svg#plus"/>
+			</svg></svelte:fragment>
+			<div class="popUpButtonList newNotes">
+				<h1>New Note</h1>
+				<div class="buttonGroup vertical">
+					{#each workspace.workspaceSettings.value.creationRules.value.filter(r => r.showInMenu.value) as rule}
+						<button
+							class="no-callout"
+							use:command={{
+								command: workspace.commands.createNewFile,
+								context: { rule },
+								tooltipShortcut: false,
+							}}
+						>
+							<span class="creation-rule-name"><CreationRuleName {rule}/></span>
+							{#if rule.shortcut.value}
+								<span class="shortcut">{shortcutDisplayString(rule.shortcut.value)}</span>
+							{/if}
+						</button>
+					{/each}
+
+					<OsintNewNoteMenuItems />
+
+					<!-- svelte-ignore a11y-invalid-attribute -->
+					<a href="#" class="local deemphasized manageRules" on:click={openCreationRules}>Manage Rules</a>
+				</div>
+			</div>
+		</PopUpButton>
+
+		<div class="spacer"></div>
+
+		<span class="buttonGroup">
+			<PopUpButton
+				buttonClass="subtle"
+				command={workspace.commands.shiftHistoryBack}
+				menuMode="low-profile"
+				placement="bottom-start"
+				hidePopUpIndicator
+				closeMenuOnClick
+				bind:showMenu={backMenuIsOpen}
+			>
+				<SvgIcon slot="button" ref="arrows.svg#back"></SvgIcon>	
+				<ThreadHistoryListView
+					session={workspace.viewState.tangent.activeSession.value}
+					direction={-1}
+				>
+				</ThreadHistoryListView>
+			</PopUpButton>
+			<PopUpButton
+				buttonClass="subtle"
+				command={workspace.commands.shiftHistoryForward}
+				menuMode="low-profile"
+				placement="bottom-start"
+				hidePopUpIndicator
+				closeMenuOnClick
+				bind:showMenu={forwardMenuIsOpen}
+			>
+				<SvgIcon slot="button" ref="arrows.svg#forward"></SvgIcon>	
+				<ThreadHistoryListView
+					session={workspace.viewState.tangent.activeSession.value}
+					direction={1}
+				>
+				</ThreadHistoryListView>
+			</PopUpButton>
+		</span>
+
+		<div class="spacer"></div>
+
+		<!-- svelte-ignore a11y-no-static-element-interactions -->
+		<span class="buttonGroup"
+			on:contextmenu={onViewContextMenu}
+		>
+			<button class="subtle"
+				use:command={{
+					command: workspace.commands.setMapFocusLevel,
+					context: {
+						toggle: true
+					},
+					labelAsTooltip: true
+				}}
+			><FocusLevelIcon focusLevel={FocusLevel.Map}/></button>
+
+		</span>
+
+		<OsintViewsPill />
+	</nav>
+	<nav class="buttonBar" slot="right">
+
+		<PopUpButton
+			buttonClass="subtle"
+			command={workspace.commands.goTo}
+			placement={'bottom'}
+			menuMode="low-profile"
+			closeMenuOnClick
+		>
+			<svelte:fragment slot="button">
+				<SvgIcon ref={[
+					"query.svg#query"
+				]} />
+			</svelte:fragment>
+			<div class="popUpButtonList">
+				<!-- svelte-ignore a11y_consider_explicit_label -->
+				<button class="subtle"
+					use:command={{
+						command: workspace.commands.goTo
+					}}
+				>
+					<SvgIcon ref={[
+						"query.svg#query"
+					]} />
+					<div>Files</div>
+				</button>
+				<!-- svelte-ignore a11y_consider_explicit_label -->
+				<button class="subtle"
+					use:command={{
+						command: workspace.commands.search
+					}}
+				>
+					<SvgIcon ref={[
+						"file.svg#document",
+						"commandPalette.svg#magnifying-glass"
+					]} />
+					<div>Content</div>
+				</button>
+				<!-- svelte-ignore a11y_consider_explicit_label -->
+				<button class="subtle"
+					use:command={{
+						command: workspace.commands.do
+					}}
+				>
+					<SvgIcon ref={[
+						"commandPalette.svg#command"
+					]} />
+					<div>Commands</div>
+				</button>
+				<!-- svelte-ignore a11y_consider_explicit_label -->
+				<button class="subtle"
+					use:command={{
+						command: workspace.commands.openQueryPane
+					}}
+				>
+					<SvgIcon ref={[
+						"query.svg#query-small",
+						"query.svg#plus"
+					]} />
+					<div>New Query</div>
+				</button>
+			</div>
+		</PopUpButton>
+
+		<div class="spacer"></div>
+
+		<UpdateButton />
+
+		<System bind:detailsOpen={$systemMenuIsOpen}></System>
+	</nav>
+</WindowBar>
+
+<main class="WorkspaceView">
+	<div
+		class="content"
+		class:resizing={resizingLeftSidebar}
+		style={`left: ${$leftSidebarMode === SidebarMode.pinned ? leftSidebarSize : 0}px;`}
+		>
+		<TangentView tangent={workspace.viewState.tangent}/>
+	</div>
+</main>
+
+<LeftSidebar
+	visible={leftSidebarVisible}
+	bind:width={leftSidebarSize}
+	bind:hoveringOver={hoveringOverLeftSidebar}
+	bind:hasFocus={leftSidebarHasFocus}
+	bind:resizing={resizingLeftSidebar} />
+
+<ModalStateView modalState={workspace.viewState.modal} />
+
+<style lang="scss">
+nav {
+	margin: 4px 0;
+
+	-webkit-app-region: no-drag;
+
+	.spacer {
+		-webkit-app-region: drag;
+	}
+}
+
+main {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+	background-color: var(--noteBackgroundColor);
+}
+
+.content {
+	position: absolute;
+	inset: 0;
+	
+	&:not(.resizing) {
+		transition: left .3s, right .3s;
+	}
+}
+
+@media (min-width: 640px) {
+	main {
+		max-width: none;
+	}
+}
+
+.popUpButtonList {
+	h1 {
+		font-size: 1.1rem;
+		font-weight: normal;
+		margin: 0;
+		padding: .2em .5em;
+		border-bottom: 1px solid var(--borderColor);
+	}
+
+	button {
+		display: flex;
+		width: 100%;
+		align-items: center;
+		font-size: .9rem;
+
+		div {
+			margin: 0 1em;
+		}
+	}
+}
+
+.popUpButtonList.newNotes {
+	button {
+		padding-top: .1em;
+		padding-bottom: .1em;
+
+		display: flex;
+	}
+
+	.creation-rule-name {
+		flex-grow: 1;
+		text-align: left;
+	}
+
+	.shortcut {
+		color: var(--deemphasizedTextColor);
+		padding-inline-start: 1em;
+	}
+
+	.manageRules {
+		font-size: 80%;
+		text-align: center;
+		padding: .5em;
+
+		border-top: 1px solid var(--borderColor);
+	}
+}
+</style>

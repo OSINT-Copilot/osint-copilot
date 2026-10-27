@@ -1,0 +1,14 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: f3e0ad78-25a2-49a8-a2c5-5552d16c03dc
+fromEntityId: d3e0a000-0000-4000-8000-000000000001
+toEntityId: 3337f912-808b-4291-b413-1e7891708fc3
+fromLabel: Marta Koval
+toLabel: m.koval@brightwater-holdings.example
+relationship: USES_EMAIL
+label: Marta Koval → USES_EMAIL → m.koval@brightwater-holdings.example
+properties: {}
+ftmSchema: USES_EMAIL
+schemaFamily: ftm
+notePath: OSINTCopilot/Connections/Marta Koval - USES_EMAIL - m.koval@brightwater-holdings.example.md
+

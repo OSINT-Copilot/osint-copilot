@@ -1,0 +1,743 @@
+/**
+ * Entity types and configurations matching OSINTCopilot's entity schema.
+ * Now integrated with FollowTheMoney (FTM) schema format.
+ */
+
+import { ftmSchemaService, type FTMPropertyDefinition } from '../services/ftm-schema-service';
+import type { OIDSFModalLayers, SchemaFamily } from '../services/schema-catalog-types';
+import { DEFAULT_OIDSF_MODAL_LAYERS } from '../services/schema-catalog-types';
+import { canonicalSchemaName } from '../services/schema-name-aliases';
+
+// Legacy EntityType enum - kept for backward compatibility
+export enum EntityType {
+    Person = "Person",
+    Event = "Event",
+    Location = "Location",
+    Company = "Company",
+    Email = "Email",
+    Phone = "Phone",
+    Username = "Username",
+    Vehicle = "Vehicle",
+    Website = "Website",
+    Evidence = "Evidence",
+    Image = "Image",
+    Text = "Text"
+}
+
+export interface EntityConfig {
+    color: string;
+    properties: string[];
+    labelField: string;
+    description: string;
+}
+
+// FTM-aware entity configuration
+export interface FTMEntityConfig {
+    color: string;
+    label: string;
+    plural: string;
+    description: string;
+    labelField: string;
+    /** Required properties - always shown */
+    requiredProperties: string[];
+    /** Featured properties - shown by default */
+    featuredProperties: string[];
+    /** Optional properties - shown in collapsible section */
+    optionalProperties: string[];
+    /** All properties with their definitions */
+    propertyDefinitions: Record<string, FTMPropertyDefinition>;
+}
+
+/**
+ * Get FTM entity configuration for a schema type.
+ */
+export function getFTMEntityConfig(schemaName: string): FTMEntityConfig | null {
+    const schema = ftmSchemaService.getSchema(schemaName);
+    if (!schema) return null;
+
+    return {
+        color: schema.color || '#607D8B',
+        label: schema.label,
+        plural: schema.plural,
+        description: schema.description,
+        labelField: ftmSchemaService.getLabelField(schemaName),
+        requiredProperties: schema.required,
+        featuredProperties: schema.featured,
+        optionalProperties: schema.optionalProperties,
+        propertyDefinitions: schema.allProperties,
+    };
+}
+
+/**
+ * Core OIDSF entity types for entity creation (excludes interval/relationship shapes), filtered by modal layer toggles.
+ * LegalEntity is prioritized to appear first in the list.
+ */
+export function getAvailableFTMEntityTypes(
+    modalLayers: OIDSFModalLayers = DEFAULT_OIDSF_MODAL_LAYERS,
+): Array<{ name: string; label: string; description: string; color: string }> {
+    const types = ftmSchemaService
+        .getCoreEntitySchemas()
+        .filter((schema) => ftmSchemaService.schemaPassesModalLayer(schema.name, modalLayers))
+        .map((schema) => ({
+            name: schema.name,
+            label: schema.label,
+            description: schema.description,
+            color: schema.color || '#607D8B',
+        }));
+
+    return types.sort((a, b) => {
+        if (a.name === 'LegalEntity') return -1;
+        if (b.name === 'LegalEntity') return 1;
+        return a.label.localeCompare(b.label);
+    });
+}
+
+/**
+ * OIDSF interval/relationship types for connection creation (respects `links` layer).
+ */
+export function getAvailableFTMIntervalTypes(
+    modalLayers: OIDSFModalLayers = DEFAULT_OIDSF_MODAL_LAYERS,
+): Array<{ name: string; label: string; description: string; color: string }> {
+    const types = ftmSchemaService
+        .getIntervalSchemas()
+        .filter((schema) => !['Associate', 'UnknownLink', 'Membership'].includes(schema.name))
+        .filter((schema) => ftmSchemaService.schemaPassesModalLayer(schema.name, modalLayers))
+        .map((schema) => ({
+            name: schema.name,
+            label: schema.label,
+            description: schema.description,
+            color: schema.color || '#607D8B',
+        }));
+
+    return types.sort((a, b) => {
+        if (a.name === 'UnknownLink') return -1;
+        if (b.name === 'UnknownLink') return 1;
+        return a.label.localeCompare(b.label);
+    });
+}
+
+export const ENTITY_CONFIGS: Record<EntityType, EntityConfig> = {
+    [EntityType.Person]: {
+        color: "#4CAF50",
+        properties: ["full_name", "age", "height", "nationality", "occupation"],
+        labelField: "full_name",
+        description: "A person representing an individual"
+    },
+    [EntityType.Event]: {
+        color: "#F22416",
+        properties: ["name", "description", "start_date", "end_date", "add_to_timeline", "outcome", "participants", "location_summary"],
+        labelField: "name",
+        description: "An event with date and time"
+    },
+    [EntityType.Location]: {
+        color: "#FF5722",
+        properties: ["name", "address", "city", "state", "country", "postal_code", "latitude", "longitude", "location_type", "significance", "access_level"],
+        labelField: "address",
+        description: "A physical location or address"
+    },
+    [EntityType.Company]: {
+        color: "#037d9e",
+        properties: ["name", "description"],
+        labelField: "name",
+        description: "A company or organization"
+    },
+    [EntityType.Email]: {
+        color: "#2196F3",
+        properties: ["address", "domain"],
+        labelField: "address",
+        description: "An email address"
+    },
+    [EntityType.Phone]: {
+        color: "#b82549",
+        properties: ["number", "phone_type", "country_code"],
+        labelField: "number",
+        description: "A phone number"
+    },
+    [EntityType.Username]: {
+        color: "#21B57D",
+        properties: ["username", "platform", "link"],
+        labelField: "username",
+        description: "A username on a platform"
+    },
+    [EntityType.Vehicle]: {
+        color: "#6c5952",
+        properties: ["model", "color", "year", "vin"],
+        labelField: "model",
+        description: "A vehicle"
+    },
+    [EntityType.Website]: {
+        color: "#9C27B0",
+        properties: ["url", "domain", "title", "description", "ip_address", "status", "technologies"],
+        labelField: "title",
+        description: "A website or web domain"
+    },
+    [EntityType.Evidence]: {
+        color: "#02bfd4",
+        properties: ["name", "description", "tampered", "filePath"],
+        labelField: "name",
+        description: "Evidence in an investigation"
+    },
+    [EntityType.Image]: {
+        color: "#E9B96E",
+        properties: ["title", "url", "description", "filePath"],
+        labelField: "title",
+        description: "An image"
+    },
+    [EntityType.Text]: {
+        color: "#D0BD1D",
+        properties: ["text"],
+        labelField: "text",
+        description: "A text note"
+    }
+};
+
+// Entity icon mapping - contextually relevant icons for each entity type
+const ENTITY_ICONS: Record<string, string> = {
+    // Legacy entity types (using EntityType enum values)
+    [EntityType.Person]: "👤",
+    [EntityType.Event]: "📅",
+    [EntityType.Location]: "📍",
+    [EntityType.Company]: "🏢",
+    [EntityType.Email]: "📧",
+    [EntityType.Phone]: "📞",
+    [EntityType.Username]: "👥",
+    [EntityType.Vehicle]: "🚗",
+    [EntityType.Website]: "🌐",
+    [EntityType.Evidence]: "📋",
+    [EntityType.Image]: "🖼️",
+    [EntityType.Text]: "📝",
+
+    // FTM entity types (only non-duplicate ones)
+    'LegalEntity': "⚖️",
+    'Organization': "🏛️",
+    'Address': "📍",
+    'BankAccount': "🏦",
+    'CryptoWallet': "₿",
+    'UserAccount': "👥",
+    'OnlineAccount': "👥",
+    'Document': "📄",
+    'RealEstate': "🏠",
+    'Sanction': "⛔",
+    'Passport': "🛂",
+    'Ownership': "🔗",
+    'Employment': "💼",
+    'Directorship': "👔",
+
+    // New entity types
+    'Credentials': "🔑",
+    'PhoneNumber': "📱",
+    'Photo': "📷",
+    'IP': "🌐",
+    'Malware': "🦠",
+    'Group': "👥",
+    'Domain': "🔗",
+
+    // Additional common types
+    'Airplane': "✈️",
+    'Asset': "💎",
+    'Audio': "🎵",
+    'Call': "📞",
+    'Contract': "📜",
+    'CourtCase': "⚖️",
+    'Family': "👨‍👩‍👧‍👦",
+    'Folder': "📁",
+    'Identification': "🪪",
+    'Land': "🗺️",
+    'License': "📜",
+    'Meeting': "🤝",
+    'Message': "💬",
+    'Page': "📃",
+    'Payment': "💳",
+    'PlainText': "📝",
+    'PublicBody': "🏛️",
+    'Representation': "🎭",
+    'Succession': "👑",
+    'TaxRoll': "💰",
+    'Vessel': "🚢",
+    'Video': "🎬",
+    'Workbook': "📊",
+
+    // OIDSF canonical names (legacy alias targets + common graph types)
+    EmploymentPost: "💼",
+    IntelObject: "🗃️",
+    AnalysisNote: "📝",
+    IntelIdentity: "🪪",
+    IntelligenceReport: "📑",
+    GeoLocation: "📍",
+    CtiBundle: "📚",
+    ObservableArtifact: "🧩",
+    ObservableFile: "📄",
+    ObservableProcess: "⚙️",
+    AnalyticObject: "🔬",
+    Claim: "📌",
+    ClaimEvidence: "🧾",
+    Hypothesis: "💡",
+    ACHEvidenceRow: "📊",
+    ACHRating: "⭐",
+    ACHMatrix: "🔳",
+    EvidenceChain: "⛓️",
+    ProvenanceLink: "🔗",
+    TrackedArtifact: "🎯",
+    MediaAnalysis: "🎬",
+    TimelineEvent: "⏱️",
+    GraphNode: "🔵",
+    GraphEdge: "↔️",
+    InvestigationSummary: "📋",
+    ClaimContradiction: "⚡",
+    CredibilityAssessment: "✅",
+    MirrorProject: "🪞",
+    CorpusDocument: "📚",
+    ExtractedEntityRecord: "📇",
+    SearchHit: "🔎",
+    AnomalyFinding: "⚠️",
+    ReportTemplate: "📄",
+    PremortemAnalysis: "🔮",
+    ScenarioTree: "🌳",
+};
+
+// Common properties for all entities
+/**
+ * Properties every entity may carry, whatever its type.
+ *
+ * This list is also an allowlist: buildFrontmatter() writes only properties found here or
+ * in the type's own config, and silently drops the rest. `image` (a vault-relative path to
+ * a picture of the entity) and `image_url` (one the app has not downloaded yet) are here
+ * so they survive that path as well as the FTM one.
+ */
+export const COMMON_PROPERTIES = ["notes", "source", "image", "image_url"];
+
+/** Persisted confidence, derived from sources (see osint-confidence-engine); shown in the note's front matter. */
+export const OSINT_CONFIDENCE_LEVELS = ['unverified', 'low', 'medium', 'high', 'conflicted'] as const;
+export type OsintConfidence = (typeof OSINT_CONFIDENCE_LEVELS)[number];
+
+/**
+ * `skipped` means the investigator opted this source out of Wayback lookups (a lookup
+ * tells the Internet Archive which URL is being looked at). It is final: nothing may
+ * queue a skipped source or overwrite the status after a lookup.
+ */
+export type OsintArchiveStatus = 'pending' | 'resolved' | 'failed' | 'skipped';
+
+/** One independent source supporting an entity or connection (dedupe by normalized source_url). */
+export interface OsintSource {
+    id: string;
+    /** Canonical URL or vault path (`vault://...` or relative path). */
+    source_url: string;
+    archive_url?: string;
+    archive_status?: OsintArchiveStatus;
+    inferred: boolean;
+    rationale: string;
+    captured_at: string;
+    conversation_id?: string;
+    /** Optional structured claims this source supports (for contradiction detection). */
+    claims?: Array<{ path: string; value: string }>;
+    /**
+     * Provenance of the capture itself, as opposed to what the page says: which ingestion
+     * path delivered it (`via`, e.g. the browser extension), which paired client sent it,
+     * a SHA-256 of the captured content, and when the app received it (which can differ
+     * from captured_at, the moment the page was read). Meant to be set by ingestion code;
+     * note that @@create_entity sources are passed through unfiltered, so model output
+     * can currently carry them too.
+     */
+    via?: string;
+    client_id?: string;
+    sha256?: string;
+    received_at?: string;
+}
+
+/** Model / extraction payload before ids and timestamps are finalized. */
+export type OsintSourceInput = Omit<Partial<OsintSource>, 'id' | 'captured_at'> &
+    Partial<Pick<OsintSource, 'id' | 'captured_at'>>;
+
+/** Two or more sources disagree on a material field. */
+export interface OsintContradiction {
+    field_path: string;
+    entries: Array<{ source_id: string; value: string }>;
+}
+
+/** Context for graph writes when the model omits explicit `sources` (inferred provenance). */
+export interface GraphWriteContext {
+    query: string;
+    extracted_urls?: string[];
+    attachment_paths?: string[];
+    conversation_id?: string;
+    captured_at: string;
+}
+
+export interface Entity {
+    id: string;
+    type: EntityType | string;  // Support both legacy EntityType and FTM schema names
+    label: string;
+    properties: Record<string, unknown>;
+    filePath?: string;
+    /** FTM schema name if using FTM format */
+    ftmSchema?: string;
+    /** Source schema family (defaults to ftm when missing — legacy notes). */
+    schemaFamily?: SchemaFamily;
+    /** Multi-source provenance (frontmatter `osint_sources`). */
+    osint_sources?: OsintSource[];
+    osint_confidence?: OsintConfidence;
+    osint_contradictions?: OsintContradiction[];
+}
+
+export interface Connection {
+    id: string;
+    fromEntityId: string;
+    toEntityId: string;
+    relationship: string;
+    label?: string;  // Human-readable label for the connection
+    properties?: Record<string, unknown>;  // FTM interval properties (startDate, endDate, role, etc.)
+    ftmSchema?: string;  // FTM interval schema name (e.g., 'Associate', 'Ownership')
+    filePath?: string;  // Path to the connection's note file
+    /** Relationship schema family (defaults to ftm when ftmSchema set / legacy). */
+    schemaFamily?: SchemaFamily;
+    osint_sources?: OsintSource[];
+    osint_confidence?: OsintConfidence;
+    osint_contradictions?: OsintContradiction[];
+}
+
+// AI Operation types matching OSINTCopilot's format
+export interface AIOperation {
+    action: "create" | "update";
+    entities?: Array<{
+        type: string;
+        properties: Record<string, unknown>;
+        sources?: OsintSourceInput[];
+    }>;
+    connections?: Array<{
+        from: number;
+        to: number;
+        relationship: string;
+        from_label?: string;
+        to_label?: string;
+        from_type?: string;
+        to_type?: string;
+        sources?: OsintSourceInput[];
+    }>;
+    updates?: Array<{
+        type: string;
+        current_label: string;
+        new_properties: Record<string, unknown>;
+    }>;
+}
+
+export interface ProcessTextResponse {
+    success: boolean;
+    operations?: AIOperation[];
+    message?: string;
+    error?: string;
+    /** Original text preserved for retry on failure */
+    originalText?: string;
+}
+
+/**
+ * Get the label for an entity based on its type and properties.
+ * Supports both legacy EntityType and FTM schema names.
+ */
+export function getEntityLabel(type: EntityType | string, properties: Record<string, unknown>): string {
+    // First try FTM schema
+    if (ftmSchemaService.hasSchema(type)) {
+        return ftmSchemaService.getEntityLabel(type, properties);
+    }
+
+    // Fall back to legacy config
+    const config = ENTITY_CONFIGS[type as EntityType];
+    if (config && properties[config.labelField]) {
+        return String(properties[config.labelField]);
+    }
+
+    const fallbackFields = ['full_name', 'name', 'address', 'title', 'label', 'username', 'number', 'company_name', 'event_name'];
+    for (const field of fallbackFields) {
+        if (properties[field] && (typeof properties[field] === 'string' || typeof properties[field] === 'number')) {
+            const val = String(properties[field]).trim();
+            if (val && validateEntityName(val, type).isValid) {
+                return val;
+            }
+        }
+    }
+
+    // Last resort: return type name IF no better label found, but tagged
+    return `Unknown ${type}`;
+}
+
+/**
+ * Get the color for an entity type.
+ * Supports both legacy EntityType and FTM schema names.
+ */
+export function getEntityColor(type: EntityType | string): string {
+    // First try FTM schema
+    if (ftmSchemaService.hasSchema(type)) {
+        return ftmSchemaService.getColor(type);
+    }
+
+    // Fall back to legacy config
+    const config = ENTITY_CONFIGS[type as EntityType];
+    return config?.color || '#607D8B';
+}
+
+/**
+ * Check if a type is a valid FTM schema.
+ */
+export function isFTMSchema(type: string): boolean {
+    return ftmSchemaService.hasSchema(type);
+}
+
+/**
+ * Get the icon for an entity type.
+ * Supports both legacy EntityType and FTM schema names.
+ */
+export function getEntityIcon(type: EntityType | string): string {
+    // Check if we have a specific icon for this type
+    if (ENTITY_ICONS[type]) {
+        return ENTITY_ICONS[type];
+    }
+
+    // Try FTM schema service
+    if (ftmSchemaService.hasSchema(type)) {
+        const schema = ftmSchemaService.getSchema(type);
+        // If FTM schema has an icon property, use it (future enhancement)
+        // For now, fall back to default
+    }
+
+    // Default icon for unknown types
+    return "📦";
+}
+
+/** PascalCase when the string is all lowercase (e.g. vault `type: person`). */
+function pascalCaseIfAllLower(s: string): string {
+    if (!s || s.length === 0) return s;
+    if (s !== s.toLowerCase()) return s;
+    return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Icon for graph (and similar) views: considers `ftmSchema`, legacy OIDSF aliases,
+ * and simple case normalization so created entities match ENTITY_ICONS.
+ */
+export function getEntityIconForEntity(entity: Entity): string {
+    const candidates: string[] = [];
+    const push = (raw?: string) => {
+        if (raw === undefined || raw === null) return;
+        const t = String(raw).trim();
+        if (!t) return;
+        candidates.push(t);
+        candidates.push(canonicalSchemaName(t));
+        const pascal = pascalCaseIfAllLower(t);
+        if (pascal !== t) {
+            candidates.push(pascal);
+            candidates.push(canonicalSchemaName(pascal));
+        }
+    };
+    push(entity.ftmSchema);
+    push(String(entity.type));
+
+    const seen = new Set<string>();
+    for (const k of candidates) {
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const hit = ENTITY_ICONS[k];
+        if (hit) return hit;
+    }
+    return getEntityIcon(String(entity.type));
+}
+
+/**
+ * List of generic entity type names that should not be used as entity labels.
+ * These are reserved type names that don't represent specific entities.
+ */
+const GENERIC_ENTITY_NAMES = new Set([
+    // Legacy entity types
+    'Person', 'Event', 'Location', 'Company', 'Email', 'Phone',
+    'Username', 'Vehicle', 'Website', 'Evidence', 'Image', 'Text',
+
+    // FTM entity types
+    'LegalEntity', 'Organization', 'Address', 'BankAccount', 'CryptoWallet',
+    'UserAccount', 'OnlineAccount', 'Document', 'RealEstate', 'Sanction', 'Passport',
+    'Ownership', 'Employment', 'Directorship', 'IP', 'Malware', 'Group', 'Domain',
+
+    // Additional common generic names
+    'Airplane', 'Asset', 'Audio', 'Call', 'Contract', 'CourtCase',
+    'Family', 'Folder', 'Identification', 'Land', 'License', 'Meeting',
+    'Message', 'Page', 'Payment', 'PlainText', 'PublicBody', 'Representation',
+    'Succession', 'TaxRoll', 'Vessel', 'Video', 'Workbook',
+
+    // Common variations (lowercase, plural, etc.)
+    'person', 'people', 'event', 'events', 'location', 'locations',
+    'company', 'companies', 'organization', 'organizations',
+    'email', 'emails', 'phone', 'phones', 'vehicle', 'vehicles',
+    'website', 'websites', 'document', 'documents', 'address', 'addresses',
+
+    // Very generic terms
+    'Entity', 'entity', 'Item', 'item', 'Object', 'object',
+    'Thing', 'thing', 'Unknown', 'unknown', 'Unnamed', 'unnamed',
+    'New', 'new', 'Untitled', 'untitled', 'Default', 'default'
+]);
+
+/**
+ * Validation result for entity names.
+ */
+export interface EntityNameValidation {
+    isValid: boolean;
+    error?: string;
+}
+
+/**
+ * Validate an entity name to ensure it's not generic.
+ * Returns validation result with error message if invalid.
+ *
+ * @param name - The proposed entity name/label
+ * @param entityType - The type of entity being created
+ * @returns Validation result indicating if the name is acceptable
+ */
+export function validateEntityName(name: string, entityType?: string): EntityNameValidation {
+    // Trim whitespace
+    const trimmedName = name?.trim();
+
+    // Check if name is empty
+    if (!trimmedName) {
+        return {
+            isValid: false,
+            error: 'Entity name cannot be empty'
+        };
+    }
+
+    // Check if name is too short (less than 2 characters)
+    if (trimmedName.length < 2) {
+        return {
+            isValid: false,
+            error: 'Entity name must be at least 2 characters long'
+        };
+    }
+
+    // Check if name is a generic entity type name
+    if (GENERIC_ENTITY_NAMES.has(trimmedName)) {
+        return {
+            isValid: false,
+            error: `"${trimmedName}" is a generic type name. Please provide a specific, unique identifier (e.g., "John Smith" instead of "Person", "Acme Corp" instead of "Company")`
+        };
+    }
+
+    // Check for case-insensitive match with generic names
+    const lowerName = trimmedName.toLowerCase();
+    for (const genericName of GENERIC_ENTITY_NAMES) {
+        if (lowerName === genericName.toLowerCase()) {
+            return {
+                isValid: false,
+                error: `"${trimmedName}" is too generic. Please provide a specific, unique identifier`
+            };
+        }
+    }
+
+    // Check if name is just the entity type with a number (e.g., "Person 1", "Company2")
+    if (entityType) {
+        const typePattern = new RegExp(`^${entityType}\\s*\\d*$`, 'i');
+        if (typePattern.test(trimmedName)) {
+            return {
+                isValid: false,
+                error: `Please provide a specific name instead of "${trimmedName}"`
+            };
+        }
+    }
+
+    // Name is valid
+    return {
+        isValid: true
+    };
+}
+
+/**
+ * Map legacy entity types to FTM schema names.
+ */
+const LEGACY_TO_FTM_MAP: Record<EntityType, string> = {
+    [EntityType.Person]: 'Person',
+    [EntityType.Event]: 'Event',
+    [EntityType.Location]: 'Address',
+    [EntityType.Company]: 'Company',
+    [EntityType.Email]: 'LegalEntity',  // Email is a property in FTM
+    [EntityType.Phone]: 'LegalEntity',  // Phone is a property in FTM
+    [EntityType.Username]: 'UserAccount',
+    [EntityType.Vehicle]: 'Vehicle',
+    [EntityType.Website]: 'Document',
+    [EntityType.Evidence]: 'Document',
+    [EntityType.Image]: 'Document',
+    [EntityType.Text]: 'Document',
+};
+
+/**
+ * Convert a legacy entity type to FTM schema name.
+ */
+export function legacyToFTMSchema(type: EntityType): string {
+    return LEGACY_TO_FTM_MAP[type] || 'Thing';
+}
+
+/**
+ * Generate a unique ID for entities.
+ *
+ * Uses the platform CSPRNG. The previous hand-rolled UUIDv4 over Math.random() was
+ * fully predictable once Math.random was seeded, and Math.random makes no uniqueness
+ * guarantee across processes -- two app instances writing to a synced vault could
+ * collide. Existing ids are untouched; only newly minted ones change.
+ */
+export function generateId(): string {
+    return crypto.randomUUID();
+}
+
+/**
+ * Whether `id` has the shape generateId() gives (a lowercase version 4 UUID). A caller
+ * that picks an entity's id ahead of creating it must pick one of these, so that id
+ * cannot be a path fragment, or anything else no generated id could be.
+ */
+export function isGeneratedId(id: unknown): id is string {
+    return typeof id === 'string'
+        && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id);
+}
+
+/** Longest filename stem we will emit, before any disambiguating suffix. */
+const MAX_FILENAME_LENGTH = 100;
+
+/**
+ * Sanitize a string for use as a filename.
+ *
+ * Truncation is lossy, so two labels sharing their first 100 characters used to
+ * collapse onto the same path and silently overwrite each other -- routine for
+ * entities whose label is a long official company name. When a name is truncated we
+ * append a short hash of the FULL name, so distinct labels stay distinct while the
+ * result remains readable and deterministic (the same label always yields the same
+ * filename, which entity updates depend on).
+ */
+export function sanitizeFilename(name: string): string {
+    // Labels can come from untrusted page text, so beyond the path separators the name
+    // must also be one every OS will create as an ordinary file: no control characters,
+    // no leading dot (a hidden file, or `..`), and no Windows device name (CON, NUL.txt,
+    // ...: reserved whatever the extension). Trailing dots are kept on purpose: every
+    // caller appends an extension, so Windows' trailing-dot rule never reaches the stem,
+    // and stripping them would move the existing note for a label like "Acme Inc.".
+    let cleaned = name
+        .replace(/[\\/:*?"<>|]/g, '-')
+        .replace(/\s+/g, ' ')
+        .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+        .trim()
+        .replace(/^\.+/, '')
+        .trim();
+
+    if (WINDOWS_RESERVED_NAME.test(cleaned)) cleaned = `_${cleaned}`;
+    // A label made only of dots would otherwise become the bare extension (`.md`).
+    if (!cleaned && /\S/.test(name)) cleaned = '_';
+
+    if (cleaned.length <= MAX_FILENAME_LENGTH) return cleaned;
+
+    const suffix = `~${shortHash(cleaned)}`;
+    return cleaned.substring(0, MAX_FILENAME_LENGTH - suffix.length) + suffix;
+}
+
+const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9]) *(\..*)?$/i;
+
+/** FNV-1a, base36. Deterministic and dependency-free; not security-relevant. */
+function shortHash(value: string): string {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < value.length; i++) {
+        hash ^= value.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash.toString(36).padStart(7, '0').slice(0, 7);
+}
+

@@ -1,0 +1,19 @@
+{
+	// The tests that load Tangent's own modules (its markdown parser, NodeHandle, the
+	// command classes), checked against Tangent's settings: its code is written to
+	// strict:false, and one program cannot check it one way and our code another. The rest
+	// of this folder is checked by tsconfig.json, whose `exclude` lists the same files.
+	"extends": "../../../tsconfig.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"types": ["node", "svelte"]
+	},
+	"files": [
+		"./capture-markdown-inert.test.ts",
+		"./capture-placement-inert.test.ts",
+		"./inbox-service.test.ts",
+		"./link-preview-privacy.test.ts",
+		"./osint-view-commands.test.ts",
+		"./osint-view-types.test.ts"
+	]
+}

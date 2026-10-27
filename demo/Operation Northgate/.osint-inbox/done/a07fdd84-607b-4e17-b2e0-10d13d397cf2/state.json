@@ -1,0 +1,45 @@
+{
+  "v": 1,
+  "steps": [
+    {
+      "step": "entity-plan",
+      "at": "2026-10-21T15:18:42.034Z",
+      "data": {
+        "plannedEntityId": "0600e065-d6bd-4aeb-8e6a-b0a64637f0ea"
+      }
+    },
+    {
+      "step": "entity",
+      "at": "2026-10-21T15:18:42.064Z",
+      "data": {
+        "entityId": "0600e065-d6bd-4aeb-8e6a-b0a64637f0ea",
+        "created": true,
+        "label": "203.0.113.47",
+        "addedSourceIds": [
+          "ext_a07fdd84-607b-4e17-b2e0-10d13d397cf2"
+        ]
+      }
+    },
+    {
+      "step": "sources-note",
+      "at": "2026-10-21T15:18:42.088Z",
+      "data": {
+        "path": "OSINTCopilot/Sources/wts-oncology-generics-eu-shipping-harbour-market-5f6a529d2fd6.md"
+      }
+    },
+    {
+      "step": "applied",
+      "at": "2026-10-21T15:18:42.106Z",
+      "data": {
+        "entityId": "0600e065-d6bd-4aeb-8e6a-b0a64637f0ea",
+        "entityLabel": "203.0.113.47",
+        "created": true,
+        "addedSourceIds": [
+          "ext_a07fdd84-607b-4e17-b2e0-10d13d397cf2"
+        ],
+        "sourcesNotePath": "OSINTCopilot/Sources/wts-oncology-generics-eu-shipping-harbour-market-5f6a529d2fd6.md",
+        "placedFiles": []
+      }
+    }
+  ]
+}

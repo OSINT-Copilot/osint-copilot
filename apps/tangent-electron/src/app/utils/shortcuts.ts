@@ -1,0 +1,152 @@
+import { isMac } from 'common/platform'
+
+const modReplace = /CommandOrControl|Mod/i
+
+export function shortcutsDisplayString(shortcuts: string | string[]) {
+	if (Array.isArray(shortcuts)) {
+		return shortcuts.map(shortcutDisplayString).join(', ')
+	}
+	return shortcutDisplayString(shortcuts)
+}
+
+function convertToDisplayCharacters(shortcut: string) {
+	if (isMac) {
+		shortcut = shortcut.replace(modReplace, '⌘')
+		shortcut = shortcut.replace(/alt/i, '⌥')
+		shortcut = shortcut.replace(/ctrl/i, '⌃')
+		shortcut = shortcut.replace(/shift/i, '⇧')
+	}
+	else {
+		shortcut = shortcut.replace(modReplace, 'Ctrl')
+	}
+
+	shortcut = shortcut.replace(/left/i, '←')
+	shortcut = shortcut.replace(/right/i, '→')
+	shortcut = shortcut.replace(/up/i, '↑')
+	shortcut = shortcut.replace(/down/i, '↓')
+
+	return shortcut
+}
+
+export function shortcutDisplayString(shortcut: string) {
+	shortcut = convertToDisplayCharacters(shortcut)
+	if (isMac) {
+		shortcut = shortcut.replace(/\+/g, ' ')
+	}
+
+	return shortcut
+}
+
+export function shortcutsHtmlString(shortcuts: string | string[]) {
+	if (Array.isArray(shortcuts)) {
+		return shortcuts.map(shortcutHtmlString).join(', ')
+	}
+	return shortcutHtmlString(shortcuts)
+}
+
+export function shortcutHtmlString(shortcut: string) {
+	shortcut = convertToDisplayCharacters(shortcut)
+
+	const groups = shortcut.split('+').map(g => '<span class="group">' + g + '</span>')
+
+	if (isMac) {
+		return groups.join('')
+	}
+
+	return groups.join('+')
+}
+
+export function shortcutToElectronShortcut(shortcut: string) {
+	shortcut = shortcut.replace('Mod', 'CommandOrControl')
+	return shortcut
+}
+
+// TODO: Typewriter would probably benefit from this addition
+// Pulled from https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_code_values
+const codeSubs = {
+	'BracketLeft': '[',
+	'BracketRight': ']',
+	'Minus': '-',
+	'Equal': '=',
+	'Semicolon': ';',
+	'Quote': '\'',
+	'Backslash': '\\',
+	'Comma': ',',
+	'Period': '.',
+	'Slash': '/',
+	'ArrowLeft': 'Left',
+	'ArrowRight': 'Right',
+	'ArrowUp': 'Up',
+	'ArrowDown': 'Down'
+}
+
+const modifierKeys = {
+	Control: true,
+	Meta: true,
+	Shift: true,
+	Alt: true
+};
+
+function codeToShortcutKey(code: string) {
+
+	const sub = codeSubs[code]
+	if (sub) return sub
+
+	const keyMatch = code.match(/^Key/)
+	if (keyMatch) return code.substring(3)
+
+	const digitMatch = code.match(/^Digit/)
+	if (digitMatch) return code.substring(5)
+
+	return code
+}
+
+let defaultUseKeyCode = false
+export function setDefaultUseKeyCode(value: boolean) {
+	defaultUseKeyCode = value
+}
+
+export function shortcutFromEvent(event: KeyboardEvent, useKeyCode?: boolean) {
+	const shortcutArray: string[] = []
+	if (!event.key) return ''
+
+	useKeyCode = useKeyCode ?? defaultUseKeyCode
+	let key = useKeyCode ? codeToShortcutKey(event.code) : (codeSubs[event.key] ?? event.key)
+
+	if (event.metaKey) shortcutArray.push(isMac ? 'Mod' : 'Meta')
+	if (event.ctrlKey) shortcutArray.push(isMac ? 'Ctrl' : 'Mod')
+	if (event.altKey) shortcutArray.push('Alt')
+	if (event.shiftKey) shortcutArray.push('Shift')
+
+	if (!eventIsModifier(event)) {
+
+		if (!useKeyCode && isMac && event.altKey && event.code) {
+			// The altKey on mac can change the key value (e.g. Cmd+Alt+R will show up as Cmd+Alt+® if we don't do this)
+			// This will only work properly on QWERTY keyboard layouts… The alternative is a map of mac option characters to keys…
+			key = codeToShortcutKey(event.code)
+		}
+
+		if (key.length === 1) key = key.toUpperCase()
+
+		shortcutArray.push(key)
+	}
+
+	return shortcutArray.join('+')
+}
+
+export function eventIsModifier(event: KeyboardEvent) {
+	return modifierKeys[event.key]
+}
+
+export function eventIsShortcutable(event: KeyboardEvent) {
+	if (event.target instanceof HTMLInputElement || (event.target instanceof HTMLElement && event.target.isContentEditable)) {
+		if ((event as any).shortcutable === true || event.metaKey || event.altKey || event.ctrlKey) return true
+		if (event.key === 'Delete' || event.key === 'Backspace') return false
+		return event.key.length > 1
+	}
+	return true
+}
+
+export function markEventAsShortcutable(event: KeyboardEvent) {
+	(event as any).shortcutable = true
+}

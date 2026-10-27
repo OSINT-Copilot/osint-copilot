@@ -1,0 +1,306 @@
+import { StructureType, type TodoState } from 'common/indexing/indexTypes'
+import NoteParser from './NoteParser'
+import { escapeRegExp } from '@such-n-such/core'
+
+// Unordered glyphs are split by visual weight because large glyphs get extra
+// vertical spacing via ListForm.UnorderedLarge / .largeList styling.
+const largeUnorderedGlyphs = '*\u2022\u204C\u204D\u25D8\u2765\u29BE\u29BF\u25C9'
+/* U+2022 •	(Bullet)
+ * U+204c ⁌	Black Leftwards Bullet
+ * U+204d ⁍	(Black Rightwards Bullet)
+ * U+25d8 ◘	(Inverse Bullet)
+ * U+2765 ❥	(Rotated Heavy Black Heart Bullet)
+ * U+29be ⦾	(Circled White Bullet)
+ * U+29bf ⦿	(Circled Bullet)
+ * U+25c9 ◉	(Fisheye (Japanese Bullet)) */
+ 
+const standardUnorderedGlyphs = '-+\u2023\u2043\u2219\u22C5\u25E6\u2619\u2767'
+/* U+2219 ∙	(Bullet Operator)
+ * U+22C5 ⋅	(Dot Operator)
+ * U+2023 ‣	(Triangular Bullet)
+ * U+2043 ⁃	(Hyphen Bullet)
+ * U+25e6 ◦	(White Bullet)
+ * U+2619 ☙	(Reversed Rotated Floral Heart Bullet)
+ * U+2767 ❧	(Rotated Floral Heart Bullet) */
+
+const largeUnorderedGlyphSet = new Set(largeUnorderedGlyphs)
+
+// Build the unordered branch as data so adding glyphs does not disturb the
+// capture-group layout consumed by matchList().
+const unorderedGlyphMatcher = `(?:${[...standardUnorderedGlyphs + largeUnorderedGlyphs]
+	.map(escapeRegExp)
+	.join('|')})`
+
+/**
+ * This is a very complicated match
+ * Selection group 1 hits the indentation
+ * Selection group 2 contains the full glyph of either type (e.g. -, A.)
+ * Selection group 3 hits the unordered list (e.g. -, +, *)
+ * Selection group 4 contains the numeric glyph without a period (e.g. 1, A, b, IV)
+ * 	5: Digits
+ * 	6: lower-case single letters
+ * 	7: upper-case single letters
+ * 8: Checkbox on top of list
+ */
+export const listMatcher = new RegExp(
+	`^([ \\t]*)((${unorderedGlyphMatcher})|((\\d+)|([a-z])|([A-Z]))[\\.\\)])( \\[[ x+\\-]?\\])? `
+)
+
+/**
+ * A subset of the above match
+ * 1: Digits
+ * 2: lower case alpha
+ * 3: upper case alpha
+ */
+export const numericGlyphMatcher = /(\d+)|([a-z])|([A-Z])/
+
+export const checkboxMatcher = /\[([x+\- ]?)\]/
+
+export enum ListForm {
+	Unordered,
+	UnorderedLarge,
+	Digit,
+	AlphaUpper,
+	AlphaLower
+}
+
+export namespace ListForm {
+	export function isNumeric(form: ListForm) {
+		switch (form) {
+			case ListForm.Digit:
+			case ListForm.AlphaLower:
+			case ListForm.AlphaUpper:
+				return true
+			default:
+				return false
+		}
+	}
+}
+
+export interface ListDefinition {
+	/**
+	 * The value pulled for the indent.
+	 * Not necessarily correct unless this definition was pulled from a full line
+	 */
+	indent: string,
+	form: ListForm,
+	/** The character representation of the list item */
+	glyph: string,
+	/** The numeric value of the ordered glyph */
+	index?: number,
+
+	todoState?: TodoState
+}
+
+export namespace ListDefinition {
+	export function length(definition: ListDefinition) {
+		// Include an extra one because the last space is not included in the glyph
+		return definition.indent.length + definition.glyph.length + 1
+	}
+	export function areEqual(a: ListDefinition, b: ListDefinition) {
+		return a.indent === b.indent &&
+			a.form === b.form &&
+			a.glyph === b.glyph &&
+			// Use `==` to allow undefined & null to match as those are equivalent for our purposes
+			a.index == b.index &&
+			a.todoState == b.todoState
+	}
+	export function areEqualExceptForActiveTodoState(a: ListDefinition, b: ListDefinition) {
+		if (a.indent !== b.indent) return false
+		if (a.form !== b.form) return false
+		// Use `==` to allow undefined & null to match as those are equivalent for our purposes
+		if (a.index != b.index) return false
+		const aTodoUndefined = !a.todoState
+		const bTodoUndefined = !b.todoState
+		if (aTodoUndefined != bTodoUndefined) return false
+
+		const splitA = splitCheckboxGlyphs(a.glyph)
+		const splitB = splitCheckboxGlyphs(b.glyph)
+
+		if (splitA.base !== splitB.base) return false
+
+		return true
+	}
+}
+
+function checkboxGlyphToTodoState(glyph: string): TodoState {
+	if (glyph.includes('x') || glyph.includes('+')) {
+		return 'checked'
+	}
+	else if (glyph.includes('-')) {
+		return 'canceled'
+	}
+	return 'open'
+}
+
+export function matchList(line: string): ListDefinition {
+	const match = line.match(listMatcher)
+	if (match) {
+
+		const definition = {
+			indent: match[1],
+			glyph: match[2]
+		} as Partial<ListDefinition>	
+		if (match[3]) {
+			// Unordered list
+			definition.form = largeUnorderedGlyphSet.has(match[3])
+				? ListForm.UnorderedLarge
+				: ListForm.Unordered
+		}
+		else {
+			const { form, index } = extractNumericValueFromMatch(match, 4)
+			definition.form = form
+			definition.index = index
+		}
+
+		if (match[8]) {
+			definition.todoState = checkboxGlyphToTodoState(match[8])
+			definition.glyph += match[8]
+		}
+
+		return definition as ListDefinition
+	}
+
+	return null
+}
+
+const A_index = 65
+const Z_index = 90
+const a_index = 97
+const z_index = 122
+
+function extractNumericValueFromMatch(match: RegExpMatchArray, offset = 0): Partial<ListDefinition> {
+	let form = 0
+	let index = 0
+
+	if (match[1 + offset]) {
+		form = ListForm.Digit
+		index = parseInt(match[1 + offset])
+	}
+	else if (match[2 + offset]) {
+		form = ListForm.AlphaLower
+		// 'a' is index 97
+		index = match[2 + offset].charCodeAt(0) - a_index + 1
+	}
+	else if (match[3 + offset]) {
+		form = ListForm.AlphaUpper
+		// 'A' is index 65
+		index = match[3 + offset].charCodeAt(0) - A_index + 1
+	}
+	
+	return { form, index }
+}
+
+export function getFormOfGlyph(glyph: string): Partial<ListDefinition> {
+	const match = glyph.match(numericGlyphMatcher)
+
+	if (match) {
+		return extractNumericValueFromMatch(match)
+	}
+
+	return undefined
+}
+
+export function getGlyphForNumber(form: ListForm, index: number = 1, delimiter = '.') {
+	switch (form) {
+		case ListForm.Unordered:
+		case ListForm.UnorderedLarge:
+			return undefined
+		case ListForm.AlphaUpper:
+			if (index > 0 && index <= Z_index - A_index + 1) {
+				return String.fromCharCode(A_index - 1 + index) + delimiter
+			}
+			break
+		case ListForm.AlphaLower:
+			if (index > 0 && index <= z_index - a_index + 1) {
+				return String.fromCharCode(a_index - 1 + index) + delimiter
+			}
+			break
+	}
+	return index.toString() + delimiter
+}
+
+export function getDelimiterForGlyph(glyph: string) {
+	if (glyph) {
+		if (glyph.endsWith('.')) return '.'
+		if (glyph.endsWith(')')) return ')'
+	}
+	return undefined
+}
+
+export function splitCheckboxGlyphs(glyph: string) {
+	const match = glyph?.match(checkboxMatcher)
+	if (match) {
+		return {
+			base: glyph.substring(0, glyph.length - match[0].length).trimEnd(),
+			box: match[0]
+		}
+	}
+	return {
+		base: glyph,
+		box: undefined
+	}
+}
+
+export function isLargeList(definition: ListDefinition) {
+	switch (definition.form) {
+		case ListForm.Unordered:
+			return false
+		case ListForm.UnorderedLarge:
+			return true
+		case ListForm.Digit:
+		case ListForm.AlphaLower:
+		case ListForm.AlphaUpper:
+			return definition.glyph?.endsWith(')')
+	}
+	return false
+}
+
+export function parseListItem(char: string, parser: NoteParser): boolean {
+	if (!parser.isStartOfContent) return false
+	const line = parser.feed.getLineText()
+	const listDetail = matchList(line)
+	if (!listDetail) return false
+	
+	const { feed } = parser
+	const start = feed.index
+	if (listDetail.todoState === undefined) {
+		// IMPROVE: A dirty hack to make the delta format compose
+		listDetail.todoState = null
+	}
+	else {
+		parser.pushStructure({
+			type: StructureType.Todo,
+			start,
+			end: start + line.length,
+			state: listDetail.todoState,
+			text: line.substring(ListDefinition.length(listDetail))
+		})
+	}
+
+	// Encode the list
+	parser.lineData.list = listDetail
+
+	// Consume the line glyph
+	feed.nextByLength(listDetail.glyph.length - 1)
+	parser.commitSpan({
+		line_format: 'list',
+		hiddenGroup: true,
+		list_format: listDetail
+	})
+
+	return true
+}
+
+export function getAutoChild(listData: ListDefinition) {
+	switch (listData.form) {
+		case ListForm.Unordered:
+		case ListForm.UnorderedLarge:
+		case ListForm.AlphaLower:
+			return { form: ListForm.Unordered, glyph: '-' }
+		case ListForm.AlphaUpper:
+			return { form: ListForm.Digit, glyph: '1.', basis: 1 }
+		case ListForm.Digit:
+			return { form: ListForm.AlphaLower, glyph: 'a.', basis: 1 }
+	}
+}

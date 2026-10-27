@@ -1,0 +1,227 @@
+{
+	"appId": "com.probepoint.osint-copilot",
+	"productName": "OSINT Copilot",
+	"copyright": "Copyright © 2024-2026 Probe Point Analytics LLC. Based on Tangent, © Taylor Hadden.",
+
+	"generateUpdatesFilesForAllChannels": true,
+	"electronVersion": "42.1.0",
+
+	"files": [
+		"node_modules/**/*",
+		"static/**/*",
+		"package.json",
+		"defaults/**/*",
+		{
+			"from": "__build",
+			"to": "__build",
+			// No source maps in a shipped build. They carry no source text (webpack is set to
+			// nosources-source-map for production), but they do list every internal source path
+			// -- 3,142 of them in the renderer alone -- and 2,589 files of them is weight the
+			// user downloads for nothing.
+			"filter": ["**/*",
+				"!**/*.map",
+				"!bundle/app.css"
+			]
+		},
+		{
+			"from": "__build/bundle",
+			"to": "static",
+			"filter": ["*.css", "*.css.map"]
+		}
+	],
+	"extraResources": [
+		{
+			"from": "../../LICENSE.txt",
+			"to": "LICENSE.txt"
+		},
+		{
+			"from": "../../NOTICE",
+			"to": "NOTICE"
+		},
+		{
+			"from": "../../THIRD_PARTY_NOTICES.md",
+			"to": "THIRD_PARTY_NOTICES.md"
+		}
+	],
+
+	"mac": {
+		"category": "public.app-category.productivity",
+		"hardenedRuntime": true,
+		"entitlements": "build/entitlements.mac.plist",
+		"entitlementsInherit": "build/entitlements.mac.plist",
+		"target": {
+			"target": "default",
+			"arch": "universal"
+		},
+		"icon": "build/Icon.icon",
+		"notarize": false,
+		"extendInfo": {
+			"CFBundleDocumentTypes": [
+				{
+					"LSItemContentTypes": ["public.folder", "public.directory"],
+					"CFBundleTypeRole": "Editor",
+					"LSHandlerRank": "Alternate"
+				},
+				{
+					"LSItemContentTypes": ["public.plain-text"],
+					"CFBundleTypeRole": "Editor",
+					"LSHandlerRank": "Default"
+				},
+				{
+					"LSItemContentTypes": [
+						"public.jpeg",
+						"public.tiff",
+						"public.png",
+						"com.compuserve.gif",
+						"com.microsoft.bmp",
+						"public.svg"
+					],
+					"CFBundleTypeRole": "Viewer",
+					"LSHandlerRank": "Alternate"
+				}
+			]
+		}
+	},
+
+	"win": {
+		"target": [
+			{
+				"target": "nsis",
+				"arch": ["x64", "arm64"]
+			},
+			{
+				"target": "portable",
+				"arch": ["x64", "arm64"]
+			}
+		],
+		"signtoolOptions": {
+			// Ours, not upstream's build/jsign.js, which signs against Tangent's own
+			// YubiKey. Unconfigured it leaves the build unsigned rather than failing it.
+			"sign": "./build/sign-windows.js"
+		},
+		"fileAssociations": [
+			{
+				"ext": ["md", "mdx"],
+				"description": "Markdown Files",
+				"role": "Editor",
+				"rank": "Alternate"
+			},
+			{
+				"ext": ["jpg", "jpeg", "png", "PNG", "gif", "bmp", "svg"],
+				"description": "Images Files",
+				"role": "Viewer"
+			}
+		]
+	},
+
+	"nsis": {
+		"artifactName": "OSINT-Copilot-Setup-${version}.${ext}",
+		"oneClick": false,
+		"allowElevation": true,
+		"allowToChangeInstallationDirectory": true
+	},
+
+	"portable": {
+		"artifactName": "OSINT-Copilot-Portable-${version}.${ext}"
+	},
+
+	"appImage": {
+		// No spaces in the filename. The default carries productName verbatim -- "OSINT
+		// Copilot-0.12.10.AppImage" -- and every tool that touches it sanitises the space
+		// differently: electron-builder writes a hyphen into latest-linux.yml, GitHub's
+		// upload API writes a dot into the asset name. The updater then asks for a file
+		// that does not exist and silently never updates. Naming it with no space to
+		// begin with means nothing has to guess.
+		"artifactName": "${name}-${version}-${arch}.${ext}"
+	},
+
+	"linux": {
+		"category": "Office",
+		"maintainer": "Probe Point Analytics LLC",
+		"synopsis": "OSINT investigation workspace",
+		// X11 through XWayland. Under a Wayland session the app initialises and then crashes
+		// in the compositor, and the platform cannot be chosen from JS -- Chromium fixes it
+		// before the main script runs, so app.commandLine.appendSwitch is too late even as the
+		// first statement. The desktop entry is the earliest place it can be set. %U is
+		// repeated here because electron-builder only appends it when executableArgs carries
+		// no exec code.
+		//
+		// A real comment, not a "__comment_" key: electron-builder validates this object
+		// against a schema that rejects unknown properties, so the key form failed the whole
+		// build. It parses this file with JSON5 (app-builder-lib/out/util/config/load.js:22),
+		// which allows comments -- but Node's require() does not, so nothing may require it.
+		"executableArgs": ["--ozone-platform=x11", "%U"],
+		"target": [
+			{
+				"target": "AppImage",
+				"arch": ["x64", "arm64"]
+			},
+			{
+				"target": "deb",
+				"arch": ["x64"]
+			},
+			{
+				"target": "rpm",
+				"arch": ["x64"]
+			}
+		],
+		"fileAssociations": [
+			{
+				"ext": "md",
+				"mimeType": "text/plain"
+			},
+			{
+				"ext": "mdx",
+				"mimeType": "text/plain"
+			},
+			{
+				"ext": "jpg",
+				"mimeType": "image/jpeg"
+			},
+			{
+				"ext": "jpeg",
+				"mimeType": "image/jpeg"
+			},
+			{
+				"ext": "png",
+				"mimeType": "image/png"
+			},
+			{
+				"ext": "gif",
+				"mimeType": "image/gif"
+			},
+			{
+				"ext": "bmp",
+				"mimeType": "image/bmp"
+			}
+		]
+	},
+
+	// Releases stay in the existing public feed for update compatibility. Every installed
+	// build has this owner/repository baked into resources/app-update.yml; moving the feed
+	// without a bridge release would strand those installations.
+	//
+	// This value is baked into resources/app-update.yml at package time, so an artifact
+	// looks for updates wherever this pointed WHEN IT WAS BUILT. Changing it requires
+	// repackaging, not just re-uploading.
+	//
+	// The organisation was renamed Probe-Point-Analytics-LLC -> OSINT-Copilot. Builds
+	// already in the wild still ask for the old name and reach the repo through GitHub's
+	// rename redirect, which is why updates have kept working; this points future builds
+	// at the real name so they do not depend on that redirect outliving the rename.
+	"publish": [
+		{
+			"provider": "github",
+			"owner": "OSINT-Copilot",
+			"repo": "osint-copilot-releases",
+			"releaseType": "draft"
+		}
+	],
+
+	// Wraps the Linux executable so an AppImage can start where Chromium's sandbox cannot; see
+	// the file for the measurement behind it.
+	"afterPack": "build/after-pack.js",
+
+	// Calls build/notarize.js when Apple's credentials are set, and says why when they are not.
+	"afterSign": "build/after-sign.js"
+}

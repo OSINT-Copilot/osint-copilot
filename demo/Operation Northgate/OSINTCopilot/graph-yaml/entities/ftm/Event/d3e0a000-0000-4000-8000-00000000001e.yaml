@@ -1,0 +1,22 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-00000000001e
+type: Event
+label: Northgate Freight BV incorporated
+properties:
+  name: Northgate Freight BV incorporated
+  add_to_timeline: true
+  start_date: 2019-06-12
+  Name: Northgate Freight BV incorporated
+ftmSchema: Event
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Event/Northgate Freight BV incorporated.md
+osint_sources:
+  - id: src_2fa03e07c6129db2
+    source_url: https://kvk-register.example/company/00000000
+    archive_status: skipped
+    inferred: false
+    rationale: Reported here
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

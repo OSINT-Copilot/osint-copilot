@@ -1,0 +1,22 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000024
+type: Event
+label: Rotterdam customs seize 38 parcels
+properties:
+  name: Rotterdam customs seize 38 parcels
+  add_to_timeline: true
+  start_date: 2024-06-20
+  Name: Rotterdam customs seize 38 parcels
+ftmSchema: Event
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Event/Rotterdam customs seize 38 parcels.md
+osint_sources:
+  - id: src_61d9e60bd667f542
+    source_url: https://customs.example/press/2024-06-20-parcel-seizure
+    archive_status: skipped
+    inferred: false
+    rationale: Reported here
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: low
+

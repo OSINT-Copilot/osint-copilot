@@ -1,0 +1,209 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CodexCliService } from '../services/codex-cli-service';
+
+class TestCodexCliService extends CodexCliService {
+    args(extra: string[] = [], imagePaths: string[] = []): string[] {
+        return this.buildCliArgs(16, extra, imagePaths);
+    }
+
+    configSnapshot() {
+        return { ...this.config };
+    }
+}
+
+/**
+ * The Flatpak fallback is read through host.platform.isFlatpak, which is Linux plus
+ * FLATPAK_ID. Stubbing the variable alone left the test passing only on Linux: on the
+ * macOS CI runner isFlatpak stayed false and the arguments came back without the flag.
+ */
+function stubPlatform(value: NodeJS.Platform): () => void {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { ...original, value });
+    return () => Object.defineProperty(process, 'platform', original);
+}
+
+describe('CodexCliService', () => {
+    let restorePlatform: (() => void) | null = null;
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        restorePlatform?.();
+        restorePlatform = null;
+    });
+
+    it('uses safe non-interactive defaults and places the global approval flag before exec', () => {
+        const service = new TestCodexCliService();
+
+        expect(service.providerId).toBe('codex');
+        expect(service.displayName).toBe('Codex CLI');
+        expect(service.configSnapshot()).toMatchObject({
+            cliPath: 'codex',
+            model: '',
+            timeoutMs: 300_000,
+        });
+        expect(service.args()).toEqual([
+            '--ask-for-approval',
+            'never',
+            'exec',
+            '--skip-git-repo-check',
+            '--ephemeral',
+            '--color',
+            'never',
+            '--sandbox',
+            'read-only',
+            '-',
+        ]);
+    });
+
+    it('adds a configured model, extra arguments, and image attachments before stdin', () => {
+        const service = new TestCodexCliService({ model: 'gpt-5-codex' });
+
+        expect(service.args(['--oss'], ['/tmp/evidence one.png', '/tmp/evidence-two.jpg'])).toEqual([
+            '--ask-for-approval',
+            'never',
+            'exec',
+            '--skip-git-repo-check',
+            '--ephemeral',
+            '--color',
+            'never',
+            '--sandbox',
+            'read-only',
+            '--model',
+            'gpt-5-codex',
+            '--oss',
+            '--image',
+            '/tmp/evidence one.png',
+            '--image',
+            '/tmp/evidence-two.jpg',
+            '-',
+        ]);
+    });
+
+    it('routes the global --search flag before the exec subcommand', () => {
+        const service = new TestCodexCliService();
+
+        expect(service.args(['--search', '--oss'])).toEqual([
+            '--ask-for-approval',
+            'never',
+            '--search',
+            'exec',
+            '--skip-git-repo-check',
+            '--ephemeral',
+            '--color',
+            'never',
+            '--sandbox',
+            'read-only',
+            '--oss',
+            '-',
+        ]);
+    });
+
+    it('uses the read-only Landlock backend when Obsidian runs inside Flatpak', () => {
+        restorePlatform = stubPlatform('linux');
+        vi.stubEnv('FLATPAK_ID', 'test.flatpak.App');
+        const service = new TestCodexCliService();
+
+        expect(service.args()).toEqual([
+            '--ask-for-approval',
+            'never',
+            '-c',
+            'features.use_legacy_landlock=true',
+            'exec',
+            '--skip-git-repo-check',
+            '--ephemeral',
+            '--color',
+            'never',
+            '--sandbox',
+            'read-only',
+            '-',
+        ]);
+    });
+
+    it('omits the optional model flag when the configured value is blank', () => {
+        const service = new TestCodexCliService({ model: '   ' });
+
+        expect(service.args()).not.toContain('--model');
+    });
+
+    it('requires saved Codex authentication for remote runs but not explicit OSS runs', async () => {
+        const remote = new TestCodexCliService({ cliPath: process.execPath });
+        const remoteStatus = vi.spyOn(remote, 'getLoginStatus').mockResolvedValue({
+            authenticated: false,
+            message: 'Not logged in',
+        });
+        await expect(remote.isAvailable()).resolves.toBe(false);
+        expect(remoteStatus).toHaveBeenCalledOnce();
+
+        remoteStatus.mockResolvedValue({ authenticated: true, message: 'Logged in using ChatGPT' });
+        await expect(remote.isAvailable()).resolves.toBe(true);
+
+        const oss = new TestCodexCliService({ cliPath: process.execPath, extraCliArgs: '--oss' });
+        const ossStatus = vi.spyOn(oss, 'getLoginStatus').mockResolvedValue({
+            authenticated: false,
+            message: 'Not logged in',
+        });
+        await expect(oss.isAvailable()).resolves.toBe(true);
+        expect(ossStatus).not.toHaveBeenCalled();
+
+        for (const extraCliArgs of ['--profile local', '-p local', '-c model_provider=custom']) {
+            const configured = new TestCodexCliService({ cliPath: process.execPath, extraCliArgs });
+            const configuredStatus = vi.spyOn(configured, 'getLoginStatus').mockResolvedValue({
+                authenticated: false,
+                message: 'Not logged in',
+            });
+            await expect(configured.isAvailable()).resolves.toBe(true);
+            expect(configuredStatus).not.toHaveBeenCalled();
+        }
+
+        const invalidOss = new TestCodexCliService({ cliPath: process.execPath, extraCliArgs: '--oss=false' });
+        const invalidOssStatus = vi.spyOn(invalidOss, 'getLoginStatus').mockResolvedValue({
+            authenticated: false,
+            message: 'Not logged in',
+        });
+        await expect(invalidOss.isAvailable()).resolves.toBe(false);
+        expect(invalidOssStatus).toHaveBeenCalledOnce();
+    });
+
+    it('rejects SVG attachments with an actionable conversion message', () => {
+        const service = new TestCodexCliService();
+
+        expect(() => service.args([], ['/tmp/diagram.svg'])).toThrow(/Export the image as PNG or JPEG/);
+    });
+
+    it('getLoginStatus resolves to an unauthenticated status instead of rejecting when CLI-path resolution itself throws', async () => {
+        class ThrowingResolutionService extends CodexCliService {
+            protected override getResolvedCliPath(): Promise<string> {
+                return Promise.reject(new Error('resolution blew up'));
+            }
+        }
+        const service = new ThrowingResolutionService();
+
+        // Without the try/catch around `await this.getResolvedCliPath()`, this would reject
+        // instead of resolving -- breaking getLoginStatus's contract of always producing a
+        // CodexLoginStatus, and leaving the Settings "Check login" button stuck on "Checking...".
+        await expect(service.getLoginStatus()).resolves.toEqual({
+            authenticated: false,
+            message: 'resolution blew up',
+        });
+    });
+
+    it.each([
+        ['--json'],
+        ['--sandbox', 'danger-full-access'],
+        ['-s', 'workspace-write'],
+        ['--dangerously-bypass-approvals-and-sandbox'],
+        ['--yolo'],
+        ['--approve-for-me'],
+        ['--color=always'],
+        ['--cd', '/tmp'],
+        ['--image', '/tmp/extra.png'],
+        ['--model=other-model'],
+        ['--remote', 'ws://example.test'],
+        ['review'],
+        ['-'],
+    ])('rejects framework-owned or incompatible extra arguments: %j', (...extra) => {
+        const service = new TestCodexCliService();
+
+        expect(() => service.args(extra)).toThrow(/Unsupported Codex extra CLI argument/);
+    });
+});

@@ -1,0 +1,219 @@
+{
+  "nodes": [
+    {
+      "id": "g-people",
+      "type": "group",
+      "label": "People",
+      "x": -40,
+      "y": -60,
+      "width": 1280,
+      "height": 310
+    },
+    {
+      "id": "ferris",
+      "type": "file",
+      "file": "OSINTCopilot/ftm/Person/Jonah Ferris.md",
+      "osintEntityId": "d3e0a000-0000-4000-8000-000000000003",
+      "x": 0,
+      "y": 0,
+      "width": 320,
+      "height": 210
+    },
+    {
+      "id": "koval",
+      "type": "file",
+      "file": "OSINTCopilot/ftm/Person/Marta Koval.md",
+      "osintEntityId": "d3e0a000-0000-4000-8000-000000000001",
+      "x": 440,
+      "y": 0,
+      "width": 320,
+      "height": 210
+    },
+    {
+      "id": "arendt",
+      "type": "file",
+      "file": "OSINTCopilot/ftm/Person/Daniel Arendt.md",
+      "osintEntityId": "d3e0a000-0000-4000-8000-000000000002",
+      "x": 880,
+      "y": 0,
+      "width": 320,
+      "height": 210
+    },
+    {
+      "id": "g-companies",
+      "type": "group",
+      "label": "Companies",
+      "x": -40,
+      "y": 360,
+      "width": 1280,
+      "height": 310
+    },
+    {
+      "id": "aurelia",
+      "type": "file",
+      "file": "OSINTCopilot/ftm/ShellCompany/Aurelia Trade LP.md",
+      "osintEntityId": "d3e0a000-0000-4000-8000-000000000006",
+      "x": 0,
+      "y": 420,
+      "width": 320,
+      "height": 210
+    },
+    {
+      "id": "brightwater",
+      "type": "file",
+      "file": "OSINTCopilot/ftm/Company/Brightwater Holdings Ltd.md",
+      "osintEntityId": "d3e0a000-0000-4000-8000-000000000004",
+      "x": 440,
+      "y": 420,
+      "width": 320,
+      "height": 210
+    },
+    {
+      "id": "northgate",
+      "type": "file",
+      "file": "OSINTCopilot/ftm/Company/Northgate Freight BV.md",
+      "osintEntityId": "d3e0a000-0000-4000-8000-000000000005",
+      "x": 880,
+      "y": 420,
+      "width": 320,
+      "height": 210
+    },
+    {
+      "id": "g-evidence",
+      "type": "group",
+      "label": "Evidence",
+      "x": 1320,
+      "y": -60,
+      "width": 860,
+      "height": 730
+    },
+    {
+      "id": "forum-capture",
+      "type": "file",
+      "file": "OSINTCopilot/Evidence/wts-oncology-generics-eu-shipping-harbour-market-9c77b707.viewport.png",
+      "x": 1360,
+      "y": 0,
+      "width": 380,
+      "height": 300
+    },
+    {
+      "id": "registry-link",
+      "type": "link",
+      "url": "http://registry.cy.example/company/HE000000",
+      "x": 1800,
+      "y": 0,
+      "width": 340,
+      "height": 180,
+      "osintLinkTitle": "BRIGHTWATER HOLDINGS LTD · HE 000000",
+      "osintLinkDescription": "Registry extract: director, shareholder, registered office",
+      "osintLinkSite": "registry.cy.example",
+      "osintLinkFetchedAt": "2026-09-18T09:30:00.000Z"
+    },
+    {
+      "id": "news-link",
+      "type": "link",
+      "url": "https://news.example/2024/06/21/rotterdam-customs-seize-counterfeit-cancer-drugs",
+      "x": 1800,
+      "y": 220,
+      "width": 340,
+      "height": 180,
+      "osintLinkTitle": "Rotterdam customs seize counterfeit cancer drugs",
+      "osintLinkDescription": "38 parcels declared as food supplements, forwarded by Northgate Freight BV",
+      "osintLinkSite": "news.example",
+      "osintLinkFetchedAt": "2026-09-18T09:30:00.000Z"
+    },
+    {
+      "id": "manifest",
+      "type": "file",
+      "file": "OSINTCopilot/ftm/Document/q2-2024-consolidation.pdf.md",
+      "osintEntityId": "c8032393-908d-4bdd-af1c-a49f345770b0",
+      "x": 1360,
+      "y": 400,
+      "width": 380,
+      "height": 230
+    },
+    {
+      "id": "hypothesis",
+      "type": "text",
+      "x": 0,
+      "y": 760,
+      "width": 560,
+      "height": 140,
+      "text": "Hypothesis: Brightwater bought into Northgate in April 2024 to control how the counterfeit stock is shipped."
+    },
+    {
+      "id": "question",
+      "type": "text",
+      "x": 640,
+      "y": 760,
+      "width": 560,
+      "height": 140,
+      "text": "Open question: who stands behind Aurelia Trade LP? Its only director, Jonah Ferris, is a nominee."
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "fromNode": "koval",
+      "fromSide": "bottom",
+      "toNode": "brightwater",
+      "toSide": "top",
+      "label": "director",
+      "color": "1"
+    },
+    {
+      "id": "e2",
+      "fromNode": "arendt",
+      "fromSide": "bottom",
+      "toNode": "northgate",
+      "toSide": "top",
+      "label": "managing director",
+      "color": "1"
+    },
+    {
+      "id": "e3",
+      "fromNode": "ferris",
+      "fromSide": "bottom",
+      "toNode": "aurelia",
+      "toSide": "top",
+      "label": "nominee director",
+      "color": "6"
+    },
+    {
+      "id": "e4",
+      "fromNode": "aurelia",
+      "fromSide": "right",
+      "toNode": "brightwater",
+      "toSide": "left",
+      "label": "owns 100%",
+      "color": "4"
+    },
+    {
+      "id": "e5",
+      "fromNode": "brightwater",
+      "fromSide": "right",
+      "toNode": "northgate",
+      "toSide": "left",
+      "label": "owns 60%",
+      "color": "4"
+    },
+    {
+      "id": "e6",
+      "fromNode": "manifest",
+      "fromSide": "left",
+      "toNode": "northgate",
+      "toSide": "right",
+      "label": "its manifest",
+      "color": "2"
+    },
+    {
+      "id": "e7",
+      "fromNode": "hypothesis",
+      "fromSide": "top",
+      "toNode": "brightwater",
+      "toSide": "bottom",
+      "toEnd": "arrow",
+      "color": "5"
+    }
+  ]
+}

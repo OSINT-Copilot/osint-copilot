@@ -1,0 +1,76 @@
+import { describe, it, expect, vi } from 'vitest';
+import { ClaudeCodeService, sanitizeCliOutput, type ExtractionLogEvent } from '../services/claude-code-service';
+
+describe('ClaudeCodeService extraction logging', () => {
+  it('sanitizes ANSI/control chars and truncates output', () => {
+    const dirty = '\u001b[31mERROR\u001b[0m \u0007 hello world '.repeat(30);
+    const clean = sanitizeCliOutput(dirty, 60);
+    expect(clean.includes('\u001b')).toBe(false);
+    expect(clean.includes('\u0007')).toBe(false);
+    expect(clean.length).toBeLessThanOrEqual(61);
+  });
+
+  it('emits parse_failed event when response is not JSON', async () => {
+    const svc = new ClaudeCodeService({ cliPath: 'claude', model: 'sonnet' });
+    (svc as any).invokeCLI = vi.fn().mockResolvedValue('not-json');
+    const logs: ExtractionLogEvent[] = [];
+
+    const res = await svc.extractEntities('hello', [], undefined, undefined, {
+      emit: (ev) => logs.push(ev),
+    });
+
+    expect(res.success).toBe(false);
+    expect(logs.some((l) => l.phase === 'parse_failed')).toBe(true);
+  });
+
+  it('emits parse_success event for valid operations payload', async () => {
+    const svc = new ClaudeCodeService({ cliPath: 'claude', model: 'sonnet' });
+    (svc as any).invokeCLI = vi.fn().mockResolvedValue('{"operations":[{"action":"create","entities":[],"connections":[]}]}');
+    const logs: ExtractionLogEvent[] = [];
+
+    const res = await svc.extractEntities('hello', [], undefined, undefined, {
+      emit: (ev) => logs.push(ev),
+    });
+
+    expect(res.success).toBe(true);
+    expect(logs.some((l) => l.phase === 'parse_success')).toBe(true);
+  });
+
+  it('handles stdin EPIPE when a CLI exits before accepting a large prompt', async () => {
+    class EarlyExitService extends ClaudeCodeService {
+      protected override buildCliArgs(): string[] {
+        return ['-e', 'process.stdin.destroy(); process.exit(2)'];
+      }
+
+      invokeLargePrompt(): Promise<string> {
+        return this.invokeCLI('x'.repeat(512 * 1024));
+      }
+    }
+    const svc = new EarlyExitService({
+      cliPath: process.execPath,
+      timeoutMs: 5_000,
+    });
+
+    await expect(svc.invokeLargePrompt()).rejects.toThrow(/Claude Code error/);
+  });
+
+  it('names the exact displayName and Settings field in the CLI-not-found error', async () => {
+    class ExposedService extends ClaudeCodeService {
+      invokePrompt(): Promise<string> {
+        return this.invokeCLI('hello');
+      }
+    }
+    const svc = new ExposedService({
+      cliPath: 'definitely-nonexistent-cli-abc123-not-found',
+      timeoutMs: 5_000,
+    });
+
+    // Regression coverage for the resolveCliPath/buildCliNotFoundMessage wiring itself (not just
+    // the standalone utility): displayName, the bare-name search description, and the
+    // provider-specific cliPathSettingLabel ("Claude CLI path") must all actually reach the
+    // rejected error, not just be defined on the class.
+    await expect(svc.invokePrompt()).rejects.toThrow(
+      /Claude Code CLI not found \(tried "definitely-nonexistent-cli-abc123-not-found", including common install locations and your shell PATH\)\. If it's installed, set "Claude CLI path" in Settings/,
+    );
+  });
+});

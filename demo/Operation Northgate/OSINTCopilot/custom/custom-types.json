@@ -1,0 +1,78 @@
+{
+  "schemas": [
+    {
+      "name": "ShellCompany",
+      "label": "Shell company",
+      "plural": "Shell companies",
+      "description": "A company run by nominees, with no operations of its own",
+      "extends": [
+        "Thing"
+      ],
+      "properties": {
+        "registeredAgent": {
+          "label": "Registered agent",
+          "type": "string",
+          "description": "Who files for it"
+        },
+        "nomineeDirector": {
+          "label": "Nominee director",
+          "type": "string",
+          "description": "The name on the register"
+        },
+        "incorporationDate": {
+          "label": "Incorporation date",
+          "type": "date",
+          "description": ""
+        }
+      },
+      "required": [
+        "registeredAgent"
+      ],
+      "featured": [
+        "registeredAgent",
+        "nomineeDirector"
+      ],
+      "caption": [
+        "name",
+        "registeredAgent",
+        "nomineeDirector"
+      ],
+      "color": "#8E24AA"
+    },
+    {
+      "name": "NomineeFor",
+      "label": "Nominee for",
+      "plural": "Nominee relationships",
+      "description": "Acts on the register on behalf of a hidden principal",
+      "extends": [
+        "Interval"
+      ],
+      "properties": {
+        "nominee": {
+          "label": "Nominee",
+          "type": "entity",
+          "range": "Person",
+          "description": ""
+        },
+        "principal": {
+          "label": "Principal",
+          "type": "entity",
+          "description": ""
+        },
+        "fee": {
+          "label": "Fee",
+          "type": "string",
+          "description": ""
+        }
+      },
+      "required": [],
+      "featured": [
+        "fee"
+      ],
+      "caption": [
+        "name"
+      ],
+      "color": "#6D4C41"
+    }
+  ]
+}

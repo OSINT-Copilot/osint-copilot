@@ -1,0 +1,128 @@
+{
+  "v": 1,
+  "steps": [
+    {
+      "step": "placement",
+      "at": "2026-10-21T15:19:56.509Z",
+      "data": {
+        "q2-2024-consolidation-pdf-983c40b6.mhtml": "983c40b6913a4b092c1b3f281679f9841d38c332a7b08fc0ae27f6468a8ecab3",
+        "q2-2024-consolidation-pdf-983c40b6.png": "2d5ffdae4a7fadcce58837e07baf2502e15bde47691eecb849596dbb8d4253bd",
+        "q2-2024-consolidation-pdf-983c40b6.viewport.png": "1597a6c27a44e88027d91efb416c8a9fa1ebf70591c92526bc866110156510d5",
+        "q2-2024-consolidation-pdf-983c40b6.pdf": "a5c9f0abc0f9bbc0b8e0f9cb8cc6c4fc946c58ce0750961823c493576dce342b",
+        "q2-2024-consolidation-pdf-983c40b6.md": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+      }
+    },
+    {
+      "step": "place",
+      "at": "2026-10-21T15:19:56.541Z",
+      "data": {
+        "bundleId": "b23e5ef1-8f3d-4022-baec-82fe72e5a6a2",
+        "files": [
+          {
+            "role": "archive",
+            "path": "OSINTCopilot/Evidence/q2-2024-consolidation-pdf-983c40b6.mhtml",
+            "sha256": "983c40b6913a4b092c1b3f281679f9841d38c332a7b08fc0ae27f6468a8ecab3",
+            "created": true
+          },
+          {
+            "role": "fullpage",
+            "path": "OSINTCopilot/Evidence/q2-2024-consolidation-pdf-983c40b6.png",
+            "sha256": "2d5ffdae4a7fadcce58837e07baf2502e15bde47691eecb849596dbb8d4253bd",
+            "created": true
+          },
+          {
+            "role": "viewport",
+            "path": "OSINTCopilot/Evidence/q2-2024-consolidation-pdf-983c40b6.viewport.png",
+            "sha256": "1597a6c27a44e88027d91efb416c8a9fa1ebf70591c92526bc866110156510d5",
+            "created": true
+          },
+          {
+            "role": "pdf",
+            "path": "OSINTCopilot/Evidence/q2-2024-consolidation-pdf-983c40b6.pdf",
+            "sha256": "a5c9f0abc0f9bbc0b8e0f9cb8cc6c4fc946c58ce0750961823c493576dce342b",
+            "created": true
+          },
+          {
+            "role": "markdown",
+            "path": "OSINTCopilot/Evidence/q2-2024-consolidation-pdf-983c40b6.md",
+            "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created": true
+          }
+        ]
+      }
+    },
+    {
+      "step": "entity-plan",
+      "at": "2026-10-21T15:19:56.560Z",
+      "data": {
+        "plannedEntityId": "c8032393-908d-4bdd-af1c-a49f345770b0"
+      }
+    },
+    {
+      "step": "entity",
+      "at": "2026-10-21T15:19:56.596Z",
+      "data": {
+        "entityId": "c8032393-908d-4bdd-af1c-a49f345770b0",
+        "created": true,
+        "label": "q2-2024-consolidation.pdf",
+        "addedSourceIds": [
+          "ext_b23e5ef1-8f3d-4022-baec-82fe72e5a6a2",
+          "ext_b23e5ef1-8f3d-4022-baec-82fe72e5a6a2_archive"
+        ]
+      }
+    },
+    {
+      "step": "sources-note",
+      "at": "2026-10-21T15:19:56.619Z",
+      "data": {
+        "path": "OSINTCopilot/Sources/q2-2024-consolidation-pdf-df0794833221.md"
+      }
+    },
+    {
+      "step": "applied",
+      "at": "2026-10-21T15:19:56.640Z",
+      "data": {
+        "entityId": "c8032393-908d-4bdd-af1c-a49f345770b0",
+        "entityLabel": "q2-2024-consolidation.pdf",
+        "created": true,
+        "addedSourceIds": [
+          "ext_b23e5ef1-8f3d-4022-baec-82fe72e5a6a2",
+          "ext_b23e5ef1-8f3d-4022-baec-82fe72e5a6a2_archive"
+        ],
+        "sourcesNotePath": "OSINTCopilot/Sources/q2-2024-consolidation-pdf-df0794833221.md",
+        "placedFiles": [
+          {
+            "role": "archive",
+            "path": "OSINTCopilot/Evidence/q2-2024-consolidation-pdf-983c40b6.mhtml",
+            "sha256": "983c40b6913a4b092c1b3f281679f9841d38c332a7b08fc0ae27f6468a8ecab3",
+            "created": true
+          },
+          {
+            "role": "fullpage",
+            "path": "OSINTCopilot/Evidence/q2-2024-consolidation-pdf-983c40b6.png",
+            "sha256": "2d5ffdae4a7fadcce58837e07baf2502e15bde47691eecb849596dbb8d4253bd",
+            "created": true
+          },
+          {
+            "role": "viewport",
+            "path": "OSINTCopilot/Evidence/q2-2024-consolidation-pdf-983c40b6.viewport.png",
+            "sha256": "1597a6c27a44e88027d91efb416c8a9fa1ebf70591c92526bc866110156510d5",
+            "created": true
+          },
+          {
+            "role": "pdf",
+            "path": "OSINTCopilot/Evidence/q2-2024-consolidation-pdf-983c40b6.pdf",
+            "sha256": "a5c9f0abc0f9bbc0b8e0f9cb8cc6c4fc946c58ce0750961823c493576dce342b",
+            "created": true
+          },
+          {
+            "role": "markdown",
+            "path": "OSINTCopilot/Evidence/q2-2024-consolidation-pdf-983c40b6.md",
+            "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created": true
+          }
+        ]
+      }
+    }
+  ]
+}

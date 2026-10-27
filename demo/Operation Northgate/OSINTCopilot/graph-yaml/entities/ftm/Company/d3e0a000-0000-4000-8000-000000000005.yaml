@@ -1,0 +1,49 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000005
+type: Company
+label: Northgate Freight BV
+properties:
+  name: Northgate Freight BV
+  jurisdiction: nl
+  country: nl
+  registrationNumber: "00000000"
+  incorporationDate: 2019-06-12
+  status: Active
+  legalForm: Besloten vennootschap
+  sector: Freight forwarding
+  website: https://northgate-freight.example
+  image: OSINTCopilot/Evidence/northgate-freight-bv-picture.png
+  Name: Northgate Freight BV
+  Jurisdiction: nl
+  Registration number: 0
+  Incorporation date: 2019-06-12
+  Country: nl
+  Status: Active
+  Legal form: Besloten vennootschap
+  Sector: Freight forwarding
+  Website: https://northgate-freight.example
+ftmSchema: Company
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Company/Northgate Freight BV.md
+osint_sources:
+  - id: src_ac79436d1604c812
+    source_url: https://kvk-register.example/company/00000000
+    archive_status: skipped
+    inferred: false
+    rationale: Trade register entry
+    captured_at: 2026-09-18T09:30:00.000Z
+  - id: src_7d3a71da8f1128bf
+    source_url: https://news.example/2024/06/21/rotterdam-customs-seize-counterfeit-cancer-drugs
+    archive_status: skipped
+    inferred: false
+    rationale: Named as the forwarder of the seized pallets
+    captured_at: 2026-09-18T09:30:00.000Z
+  - id: src_bd4ae553d2eb934e
+    source_url: https://customs.example/press/2024-06-20-parcel-seizure
+    archive_status: skipped
+    inferred: false
+    rationale: Customs press release names the forwarder
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: high
+

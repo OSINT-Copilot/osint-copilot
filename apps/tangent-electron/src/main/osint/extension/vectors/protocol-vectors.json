@@ -1,0 +1,101 @@
+{
+	"_comment": "Generated independently (Python hashlib/hmac, generate-protocol-vectors.py) from PROTOCOL.md. Raw byte inputs are given as hex; everything on the wire is base64url without padding. Strings are UTF-8.",
+	"inputs": {
+		"pairSecretHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+		"pairSecret": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+		"clientNonce": "oKGio6SlpqeoqaqrrK2urw",
+		"serverNonce": "sLGys7S1tre4ubq7vL2-vw",
+		"clientId": "wMHCw8TFxsfIycrLzM3Ozw",
+		"instanceId": "0NHS09TV1tfY2drb3N3e3w",
+		"port": 23760,
+		"endpoint": "127.0.0.1:23760"
+	},
+	"pairingString": "ocpair1.23760.0NHS09TV1tfY2drb3N3e3w.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+	"pairingId": "630dcd2966c4336691125448bbb25b4f",
+	"pairProof": {
+		"stringToSign": "OCPAIR1\noKGio6SlpqeoqaqrrK2urw",
+		"proof": "WTMTWNOmyWTd4bxkcG2FB134ifBkbvoDNlvn73Bxaa0"
+	},
+	"keyDerivation": {
+		"stringToSign": "oc-k1\noKGio6SlpqeoqaqrrK2urw\nsLGys7S1tre4ubq7vL2-vw\nwMHCw8TFxsfIycrLzM3Ozw",
+		"keyHex": "c0f308caea613c8849fee806fdfc137dca65ad3c5b29f8a47f568ba092a2cc6c",
+		"key": "wPMIyuphPIhJ_ugG_fwTfcplrTxbKfikf1aLoJKizGw"
+	},
+	"pairServerProof": {
+		"stringToSign": "OCPAIR1S\noKGio6SlpqeoqaqrrK2urw\nsLGys7S1tre4ubq7vL2-vw\nwMHCw8TFxsfIycrLzM3Ozw",
+		"proof": "A7n9OuAVRrWsVaIzMGM7gXPd4VO0yq7eWPgF-mBpJk8"
+	},
+	"helloProof": {
+		"stringToSign": "OCHELLO1\n127.0.0.1:23760\noKGio6SlpqeoqaqrrK2urw\nsLGys7S1tre4ubq7vL2-vw\n0NHS09TV1tfY2drb3N3e3w",
+		"proof": "ie_tRkbP7gSz0J7HbDHcusqbPGy_L8H7iBdHAVmCTJk"
+	},
+	"requests": [
+		{
+			"endpoint": "127.0.0.1:23760",
+			"method": "POST",
+			"pathWithQuery": "/v1/bundles",
+			"ts": "1760000000000",
+			"nonce": "4OHi4-Tl5ufo6err7O3u7w",
+			"clientId": "wMHCw8TFxsfIycrLzM3Ozw",
+			"body": "{\"v\":1,\"bundleId\":\"0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e\",\"workspaceId\":\"AAAAAAAAAAAAAAAAAAAAAA\",\"kind\":\"note\",\"page\":{\"url\":\"https://example.com/a?b=1\",\"title\":\"Caf\u00e9 \u2014 example\"},\"clientTime\":\"2025-10-09T08:53:20.000Z\",\"note\":{\"text\":\"line one\\nline two\"}}",
+			"contentLength": "258",
+			"bodySha256": "85c656ad7f95639540f434e6bc3844d9b5480927da463d466f701930100626cf",
+			"stringToSign": "OC1\n127.0.0.1:23760\nPOST\n/v1/bundles\n1760000000000\n4OHi4-Tl5ufo6err7O3u7w\nwMHCw8TFxsfIycrLzM3Ozw\n258\n85c656ad7f95639540f434e6bc3844d9b5480927da463d466f701930100626cf",
+			"signature": "qSgRMah7TUjxPNKX6Htk-wLtB6baOPRMH0vCxTQUbwA"
+		},
+		{
+			"endpoint": "127.0.0.1:23760",
+			"method": "GET",
+			"pathWithQuery": "/v1/status",
+			"ts": "1760000000123",
+			"nonce": "8PHy8_T19vf4-fr7_P3-_w",
+			"clientId": "wMHCw8TFxsfIycrLzM3Ozw",
+			"body": "",
+			"contentLength": "0",
+			"bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"stringToSign": "OC1\n127.0.0.1:23760\nGET\n/v1/status\n1760000000123\n8PHy8_T19vf4-fr7_P3-_w\nwMHCw8TFxsfIycrLzM3Ozw\n0\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"signature": "CiR2CvBd4lL1yDqN4ND9jUDAJx93TE38BpkXL9UDmHQ"
+		}
+	],
+	"octetRequests": [
+		{
+			"endpoint": "127.0.0.1:23760",
+			"method": "POST",
+			"pathWithQuery": "/v1/bundles/0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e/files/viewport.png",
+			"ts": "1760000000456",
+			"nonce": "EBESExQVFhcYGRobHB0eHw",
+			"clientId": "wMHCw8TFxsfIycrLzM3Ozw",
+			"contentLength": "264",
+			"bodySha256": "9d0c38e7aafe062c3a6dfc561e42771ec997d9359bb3d417ac4775a303292964",
+			"stringToSign": "OC1\n127.0.0.1:23760\nPOST\n/v1/bundles/0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e/files/viewport.png\n1760000000456\nEBESExQVFhcYGRobHB0eHw\nwMHCw8TFxsfIycrLzM3Ozw\n264\n9d0c38e7aafe062c3a6dfc561e42771ec997d9359bb3d417ac4775a303292964",
+			"signature": "OiiDD7vyoOrpaFrKvt3vy-MXRJiw0xy7RmEBLDjALRg",
+			"contentType": "application/octet-stream",
+			"bodyHex": "89504e470d0a1a0a000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+		}
+	],
+	"responses": [
+		{
+			"endpoint": "127.0.0.1:23760",
+			"status": 200,
+			"requestNonce": "4OHi4-Tl5ufo6err7O3u7w",
+			"body": "{\"status\":\"accepted\",\"bundleId\":\"0b7e7c1e-3f7a-4c56-9a3e-2d4f5b6c7d8e\",\"receivedAt\":\"2025-10-09T08:53:20.500Z\"}",
+			"bodySha256": "bd174d200959929f481234aa171506e7b77117c418a718d49b05d88cc546c680",
+			"stringToSign": "OC1R\n127.0.0.1:23760\n200\n4OHi4-Tl5ufo6err7O3u7w\nbd174d200959929f481234aa171506e7b77117c418a718d49b05d88cc546c680",
+			"signature": "wStN4AWyBpBm96hvj_XMrM8NUQmeKa1T-o5qOlZycjs"
+		},
+		{
+			"endpoint": "127.0.0.1:23760",
+			"status": 401,
+			"requestNonce": "4OHi4-Tl5ufo6err7O3u7w",
+			"body": "{\"error\":\"replay\"}",
+			"bodySha256": "33a1107e5cd436d084bc0002483caa0aa6c0d30874ddcc1015707a574d3c7fa3",
+			"stringToSign": "OC1R\n127.0.0.1:23760\n401\n4OHi4-Tl5ufo6err7O3u7w\n33a1107e5cd436d084bc0002483caa0aa6c0d30874ddcc1015707a574d3c7fa3",
+			"signature": "ZL3X694XiS8kQR2JaWvlJAtnr_f8caakLeqmTeGgYTs"
+		}
+	],
+	"workspaceId": {
+		"keyHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+		"realpath": "/home/analyst/Investigations/Case \u00e9t\u00e9",
+		"id": "gtoz4Juogr-egTX3kAreCn"
+	}
+}

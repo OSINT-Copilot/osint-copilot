@@ -1,0 +1,25 @@
+{
+  "v": 1,
+  "steps": [
+    {
+      "step": "highlight",
+      "at": "2026-10-21T15:19:26.059Z",
+      "data": {
+        "path": "OSINTCopilot/Sources/brightwater-holdings-ltd-he-000000-company-registry-7177b8f76583.md",
+        "outcome": "edited"
+      }
+    },
+    {
+      "step": "applied",
+      "at": "2026-10-21T15:19:26.076Z",
+      "data": {
+        "entityId": null,
+        "entityLabel": null,
+        "created": false,
+        "addedSourceIds": [],
+        "sourcesNotePath": "OSINTCopilot/Sources/brightwater-holdings-ltd-he-000000-company-registry-7177b8f76583.md",
+        "placedFiles": []
+      }
+    }
+  ]
+}

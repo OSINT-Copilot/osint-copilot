@@ -1,0 +1,55 @@
+{
+	"version": 1,
+	"normalised_url": "http://medsupply-direct.example/",
+	"highlights": {
+		"urn:uuid:b707567e-ca70-48f9-a758-cb14b93ed794": {
+			"annotation": {
+				"id": "urn:uuid:b707567e-ca70-48f9-a758-cb14b93ed794",
+				"textModel": "v1",
+				"created": "2026-10-21T15:19:12.159Z",
+				"modified": "2026-10-21T15:19:12.159Z",
+				"target": {
+					"source": "http://medsupply-direct.example/",
+					"selector": [
+						{
+							"type": "TextQuoteSelector",
+							"exact": "All orders are dispatched by Northgate Freight BV from Rotterdam.",
+							"prefix": "No prescription, no questions.\n\t",
+							"suffix": "\n\tContact\n\tOrders and support: s"
+						},
+						{
+							"type": "TextPositionSelector",
+							"start": 169,
+							"end": 234
+						},
+						{
+							"type": "RangeSelector",
+							"startSelector": {
+								"type": "XPathSelector",
+								"value": "/html[1]/body[1]/main[1]/p[2]",
+								"refinedBy": {
+									"type": "TextPositionSelector",
+									"start": 0,
+									"end": 0
+								}
+							},
+							"endSelector": {
+								"type": "XPathSelector",
+								"value": "/html[1]/body[1]/main[1]/p[2]",
+								"refinedBy": {
+									"type": "TextPositionSelector",
+									"start": 65,
+									"end": 65
+								}
+							}
+						}
+					]
+				}
+			},
+			"section": "bc8cea77-7739-4f55-9c73-0b75ea31bf7b",
+			"modified": "2026-10-21T15:19:12.159Z",
+			"receivedAt": "2026-10-21T15:19:12.171Z",
+			"deleted": false
+		}
+	}
+}

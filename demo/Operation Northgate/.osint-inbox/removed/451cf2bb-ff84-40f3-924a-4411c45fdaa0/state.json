@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "steps": [
+    {
+      "step": "sources-note",
+      "at": "2026-10-21T15:19:47.525Z",
+      "data": {
+        "path": "OSINTCopilot/Sources/contact-northgate-freight-bv-8ca4c9feb624.md"
+      }
+    },
+    {
+      "step": "applied",
+      "at": "2026-10-21T15:19:47.540Z",
+      "data": {
+        "entityId": null,
+        "entityLabel": null,
+        "created": false,
+        "addedSourceIds": [],
+        "sourcesNotePath": "OSINTCopilot/Sources/contact-northgate-freight-bv-8ca4c9feb624.md",
+        "placedFiles": []
+      }
+    },
+    {
+      "step": "removed",
+      "at": "2026-10-21T15:19:57.804Z",
+      "data": null
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+	"version": 1,
+	"normalised_url": "http://registry.cy.example/company/HE000000",
+	"highlights": {
+		"urn:uuid:3da2fc86-3d53-4b40-bbd5-c0a4d103eb55": {
+			"annotation": {
+				"id": "urn:uuid:3da2fc86-3d53-4b40-bbd5-c0a4d103eb55",
+				"textModel": "v1",
+				"created": "2026-10-21T15:19:21.828Z",
+				"modified": "2026-10-21T15:19:25.934Z",
+				"target": {
+					"source": "http://registry.cy.example/company/HE000000",
+					"selector": [
+						{
+							"type": "TextQuoteSelector",
+							"exact": "Brightwater Holdings Ltd was incorporated on 3 March 2024.",
+							"prefix": "000000BRIGHTWATER HOLDINGS LTD\n\t",
+							"suffix": "\n\t\n\t\tRegistration numberHE 00000"
+						},
+						{
+							"type": "TextPositionSelector",
+							"start": 81,
+							"end": 139
+						},
+						{
+							"type": "RangeSelector",
+							"startSelector": {
+								"type": "XPathSelector",
+								"value": "/html[1]/body[1]/main[1]/p[1]",
+								"refinedBy": {
+									"type": "TextPositionSelector",
+									"start": 0,
+									"end": 0
+								}
+							},
+							"endSelector": {
+								"type": "XPathSelector",
+								"value": "/html[1]/body[1]/main[1]/p[1]",
+								"refinedBy": {
+									"type": "TextPositionSelector",
+									"start": 58,
+									"end": 58
+								}
+							}
+						}
+					]
+				},
+				"body": {
+					"type": "TextualBody",
+					"purpose": "commenting",
+					"value": "Six weeks before the first BTC payment reached the seller. Check the director."
+				}
+			},
+			"section": "d746e61f-3bcd-4f64-b00b-c2dd779a5d30",
+			"modified": "2026-10-21T15:19:25.934Z",
+			"receivedAt": "2026-10-21T15:19:21.837Z",
+			"deleted": false
+		},
+		"urn:uuid:79e82332-d362-457c-9a99-1f021203e5fa": {
+			"section": "41504948-ce31-4b0e-896c-4e51c204772d",
+			"modified": "2026-10-21T15:19:32.894Z",
+			"deleted": true
+		}
+	}
+}

@@ -1,0 +1,138 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Probe Point Analytics LLC -->
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>OSINT Copilot</title>
+	<link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+	<header class="bar">
+		<img src="icons/icon-32.png" alt="" width="20" height="20">
+		<h1>OSINT Copilot</h1>
+		<span id="connection" class="badge" role="status"></span>
+	</header>
+	<p id="workspace-current" class="current" hidden></p>
+	<p id="connection-problem" class="problem" hidden></p>
+
+	<main>
+		<section id="pairing" class="card" hidden>
+			<h2>Pair with the app</h2>
+			<p>In OSINT Copilot, open the OSINT settings. Under <strong>Browser extension</strong>, turn on <strong>Accept items from the browser extension</strong>, choose <strong>Pair new extension</strong> and paste the string it shows here. It works once, for five minutes.</p>
+			<form id="pair-form">
+				<label for="pair-input">Pairing string</label>
+				<input id="pair-input" autocomplete="off" spellcheck="false" placeholder="ocpair1.23760.…">
+				<button type="submit">Pair</button>
+			</form>
+			<p class="hint">The app then asks you to confirm. Nothing else is shared until you do.</p>
+		</section>
+
+		<div id="paired" hidden>
+			<section class="card">
+				<label for="workspace">Investigation</label>
+				<select id="workspace"></select>
+				<p id="workspace-note" class="hint"></p>
+			</section>
+
+			<section class="card">
+				<h2>Page</h2>
+				<div id="page"></div>
+			</section>
+
+			<section class="card">
+				<h2>Highlights</h2>
+				<p class="hint">Select text on the page, then press <strong>Highlight selection</strong>, or right-click it and choose <strong>Highlight in OSINT Copilot</strong>. Each highlight and its note are filed in the investigation, on the page's Sources note.</p>
+				<button type="button" id="highlight-create">Highlight selection</button>
+				<p id="highlight-revisit" class="notice" hidden>Your highlights show on a page only when you ask, on each visit. Allow this to have them shown again whenever you come back to a page: the extension then looks for your own highlights on every page you open, and sends nothing when it does. Chrome asks for its permission to read the pages you visit, unless page capture already has it. <button type="button" id="highlight-grant" class="secondary">Allow</button></p>
+				<p id="highlight-revisit-on" class="hint" hidden>Your highlights show again when you come back to a page. <button type="button" id="highlight-revoke" class="secondary">Stop that</button></p>
+				<p id="highlight-unshown" class="notice" hidden><span id="highlight-unshown-text"></span> <button type="button" id="highlight-show-here" class="secondary">Show on this page</button></p>
+				<ul id="highlights" class="highlights" aria-label="Highlights on this page"></ul>
+				<h3 id="orphans-title" hidden>Not found on this page</h3>
+				<p id="orphans-hint" class="hint" hidden>The page's text has changed since these were made, or the part of the page holding them has not loaded. They are kept, and still in the investigation.</p>
+				<ul id="orphans" class="highlights" aria-label="Highlights not found on this page"></ul>
+				<details>
+					<summary>Highlights kept in this browser</summary>
+					<p class="hint">This browser keeps a copy of your highlights, for every investigation, so it can show them on pages. Deleting that copy does not touch your investigations, which keep theirs.</p>
+					<button type="button" id="highlight-clear" class="danger">Delete highlights kept in this browser</button>
+				</details>
+			</section>
+
+			<section class="card">
+				<h2>Capture page</h2>
+				<p class="hint">Saves this tab as it is now (an MHTML archive, a screenshot of what is on screen and, for a PDF, the document itself) and files it in the investigation as evidence. Also on the page's right-click menu, and <span id="capture-shortcut">with the keyboard shortcut</span>.</p>
+				<p id="capture-permission" class="notice" hidden>The first capture asks Chrome for two permissions: to read and change your data on all websites, and to save pages. Chrome words it broadly because a capture can be of any site. The extension uses them only to capture the page you ask it to, when you ask. It does not read pages on its own unless you also allow your highlights to come back on a revisit, under Highlights. If you decline, nothing is captured.</p>
+				<button type="button" id="capture">Capture page</button>
+				<p id="capture-status" class="hint" role="status" hidden></p>
+				<progress id="capture-progress" max="1" value="0" hidden></progress>
+			</section>
+
+			<section class="card">
+				<h2>Quick note</h2>
+				<form id="note-form">
+					<textarea id="note-text" rows="4" maxlength="20000" placeholder="What did you notice on this page?"></textarea>
+					<button type="submit">Send note</button>
+				</form>
+			</section>
+
+			<section class="card">
+				<h2>Entity</h2>
+				<form id="entity-form">
+					<div class="row">
+						<input id="entity-value" autocomplete="off" spellcheck="false" maxlength="512" placeholder="Select text on the page, or type">
+						<button type="button" id="use-selection" class="secondary">Use selected text</button>
+					</div>
+					<p id="entity-guess" class="hint"></p>
+					<div class="row">
+						<label for="entity-kind">Kind</label>
+						<select id="entity-kind">
+							<option value="">Choose…</option>
+							<option value="email">Email</option>
+							<option value="phone">Phone</option>
+							<option value="username">Username</option>
+							<option value="domain">Domain</option>
+							<option value="url">URL</option>
+							<option value="ip">IP address</option>
+							<option value="wallet">Wallet</option>
+						</select>
+					</div>
+					<div class="row" id="chain-row" hidden>
+						<label for="entity-chain">Chain</label>
+						<select id="entity-chain">
+							<option value="btc">Bitcoin</option>
+							<option value="eth">Ethereum</option>
+							<option value="other">Other</option>
+						</select>
+					</div>
+					<div class="row" id="platform-row" hidden>
+						<label for="entity-platform">Platform</label>
+						<input id="entity-platform" autocomplete="off" spellcheck="false" maxlength="40" placeholder="e.g. github.com">
+					</div>
+					<label for="entity-context">Context (optional)</label>
+					<textarea id="entity-context" rows="2" maxlength="500" placeholder="Where or how you found it"></textarea>
+					<p id="entity-problem" class="problem" hidden></p>
+					<button type="submit">Send entity</button>
+				</form>
+			</section>
+
+			<section class="card">
+				<h2>Queue</h2>
+				<ul id="queue" class="queue"></ul>
+			</section>
+
+			<details class="card">
+				<summary>Connection</summary>
+				<p id="connection-detail"></p>
+				<div class="row">
+					<button type="button" id="refresh" class="secondary">Check again</button>
+					<button type="button" id="unpair" class="danger">Unpair</button>
+				</div>
+			</details>
+		</div>
+
+		<p id="flash" class="flash" role="status" hidden></p>
+	</main>
+	<script type="module" src="sidepanel.js"></script>
+</body>
+</html>

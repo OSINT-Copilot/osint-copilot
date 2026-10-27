@@ -1,0 +1,23 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: d3e0a000-0000-4000-8000-000000000003
+type: Person
+label: Jonah Ferris
+properties:
+  name: Jonah Ferris
+  position: Nominee director
+  notes: "Director of more than 40 Seychelles entities at the same registered agent: a professional nominee, not the owner."
+  Name: Jonah Ferris
+  Position: Nominee director
+ftmSchema: Person
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/Person/Jonah Ferris.md
+osint_sources:
+  - id: src_7e09e61419463b7f
+    source_url: https://corpserve-seychelles.example/nominees
+    archive_status: skipped
+    inferred: true
+    rationale: Inferred from the registered agent's published nominee list
+    captured_at: 2026-09-18T09:30:00.000Z
+osint_confidence: unverified
+

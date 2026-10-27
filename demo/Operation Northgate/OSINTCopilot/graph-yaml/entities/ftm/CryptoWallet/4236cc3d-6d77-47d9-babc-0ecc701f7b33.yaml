@@ -1,0 +1,25 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: entity
+id: 4236cc3d-6d77-47d9-babc-0ecc701f7b33
+type: CryptoWallet
+label: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4
+properties:
+  publicKey: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4
+  currencySymbol: BTC
+  Address: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4
+  Currency short code: BTC
+ftmSchema: CryptoWallet
+schemaFamily: ftm
+notePath: OSINTCopilot/ftm/CryptoWallet/bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4.md
+osint_sources:
+  - id: ext_e5534319-a619-4ab9-830f-25aa3911d129
+    source_url: http://harbourmarket.example/thread/4471
+    archive_status: skipped
+    inferred: false
+    rationale: 'Sent from the OSINT Copilot browser extension: "BTC payment address in post #1"'
+    captured_at: 2026-10-21T15:18:34.854Z
+    via: extension
+    client_id: DjZ3RfbCgAcRblvrn0K8BA
+    received_at: 2026-10-21T15:18:34.854Z
+osint_confidence: low
+

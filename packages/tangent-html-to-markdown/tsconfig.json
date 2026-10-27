@@ -1,0 +1,10 @@
+{
+	"compilerOptions": {
+		"outDir": "lib",
+		"target": "ESNext",
+		"moduleResolution": "node",
+		"esModuleInterop": true,
+		"allowJs": true,
+		"types": ["node"]
+	}
+}

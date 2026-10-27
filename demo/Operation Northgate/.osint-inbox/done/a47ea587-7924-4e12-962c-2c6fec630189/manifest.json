@@ -1,0 +1,23 @@
+{
+  "v": 1,
+  "bundleId": "a47ea587-7924-4e12-962c-2c6fec630189",
+  "workspaceId": "VClqFaLRd7XJWp-Z0ilaTr",
+  "page": {
+    "url": "http://medsupply-direct.example/",
+    "title": "MedSupply Direct · Oncology generics without prescription"
+  },
+  "clientTime": "2026-10-21T15:19:02.691Z",
+  "kind": "entity",
+  "entity": {
+    "kind": "url",
+    "value": "http://medsupply-direct.example/checkout",
+    "context": "Checkout page"
+  },
+  "server": {
+    "receivedAt": "2026-10-21T15:19:02.700Z",
+    "clientId": "DjZ3RfbCgAcRblvrn0K8BA",
+    "origin": "chrome-extension://eokeefakkjidnblbahcdjobcpallgnfk",
+    "extVersion": "0.1.0"
+  },
+  "mac": "L9jjf2KR5XitmO7eicvJC1bt12HwPW3omEN3ZKdsgY8"
+}

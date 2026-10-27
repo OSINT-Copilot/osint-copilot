@@ -1,0 +1,13 @@
+# OSINT Copilot graph export (FTM-style YAML mirror). The Markdown note is the primary source; this file is auto-synced.
+kind: connection
+id: f5fb3a22-9814-4694-aed6-905bdd72e827
+fromEntityId: b52a55e6-77de-4b5a-85a9-a1d1667040c8
+toEntityId: 48f7b2da-6d22-4427-95cc-4be65162e817
+fromLabel: Counterfeit oncology shop
+toLabel: "Acquire Infrastructure: Domains"
+relationship: uses
+label: "Counterfeit oncology shop → uses → Acquire Infrastructure: Domains"
+properties: {}
+schemaFamily: stix2
+notePath: OSINTCopilot/Connections/Counterfeit oncology shop - uses - Acquire Infrastructure- Domains.md
+

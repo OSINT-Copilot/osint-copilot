@@ -1,0 +1,3 @@
+2026-09-18T08:41:12Z enricher=crtsh-subdomains query=medsupply-direct.example status=429 retry_after=30s
+2026-09-18T08:41:44Z enricher=crtsh-subdomains query=medsupply-direct.example status=200 results=0
+2026-09-18T08:42:03Z enricher=rdap-domain query=medsupply-direct.example status=404 note="reserved .example domain, no RDAP record"

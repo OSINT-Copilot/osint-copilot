@@ -1,0 +1,72 @@
+{
+  "systemPrompt": "You are a vault assistant. Answer questions clearly and concisely based on the provided notes. Cite note paths in-line where useful.",
+  "maxNotes": 15,
+  "viewOpenMode": "switch",
+  "enableGraphFeatures": true,
+  "autoRefreshGraph": true,
+  "autoOpenGraphOnEntityCreation": false,
+  "conversationFolder": "OSINTCopilot/conversations",
+  "promptsFolder": "OSINTCopilot/custom/prompts",
+  "activeAgentId": "case-analyst",
+  "taskAgentsFolder": "OSINTCopilot/custom/task-agents",
+  "taskAgentsEnabled": true,
+  "preferredTaskAgentId": "case-memo",
+  "taskAgentGlobalOutputAllowlist": "OSINTCopilot/custom/outputs/\nResearch/",
+  "taskAgentOverrides": {},
+  "skillsFolder": "OSINTCopilot/custom/skills",
+  "enrichersFolder": "OSINTCopilot/custom/enrichers",
+  "credentialsFolder": "OSINTCopilot/custom/credentials",
+  "scriptsFolder": "OSINTCopilot/custom/scripts",
+  "apiProvider": "claude-code",
+  "claudeCodeCliPath": "claude",
+  "claudeCodeModel": "sonnet",
+  "claudeCodeExtraArgs": "",
+  "claudeCodeTimeoutMs": 300000,
+  "codexCliPath": "codex",
+  "codexCliModel": "",
+  "codexCliExtraArgs": "",
+  "codexCliTimeoutMs": 300000,
+  "agentRuntimeProvider": "claude-code",
+  "hermesAgentCliPath": "hermes",
+  "hermesAgentExtraArgs": "",
+  "hermesAgentTimeoutMs": 120000,
+  "hermesAgentHealthCheckArgs": "--version",
+  "customAgentRuntimes": [],
+  "extractionLogVerbosity": "detailed",
+  "extractionDebugRawCli": false,
+  "lockedVaultPaths": [],
+  "activeGraphId": "default",
+  "graphWorkspaces": [
+    {
+      "id": "default",
+      "name": "Default"
+    },
+    {
+      "id": "money-trail",
+      "name": "Money trail"
+    }
+  ],
+  "mapOnlineTileProvider": "openfreemap",
+  "mapBasemapTheme": "auto",
+  "mapSettingsVersion": 1,
+  "mapCustomTileUrl": "",
+  "mapCustomTileAttribution": "",
+  "mapOfflineBasemapPath": "",
+  "geocodingBaseUrl": "",
+  "enabledSchemaFamilies": {
+    "ftm": true,
+    "stix2": true,
+    "mitre": true,
+    "user": true
+  },
+  "oidsfModalLayers": {
+    "world": true,
+    "links": true,
+    "cyber": true,
+    "analysis": false
+  },
+  "miroAccessToken": "",
+  "miroLastBoardInput": "",
+  "hasSeenWelcomeGuide": true,
+  "extensionAllowWayback": false
+}

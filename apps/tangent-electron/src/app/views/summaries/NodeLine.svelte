@@ -1,0 +1,217 @@
+<script lang="ts">
+import { shortestDayDate, simpleTimestamp } from 'common/dates';
+import type { TreeNode } from 'common/trees';
+import { annotateMatchText, type SearchMatchResult } from 'common/search';
+
+import { getContext } from 'svelte';
+
+import type { Workspace } from '../../model/index'
+import NodeIcon from '../smart-icons/NodeIcon.svelte';
+import paths, { normalizeSeperators } from 'common/paths';
+import { applyAnnotation, type ChildList, childrenToHTML } from 'common/annotations/nodeAnnotations';
+import { isTagTreeNode } from 'common/indexing/TagNode';
+import { tooltip } from 'app/utils/tooltips'
+import type { Annotation } from 'common/nodeReferences'
+
+const workspace = getContext('workspace') as Workspace
+
+export let node: TreeNode
+export let relativeTo: string | TreeNode = null
+export let showIcon = true
+export let showFileType = false
+export let showModDate = false
+export let highlightName = true
+export let shrinkNonHighlights = true
+export let nameMatch: SearchMatchResult = null
+export let annotations: Annotation[] = null
+
+$: content = getContent(node, relativeTo, showFileType, nameMatch)
+function getContent(node: TreeNode, relativeTo: string | TreeNode, showFileType: boolean, match: SearchMatchResult): string {
+	
+	let relativePath: string
+
+	if (!node) return ''
+
+	if (node.fileType === 'tag' && isTagTreeNode(node)) {
+		// This is a bit of a hack, but I want to see the real cases
+		relativePath = node.names.join('/')
+	}
+	else if (match) {
+		// Pretty large assumption here; rolling with it
+		relativePath = match.input
+	}
+	else if (relativeTo && typeof relativeTo !== 'string') {
+		const result = paths.getChildPath(relativeTo.path, node.path)
+		if (result !== false) {
+			// Force windows paths to normal paths
+			relativePath = normalizeSeperators(result, '/')
+		}
+	}
+	
+	if (!relativePath) {
+		const foundRelativePath = workspace.directoryStore.pathToRelativePath(node.path)
+		if (foundRelativePath === false) {
+			console.error('Could not get a relative path for', node)
+			return node.name
+		}
+		relativePath = foundRelativePath
+
+		if (typeof relativeTo === 'string') {
+			const relativeResult = paths.getChildPath(relativeTo, relativePath)
+			if (relativeResult !== false) {
+				relativePath = relativeResult
+			}
+		}
+
+		// Force windows paths to normal paths
+		relativePath = normalizeSeperators(relativePath, '/')
+	}
+
+	let extension = paths.extname(relativePath)
+	const extensionStart = relativePath.length - extension.length
+	const extensionHeaderIndex = extension.lastIndexOf('#')
+	if (extensionHeaderIndex >= 0) {
+		// Strip off the header
+		extension = extension.substring(0, extensionHeaderIndex)
+		relativePath = relativePath.substring(0, extensionStart + extensionHeaderIndex) + '→' + relativePath.substring(extensionStart + extensionHeaderIndex + 1)
+	}
+	const extensionEnd = extensionStart + extension.length
+	
+	let showExtension: false|true|'highlighted' = showFileType && extension.startsWith('.') || extensionHeaderIndex >= 0
+
+	const indices = (match as any)?.indices
+	if (indices && extension.startsWith('.')) {
+		for (let index = 1; index < indices.length; index++) {
+			if (indices[index][1] > extensionStart && indices[index][0] < extensionEnd) {
+				showExtension = 'highlighted'
+				break
+			}
+		}
+	}
+
+	relativePath = showExtension ? relativePath : relativePath.substring(0, extensionStart)
+
+	let annotatedChildren: ChildList = [ relativePath ]
+
+	let nameStart = 0
+	if (highlightName) {
+		const dirName = paths.dirname(relativePath)
+		if (dirName !== '.') {
+			nameStart = dirName.length + 1
+			annotatedChildren = applyAnnotation(annotatedChildren, {
+				className: 'directory'
+			}, [0, nameStart])
+			annotatedChildren = applyAnnotation(annotatedChildren, {
+				className: 'name'
+			}, [nameStart, extensionStart])
+			
+		}
+		else {
+			annotatedChildren = applyAnnotation(annotatedChildren, {
+				className: 'name'
+			}, [0, extensionStart])
+		}
+	}
+
+	if (showExtension) {
+		annotatedChildren = applyAnnotation(annotatedChildren, {
+			className: 'fileType' + (showExtension === 'highlighted' ? ' highlighted' : '')
+		}, [extensionStart, extensionEnd])
+	}
+
+	if (extensionHeaderIndex >= 0) {
+		annotatedChildren = applyAnnotation(annotatedChildren, {
+			className: 'headerHash'
+		}, [extensionStart + extensionHeaderIndex, extensionStart + extensionHeaderIndex + 1])
+		annotatedChildren = applyAnnotation(annotatedChildren, {
+			className: 'headerName'
+		}, [extensionStart + extensionHeaderIndex + 1, relativePath.length])
+	}
+
+	if (match) {
+		annotatedChildren = annotateMatchText(match, annotatedChildren)
+	}
+
+	if (annotations) {
+		for (const annotation of annotations) {
+			const target = annotation.target ?? 'content'
+			if (target === 'name') {
+				annotatedChildren = applyAnnotation(annotatedChildren, {
+					className: 'match-highlight'
+				}, [annotation.start + nameStart, annotation.end + nameStart])
+			}
+		}
+	}
+
+	return childrenToHTML(annotatedChildren)
+}
+
+</script>
+
+<div class="NodeLine" class:header={nameMatch?.type === 'header'} class:shrinkNonHighlights>
+	{#if showIcon}<NodeIcon {node} size="1em" />{/if}
+	<span class="path" class:highlightName>{@html content}</span>
+	{#if showModDate}
+		<span class="date" use:tooltip={"Last modified " + simpleTimestamp(node.modified)}>{shortestDayDate(node.modified)}</span>
+	{/if}
+</div>
+
+<style lang="scss">
+div {
+	display: flex;
+	align-items: center;
+	gap: .4em;
+
+	--iconStroke: var(--deemphasizedTextColor);
+	--iconFill: var(--backgroundColor);
+}
+
+div > :global(svg) {
+	flex-shrink: 0;
+}
+
+.path {
+	flex-grow: 1;
+	&.highlightName {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+	}
+}
+
+.path :global(.directory), .path :global(.fileType), .path :global(.headerHash), .date {
+	// When highlighted, this looks better as it adjusts to the background color
+	opacity: 60%;
+
+	.shrinkNonHighlights & {
+		font-size: 80%;
+	}
+}
+
+.NodeLine.header :global(.name) {
+	// When highlighted, this looks better as it adjusts to the background color
+	opacity: 60%;
+}
+.NodeLine.header.shrinkNonHighlights :global(.name) {
+	font-size: 80%;
+}
+
+.path :global(.headerHash) {
+	display: inline-block;
+	padding: 0 .2em;
+}
+
+.path :global(.directory) {
+	margin-right: .125em;
+}
+
+.NodeLine.shrinkNonHighlights .path :global(.fileType):last-child {
+	align-self: last baseline;
+	position: relative;
+	bottom: .1em;
+}
+
+.date {
+	white-space: nowrap;
+}
+</style>
